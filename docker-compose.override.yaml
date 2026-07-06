@@ -1,0 +1,14 @@
+services:
+  tts:
+    user: "1000:1000"
+    environment:
+      XDG_RUNTIME_DIR: "/run/user/1000"
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus"
+      PULSE_SERVER: "unix:/run/user/1000/pulse/native"
+    devices:
+      - "/dev/snd:/dev/snd"
+      - "/dev/bus/usb:/dev/bus/usb"
+    volumes:
+      - "/run/user/1000:/run/user/1000"
+    group_add:
+      - audio

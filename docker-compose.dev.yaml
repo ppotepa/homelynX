@@ -1,0 +1,52 @@
+services:
+  homelynx-bot:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./src
+        - action: rebuild
+          path: ./Dockerfile
+        - action: rebuild
+          path: ./docker-compose.yaml
+        - action: rebuild
+          path: ./docker-compose.dev.yaml
+
+  portal:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/portal
+        - action: rebuild
+          path: ./docker-compose.yaml
+        - action: rebuild
+          path: ./docker-compose.dev.yaml
+
+  surveillance:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/surveillance
+        - action: rebuild
+          path: ./docker-compose.yaml
+        - action: rebuild
+          path: ./docker-compose.dev.yaml
+
+  coord-input:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/coord-input
+        - action: rebuild
+          path: ./docker-compose.yaml
+        - action: rebuild
+          path: ./docker-compose.dev.yaml
+
+  tts:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./services/tts
+        - action: rebuild
+          path: ./docker-compose.yaml
+        - action: rebuild
+          path: ./docker-compose.dev.yaml

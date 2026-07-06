@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TorrentBot.Engine\TorrentBot.Engine.csproj" />
+    <ProjectReference Include="..\TorrentBot.Integrations\TorrentBot.Integrations.csproj" />
+    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
+    <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.System\TorrentBot.Plugins.System.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Query\TorrentBot.Plugins.Query.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Downloads\TorrentBot.Plugins.Downloads.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Torrent\TorrentBot.Plugins.Torrent.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Media\TorrentBot.Plugins.Media.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Surveillance\TorrentBot.Plugins.Surveillance.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.BotControl\TorrentBot.Plugins.BotControl.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Jobs\TorrentBot.Plugins.Jobs.csproj" />
+  </ItemGroup>
+
+</Project>

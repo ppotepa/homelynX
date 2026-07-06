@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TorrentBot.Bootstrap\TorrentBot.Bootstrap.csproj" />
+    <ProjectReference Include="..\TorrentBot.Adapters.Telegram\TorrentBot.Adapters.Telegram.csproj" />
+  </ItemGroup>
+
+</Project>

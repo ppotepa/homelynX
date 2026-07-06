@@ -1,0 +1,337 @@
+name: homelynx
+
+services:
+  homelynx-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homelynx-bot
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_ALLOWED_USERS_FILE: "/app/allowed-users.cfg"
+      ACL_PRESETS_FILE: "/app/acl/presets.cfg"
+      TORRENTBOT_ACL_FILE: "/app/allowed-users.cfg"
+      TORRENTBOT_ENABLE_NEW_ENGINE: "true"
+      TORRENTBOT_ENABLE_LEGACY_PYTHON: "false"
+      TORRENTBOT_MEDIA_ROOT: "/media"
+      TORRENTBOT_AUDIT_DB: "${HOMELYNX_AUDIT_DB:-/data/audit/homelynx.db}"
+      HOMELYNX_CAPABILITIES_FILE: "/data/capabilities.json"
+
+      QBIT_HOST: "qbittorrent"
+      QBIT_PORT: "8080"
+      QBIT_USERNAME: "${QBIT_USERNAME:-admin}"
+      QBIT_PASSWORD: "${QBIT_PASSWORD:?QBIT_PASSWORD is required. Run ./install.sh to generate it.}"
+      QBIT_HTTPS: "false"
+
+      JACKETT_HOST: "jackett"
+      JACKETT_PORT: "9117"
+      JACKETT_API_KEY: "${JACKETT_API_KEY}"
+      JACKETT_HTTPS: "false"
+
+      TTS_HOST: "tts"
+      TTS_PORT: "5055"
+      TTS_HTTPS: "false"
+
+      SURV_HOST: "surveillance"
+      SURV_PORT: "5060"
+      SURV_HTTPS: "false"
+
+      LLM_HOST: "llm"
+      LLM_PORT: "11434"
+      LLM_MODEL: "${LLM_MODEL:-qwen3:0.6b}"
+      LLM_PLANNER_MODEL: "${LLM_PLANNER_MODEL:-}"
+      LLM_RESPONDER_MODEL: "${LLM_RESPONDER_MODEL:-}"
+
+      DOWNLOAD_PATH: "${DOWNLOAD_PATH:-/downloads}"
+      MEDIA_LIBRARY_PATH: "${MEDIA_LIBRARY_PATH:-/media}"
+    volumes:
+      - "${HOST_DOWNLOAD_PATH:-./downloads}:/downloads"
+      - "${MEDIA_LIBRARY_PATH:-./media}:/media"
+      - "./allowed-users.cfg:/app/allowed-users.cfg:ro"
+      - "./acl/presets.cfg:/app/acl/presets.cfg:ro"
+      - "./data:/data"
+      - "./logs:/app/logs"
+    depends_on:
+      - qbittorrent
+      - jackett
+      - flaresolverr
+      - tts
+      - surveillance
+      - llm
+    networks:
+      - homelynx
+
+
+
+  portal:
+    build:
+      context: .
+      dockerfile: services/portal/Dockerfile
+    container_name: portal
+    restart: unless-stopped
+    environment:
+      PORTAL_DATA_DIR: "/data"
+      PORTAL_ENV_FILE: "/config/.env"
+      PORTAL_DOCKER_SOCKET: "/var/run/docker.sock"
+      PORTAL_AUTH_ENABLED: "${PORTAL_AUTH_ENABLED:-true}"
+      PORTAL_USERNAME: "${PORTAL_USERNAME:-admin}"
+      PORTAL_PASSWORD_HASH: "${PORTAL_PASSWORD_HASH:-}"
+      PORTAL_SESSION_SECRET: "${PORTAL_SESSION_SECRET:-}"
+      PORTAL_CSRF_TOKEN: "${PORTAL_CSRF_TOKEN:-${PORTAL_SESSION_SECRET:-}}"
+      PORTAL_DOCKER_ENABLED: "${PORTAL_DOCKER_ENABLED:-false}"
+      PORTAL_ENV_WRITE_ENABLED: "${PORTAL_ENV_WRITE_ENABLED:-false}"
+      LLM_AUDIT_TOKEN: "${LLM_AUDIT_TOKEN:-}"
+      LLM_AUDIT_RETENTION_DAYS: "${LLM_AUDIT_RETENTION_DAYS:-30}"
+      HOMELYNX_CAPABILITIES_FILE: "/homelynx-data/capabilities.json"
+    ports:
+      - "127.0.0.1:${PORTAL_PORT:-80}:80"
+    volumes:
+      - "./portal-data:/data"
+      - "./data:/homelynx-data:ro"
+      - "./.env:/config/.env"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - homelynx
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Warsaw}
+      - WEBUI_PORT=8080
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:6881:6881"
+      - "127.0.0.1:6881:6881/udp"
+    volumes:
+      - "${HOST_DOWNLOAD_PATH:-./downloads}:/downloads"
+      - "${MEDIA_LIBRARY_PATH:-/home/ppotepa/mediaserver}:/media"
+      - "${QBIT_CONFIG_PATH:-./qbittorrent-config}:/config"
+    networks:
+      - homelynx
+
+  jellyfin:
+    image: lscr.io/linuxserver/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Warsaw}
+    ports:
+      - "127.0.0.1:${JELLYFIN_PORT:-8096}:8096"
+    volumes:
+      - "${JELLYFIN_CONFIG_PATH:-./jellyfin-config}:/config"
+      - "${HOST_DOWNLOAD_PATH:-./downloads}:/data/downloads:ro"
+      - "${MEDIA_LIBRARY_PATH:-/home/ppotepa/mediaserver}:/media:ro"
+    networks:
+      - homelynx
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    container_name: jackett
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Europe/Warsaw}
+      - AUTO_UPDATE=true
+    ports:
+      - "127.0.0.1:9117:9117"
+    volumes:
+      - "${JACKETT_CONFIG_PATH:-./jackett-config}:/config"
+      - "${HOST_DOWNLOAD_PATH:-./downloads}:/downloads"
+    networks:
+      - homelynx
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      - LOG_LEVEL=info
+      - TZ=${TZ:-Europe/Warsaw}
+    ports:
+      - "127.0.0.1:8191:8191"    # FlareSolverr Web API
+    networks:
+      - homelynx
+
+  tts:
+    build: ./services/tts
+    container_name: tts
+    restart: unless-stopped
+    environment:
+      TTS_DATA_DIR: "/tts-data"
+      TTS_MODEL_DIR: "/tts-data/models"
+      TTS_OUTPUT_DIR: "/tts-data/output"
+      TTS_DEFAULT_LANGUAGE: "${TTS_DEFAULT_LANGUAGE:-pl}"
+      TTS_PLAYBACK_ENABLED: "${TTS_PLAYBACK_ENABLED:-true}"
+      TTS_PLAYBACK_BACKEND: "${TTS_PLAYBACK_BACKEND:-auto}"
+      TTS_PLAYBACK_DEVICE: "${TTS_PLAYBACK_DEVICE:-JBL Go 4}"
+      TTS_PULSE_SINK: "${TTS_PULSE_SINK:-}"
+      TTS_PIPEWIRE_TARGET: "${TTS_PIPEWIRE_TARGET:-}"
+      TTS_MAX_TEXT_CHARS: "${TTS_MAX_TEXT_CHARS:-1000}"
+      TTS_PL_VOICE_NAME: "${TTS_PL_VOICE_NAME:-pl_PL-meski_wg_glos-medium}"
+      TTS_PL_MODEL_URL: "${TTS_PL_MODEL_URL:-https://huggingface.co/WitoldG/polish_piper_models/resolve/main/pl_PL-meski_wg_glos-medium.onnx}"
+      TTS_PL_CONFIG_URL: "${TTS_PL_CONFIG_URL:-https://huggingface.co/WitoldG/polish_piper_models/resolve/main/pl_PL-meski_wg_glos-medium.onnx.json}"
+    volumes:
+      - "./tts-data:/tts-data"
+    ports:
+      - "127.0.0.1:5055:5055"
+    networks:
+      - homelynx
+
+  surveillance:
+    build: ./services/surveillance
+    container_name: surveillance
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_NOTIFICATION_CHAT_ID: "${TELEGRAM_NOTIFICATION_CHAT_ID}"
+      TELEGRAM_ADMIN_CHAT_ID: "${TELEGRAM_ADMIN_CHAT_ID}"
+      SURV_TELEGRAM_BOT_TOKEN: "${SURV_TELEGRAM_BOT_TOKEN:-}"
+      SURV_TELEGRAM_CHAT_ID: "${SURV_TELEGRAM_CHAT_ID:-${TELEGRAM_NOTIFICATION_CHAT_ID:-}}"
+      SURV_TELEGRAM_MIN_SEVERITY: "${SURV_TELEGRAM_MIN_SEVERITY:-medium}"
+      SURV_DATA_DIR: "/data"
+      SURV_CAMERA_DEVICE: "${SURV_CAMERA_DEVICE:-/dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920-video-index0}"
+      SURV_AUDIO_DEVICE: "${SURV_AUDIO_DEVICE:-sysdefault:CARD=C920}"
+      SURV_AUDIO_FILTER: "${SURV_AUDIO_FILTER:-highpass=f=120,lowpass=f=7000,afftdn=nf=-25,alimiter=limit=0.85}"
+      SURV_SEGMENT_SECONDS: "${SURV_SEGMENT_SECONDS:-5}"
+      SURV_RECORDER_WATCHDOG_SECONDS: "${SURV_RECORDER_WATCHDOG_SECONDS:-20}"
+      SURV_RECORDER_RESTART_DELAY_SECONDS: "${SURV_RECORDER_RESTART_DELAY_SECONDS:-3}"
+      SURV_SNAPSHOT_RAM_LIMIT_BYTES: "${SURV_SNAPSHOT_RAM_LIMIT_BYTES:-1073741824}"
+      SURV_RETENTION_HOURS: "${SURV_RETENTION_HOURS:-24}"
+      SURV_EVENT_RETENTION_DAYS: "${SURV_EVENT_RETENTION_DAYS:-14}"
+      SURV_INCIDENT_GAP_SECONDS: "${SURV_INCIDENT_GAP_SECONDS:-90}"
+      SURV_RECORD_VIDEO: "${SURV_RECORD_VIDEO:-true}"
+      SURV_RECORD_AUDIO: "${SURV_RECORD_AUDIO:-true}"
+      SURV_ANALYZER_WORKERS: "${SURV_ANALYZER_WORKERS:-2}"
+      SURV_SPEECH_RATIO_THRESHOLD: "${SURV_SPEECH_RATIO_THRESHOLD:-0.18}"
+      SURV_LOUD_PEAK_THRESHOLD: "${SURV_LOUD_PEAK_THRESHOLD:-0.45}"
+      SURV_EVENT_GAP_SECONDS: "${SURV_EVENT_GAP_SECONDS:-25}"
+      SURV_NOTIFY_ENABLED: "${SURV_NOTIFY_ENABLED:-true}"
+      SURV_TRANSCRIBE_ENABLED: "${SURV_TRANSCRIBE_ENABLED:-true}"
+      SURV_TRANSCRIBE_MODEL: "${SURV_TRANSCRIBE_MODEL:-small}"
+      SURV_TRANSCRIBE_LANGUAGE: "${SURV_TRANSCRIBE_LANGUAGE:-auto}"
+      SURV_TRANSCRIBE_COMPUTE_TYPE: "${SURV_TRANSCRIBE_COMPUTE_TYPE:-int8}"
+      SURV_TRANSCRIBE_BEAM_SIZE: "${SURV_TRANSCRIBE_BEAM_SIZE:-5}"
+      SURV_TRANSCRIBE_VAD: "${SURV_TRANSCRIBE_VAD:-true}"
+      SURV_TRANSCRIBE_VAD_MIN_SILENCE_MS: "${SURV_TRANSCRIBE_VAD_MIN_SILENCE_MS:-500}"
+      SURV_TRANSCRIBE_WORD_TIMESTAMPS: "${SURV_TRANSCRIBE_WORD_TIMESTAMPS:-false}"
+      SURV_TRANSCRIBE_CONDITION_ON_PREVIOUS_TEXT: "${SURV_TRANSCRIBE_CONDITION_ON_PREVIOUS_TEXT:-false}"
+      SURV_JOB_WORKERS: "${SURV_JOB_WORKERS:-1}"
+      SURV_JOB_MAX_ATTEMPTS: "${SURV_JOB_MAX_ATTEMPTS:-3}"
+      SURV_JOB_POLL_SECONDS: "${SURV_JOB_POLL_SECONDS:-1.0}"
+      SURV_JOB_DONE_RETENTION_HOURS: "${SURV_JOB_DONE_RETENTION_HOURS:-48}"
+      SURV_JOB_FAILED_RETENTION_HOURS: "${SURV_JOB_FAILED_RETENTION_HOURS:-168}"
+      SURV_PREVIEW_GIF_ENABLED: "${SURV_PREVIEW_GIF_ENABLED:-true}"
+      SURV_PREVIEW_GIF_SPEED: "${SURV_PREVIEW_GIF_SPEED:-5.0}"
+      SURV_PREVIEW_GIF_FPS: "${SURV_PREVIEW_GIF_FPS:-6}"
+      SURV_PREVIEW_GIF_WIDTH: "${SURV_PREVIEW_GIF_WIDTH:-480}"
+      SURV_PREVIEW_GIF_AUDIO_HEIGHT: "${SURV_PREVIEW_GIF_AUDIO_HEIGHT:-84}"
+      SURV_PREVIEW_GIF_MAX_SOURCE_SECONDS: "${SURV_PREVIEW_GIF_MAX_SOURCE_SECONDS:-180}"
+      SURV_OPERATOR_SUMMARY_DEFAULT_HOURS: "${SURV_OPERATOR_SUMMARY_DEFAULT_HOURS:-24}"
+      SURV_OPERATOR_SUMMARY_MAX_EVENTS: "${SURV_OPERATOR_SUMMARY_MAX_EVENTS:-120}"
+      SURV_OPERATOR_SUMMARY_MAX_TRANSCRIPT_CHARS: "${SURV_OPERATOR_SUMMARY_MAX_TRANSCRIPT_CHARS:-14000}"
+      SURV_OPERATOR_SUMMARY_TIMEOUT_SECONDS: "${SURV_OPERATOR_SUMMARY_TIMEOUT_SECONDS:-45}"
+      SURV_NOTIFY_MIN_INTERVAL_SECONDS: "${SURV_NOTIFY_MIN_INTERVAL_SECONDS:-45}"
+      SURV_NOTIFY_BACKLOG_SUPPRESS_SECONDS: "${SURV_NOTIFY_BACKLOG_SUPPRESS_SECONDS:-180}"
+      SURV_RECENT_SEGMENT_BUFFER: "${SURV_RECENT_SEGMENT_BUFFER:-240}"
+      SURV_SPEECH_EXTENDED_SEGMENTS: "${SURV_SPEECH_EXTENDED_SEGMENTS:-2}"
+      SURV_NOISE_SPIKE_MULTIPLIER: "${SURV_NOISE_SPIKE_MULTIPLIER:-2.4}"
+      SURV_DEVICE_ALERT_COOLDOWN_SECONDS: "${SURV_DEVICE_ALERT_COOLDOWN_SECONDS:-300}"
+      SURV_MOTION_ENABLED: "${SURV_MOTION_ENABLED:-true}"
+      SURV_FACE_ENABLED: "${SURV_FACE_ENABLED:-true}"
+      SURV_PERSON_ENABLED: "${SURV_PERSON_ENABLED:-true}"
+      SURV_MOTION_DIFF_THRESHOLD: "${SURV_MOTION_DIFF_THRESHOLD:-18}"
+      SURV_MOTION_MIN_RATIO: "${SURV_MOTION_MIN_RATIO:-0.015}"
+      SURV_FACE_MIN_SIZE: "${SURV_FACE_MIN_SIZE:-64}"
+      SURV_PERSON_HOG_STRIDE: "${SURV_PERSON_HOG_STRIDE:-8}"
+      SURV_PERSON_MIN_CONFIDENCE: "${SURV_PERSON_MIN_CONFIDENCE:-0.45}"
+      SURV_EVENT_TRIGGER_KINDS: "${SURV_EVENT_TRIGGER_KINDS:-PERSON_DETECTION,FACE_DETECTION}"
+      LLM_ENABLED: "${LLM_ENABLED:-true}"
+      LLM_HOST: "${LLM_HOST:-llm}"
+      LLM_PORT: "${LLM_PORT:-11434}"
+      LLM_MODEL: "${LLM_MODEL:-qwen3:0.6b}"
+      LLM_TIMEOUT_SECONDS: "${LLM_TIMEOUT_SECONDS:-20}"
+      SURV_LLM_JOB_MAX_ATTEMPTS: "${SURV_LLM_JOB_MAX_ATTEMPTS:-1}"
+      LLM_MAX_TRANSCRIPT_CHARS: "${LLM_MAX_TRANSCRIPT_CHARS:-1600}"
+      SURV_LLM_SUMMARIES_ENABLED: "${SURV_LLM_SUMMARIES_ENABLED:-true}"
+      SURV_LLM_MIN_SEVERITY: "${SURV_LLM_MIN_SEVERITY:-medium}"
+      LLM_AUDIT_URL: "http://portal:80/api/llm/audit"
+      LLM_AUDIT_TOKEN: "${LLM_AUDIT_TOKEN:-}"
+    volumes:
+      - "./surveillance-data:/data"
+      - "/dev/v4l/by-id:/dev/v4l/by-id:ro"
+    devices:
+      - "${SURV_CAMERA_DEVICE:-/dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920-video-index0}:${SURV_CAMERA_DEVICE:-/dev/v4l/by-id/usb-046d_HD_Pro_Webcam_C920-video-index0}"
+      - "/dev/snd:/dev/snd"
+    cpus: "${SURV_CPUS:-2.0}"
+    mem_limit: "${SURV_MEM_LIMIT:-2g}"
+    ports:
+      - "127.0.0.1:5060:5060"
+    networks:
+      - homelynx
+
+  coord-input:
+    build: ./services/coord-input
+    container_name: coord-input
+    restart: unless-stopped
+    environment:
+      COORD_DATA_DIR: "/data"
+      COORD_INPUT_API_KEY: "${COORD_INPUT_API_KEY}"
+      COORD_TELEGRAM_BOT_TOKEN: "${COORD_TELEGRAM_BOT_TOKEN:-}"
+      COORD_TELEGRAM_CHAT_ID: "${COORD_TELEGRAM_CHAT_ID:-}"
+      COORD_TELEGRAM_ALLOWED_USERS: "${COORD_TELEGRAM_ALLOWED_USERS:-}"
+      COORD_TELEGRAM_BOOTSTRAP_CHAT: "${COORD_TELEGRAM_BOOTSTRAP_CHAT:-true}"
+      COORD_NOTIFY_ENABLED: "${COORD_NOTIFY_ENABLED:-false}"
+      COORD_NOTIFY_MIN_INTERVAL_SECONDS: "${COORD_NOTIFY_MIN_INTERVAL_SECONDS:-60}"
+      COORD_NOTIFY_MIN_DISTANCE_METERS: "${COORD_NOTIFY_MIN_DISTANCE_METERS:-25}"
+      COORD_HISTORY_LIMIT: "${COORD_HISTORY_LIMIT:-5000}"
+      COORD_BOT_POLL_SECONDS: "${COORD_BOT_POLL_SECONDS:-2}"
+      COORD_LLM_SUMMARY_ENABLED: "${COORD_LLM_SUMMARY_ENABLED:-true}"
+      COORD_LLM_MODEL: "${COORD_LLM_MODEL:-qwen3:0.6b}"
+      COORD_LLM_TIMEOUT_SECONDS: "${COORD_LLM_TIMEOUT_SECONDS:-20}"
+      LLM_ENABLED: "${LLM_ENABLED:-true}"
+      LLM_HOST: "${LLM_HOST:-llm}"
+      LLM_PORT: "${LLM_PORT:-11434}"
+      LLM_AUDIT_URL: "http://portal:80/api/llm/audit"
+      LLM_AUDIT_TOKEN: "${LLM_AUDIT_TOKEN:-}"
+    volumes:
+      - "./coord-data:/data"
+    ports:
+      - "127.0.0.1:5070:5070"
+    networks:
+      - homelynx
+    depends_on:
+      - llm
+      - portal
+
+  llm:
+    image: ollama/ollama:latest
+    container_name: llm
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+      OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:--1}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-8192}"
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-1}"
+      OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-2}"
+      OLLAMA_MAX_QUEUE: "${OLLAMA_MAX_QUEUE:-64}"
+      OLLAMA_LOAD_TIMEOUT: "${OLLAMA_LOAD_TIMEOUT:-10m}"
+    volumes:
+      - "./llm-data:/root/.ollama"
+    ports:
+      - "127.0.0.1:11434:11434"
+    cpus: "${LLM_CPUS:-8.0}"
+    mem_limit: "${LLM_MEM_LIMIT:-12g}"
+    networks:
+      - homelynx
+
+networks:
+  homelynx:
+    name: homelynx
