@@ -136,7 +136,7 @@ Skipped: `Surveillance_http_client_fetches_media_when_url_configured` (plugin us
 ## Co trzeba jeszcze zrobić (priorytety)
 
 ### P0 — Przed merge / PR
-1. ~~Commit + review~~ — do zrobienia przez właściciela repo (duży diff).
+1. ~~Commit~~ — `26cc8a8` na `main` (322 pliki). Review/PR opcjonalnie.
 2. ~~E2E~~ — ✅ 26/26
 3. ~~Dokumentacja~~ — `ARCHITECTURE.md`, `README.md` zaktualizowane
 4. ~~`.env.example`~~ — ma `TORRENTBOT_ENABLE_TEST_ENDPOINT`, `TORRENTBOT_TEST_ENDPOINT_SECRET`
