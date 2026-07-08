@@ -1,7 +1,7 @@
 {
   "test_id": "DL-WORKFLOW-001",
   "status": "PASS",
-  "message": "Complete workflow executed successfully (15.530346555s)",
-  "timestamp": "2026-07-08T10:52:07Z",
-  "duration": "15.530346555s"
+  "message": "Complete workflow executed successfully (12.476797849s)",
+  "timestamp": "2026-07-08T12:30:18Z",
+  "duration": "12.476797849s"
 }

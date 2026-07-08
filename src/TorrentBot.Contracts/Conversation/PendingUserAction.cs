@@ -25,5 +25,4 @@ public sealed record PendingActionResolution(
     bool Resolved,
     PendingUserAction? Action = null,
     IReadOnlyDictionary<string, object?>? Parameters = null,
-    IReadOnlyList<PendingUserAction>? NewPendingActions = null,
     string? Error = null);

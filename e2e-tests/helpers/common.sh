@@ -130,6 +130,19 @@ check_jackett_running() {
     fi
 }
 
+check_test_endpoint() {
+    log_step "Checking if test endpoint is available at ${TEST_ENDPOINT}"
+    local health
+    health=$(curl -s "${TEST_ENDPOINT}/health" --max-time 5)
+    if echo "$health" | grep -q "ok"; then
+        log_success "Test endpoint is available"
+        return 0
+    fi
+
+    log_error "Test endpoint is not available at ${TEST_ENDPOINT}"
+    return 1
+}
+
 # Cleanup functions
 cleanup_test_files() {
     local pattern="$1"
@@ -150,5 +163,5 @@ stop_timer() {
 # Export functions
 export -f log_info log_success log_error log_warning log_step log_assertion
 export -f log_test_start exit_test
-export -f check_bot_running check_qbittorrent_running check_jackett_running
+export -f check_bot_running check_qbittorrent_running check_jackett_running check_test_endpoint
 export -f cleanup_test_files start_timer stop_timer

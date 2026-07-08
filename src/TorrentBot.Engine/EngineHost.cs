@@ -102,7 +102,7 @@ public sealed class EngineHost : IEngine
             }
 
             _loggerFactory = _options.LoggerFactory ?? NullLoggerFactory.Instance;
-            _bus = new QueuedEventBus();
+            _bus = CreateEventBus();
             _jobTracker = new InMemoryJobTracker();
 
             _options.ConversationContextStore ??= new ConversationContextStore();
@@ -596,6 +596,25 @@ public sealed class EngineHost : IEngine
             }
 
             return _jobTracker;
+        }
+    }
+
+    private static IInternalBus CreateEventBus()
+    {
+        var auditDb = Environment.GetEnvironmentVariable("TORRENTBOT_AUDIT_DB");
+        if (string.IsNullOrWhiteSpace(auditDb))
+        {
+            return new QueuedEventBus();
+        }
+
+        try
+        {
+            var outbox = new SqliteEventOutbox($"Data Source={auditDb}");
+            return new QueuedEventBus(outbox: outbox);
+        }
+        catch
+        {
+            return new QueuedEventBus();
         }
     }
 

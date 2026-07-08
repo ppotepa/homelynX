@@ -26,7 +26,7 @@
 - Capabilities: `CapabilityContract` + `CapabilityMetadata` rejestrowane w `PluginRegistrationContext.RegisterCapability`; `CapabilityRegistry.GetContract()`.
 - LLM: `LlmSystemPromptBuilder` (kontrakty + pending actions + conversation state), `LlmPipeline`, Ollama* (bez Console.Error debug).
 - Pipeline: `InvocationPipeline` + behaviors (`ToolKnowledge`, `ConversationState`, `ResponseConstruction`, `ConversationPending`, `PerTurnPrompt`), `ConversationResponseHandler`, `EngineHost`.
-- Bus: `IInternalBus` + `QueuedEventBus` (channel queue, async dispatch, dispose w `StopAsync`).
+- Bus: `IInternalBus` + `QueuedEventBus` (channel queue, async dispatch, dispose w `StopAsync`); opcjonalny `SqliteEventOutbox` (`event_outbox` table) gdy `TORRENTBOT_AUDIT_DB` ustawione.
 - Query: `QuerySpec`, `ISnapshotSource` + `QuerySourceMeta`, `DuckDbQueryEngine`.
 - User responses: `ConversationResponseHandler` (parse only) → `ConversationPipeline.ProcessUserResponseAsync` (resolve + execute); callback prefix `pending:yes/no:`; `pending:no` maps to cancel.
 - Torrent search state: `TorrentSearchConversationState` + `TorrentSearchDisplay` (jedna projekcja 1-based indexów); `TorrentSearchPromptFormatting` dla LLM; `TorrentSearchSnapshotService` jako cienka fasada + `ISnapshotSource`.

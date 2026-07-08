@@ -88,13 +88,4 @@ get_last_bot_response() {
     echo ""
 }
 
-# Check if test endpoint is available
-check_test_endpoint() {
-    local health=$(curl -s "${TEST_ENDPOINT}/health" --max-time 5)
-    if echo "$health" | grep -q "ok"; then
-        return 0
-    fi
-    return 1
-}
-
-export -f send_telegram_command send_telegram_message get_last_bot_response check_test_endpoint
+export -f send_telegram_command send_telegram_message get_last_bot_response

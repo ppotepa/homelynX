@@ -51,7 +51,6 @@ public sealed class ArchitectureContractTests
             new UserResponse(token, "u1", "select", "2", new Dictionary<string, object?> { ["index"] = 2 }));
 
         Assert.True(resolution.Resolved);
-        Assert.Null(resolution.NewPendingActions);
         Assert.Equal(2, resolution.Parameters!["index"]);
         Assert.Equal("ubuntu", resolution.Parameters!["query"]);
         Assert.Empty(context.PendingActions);

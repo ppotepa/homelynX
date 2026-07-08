@@ -142,13 +142,13 @@ Skipped: `Surveillance_http_client_fetches_media_when_url_configured` (plugin us
 4. ~~`.env.example`~~ — ma `TORRENTBOT_ENABLE_TEST_ENDPOINT`, `TORRENTBOT_TEST_ENDPOINT_SECRET`
 
 ### P1 — Jakość / UX
-1. **Test E2E NL path:** search → pending → tekst `wybierz drugi` przez Telegram test endpoint (obecnie pokryte testem jednostkowym przez pipeline, nie pełny host E2E).
+1. ~~**Test E2E NL path**~~ — `FullStackIntegrationTests.Telegram_nl_wybierz_drugi_selects_second_after_search` + E2E `TOR-NL-001-select-second` (wymaga działającego bota na :5000).
 2. **LLM planning** — słabe modele (qwen3:0.6b) nadal mogą zwracać puste plany; `LlmPipeline` ma heurystyki repair, ale to nie zastępuje lepszego modelu.
 3. **Shared state CLI vs Bot** — osobne instancje `EngineHost`; confirmation/pending działa per adapter (patrz stary HANDOFF — nadal aktualne).
 
 ### P2 — Opcjonalne usprawnienia
-1. **Outbox/persistence dla event queue** — `QueuedEventBus` jest in-memory; codereview wspomina outbox z DB — nie zaimplementowane.
-2. **`ConversationPipeline.NewPendingActions`** — kod obsługi zostawiony, ale `ApplyContinuation` usunięte; można wyczyścić martwy kod.
+1. ~~**Outbox/persistence**~~ — `SqliteEventOutbox` + `IEventOutbox`; `QueuedEventBus` zapisuje do `TORRENTBOT_AUDIT_DB` gdy ustawione.
+2. ~~**NewPendingActions cleanup**~~ — usunięte z `PendingActionResolution`.
 3. **Ponowna ocena modelu LLM** (gemma:1b itd.) — osobny wątek od architektury.
 
 ---

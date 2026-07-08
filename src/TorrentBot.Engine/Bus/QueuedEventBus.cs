@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using TorrentBot.Contracts.Bus;
 using TorrentBot.Contracts.Context;
@@ -11,8 +12,9 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
     private readonly Task _processor;
     private readonly object _gate = new();
     private readonly Dictionary<Type, List<Action<object, IRequestContext>>> _handlers = new();
+    private readonly IEventOutbox? _outbox;
 
-    public QueuedEventBus(int capacity = 256)
+    public QueuedEventBus(int capacity = 256, IEventOutbox? outbox = null)
     {
         _channel = Channel.CreateBounded<(object, IRequestContext)>(
             new BoundedChannelOptions(capacity)
@@ -21,6 +23,7 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
                 SingleReader = true,
                 SingleWriter = false
             });
+        _outbox = outbox;
         _processor = Task.Run(ProcessAsync);
     }
 
@@ -81,7 +84,26 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
     {
         await foreach (var (message, context) in _channel.Reader.ReadAllAsync(_cts.Token))
         {
+            AppendToOutbox(message, context);
             Dispatch(message, context);
+        }
+    }
+
+    private void AppendToOutbox(object message, IRequestContext context)
+    {
+        if (_outbox is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(message);
+            _outbox.Append(message.GetType().Name, context, payload);
+        }
+        catch
+        {
+            // Outbox must not break event dispatch.
         }
     }
 
@@ -99,6 +121,10 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
         }
 
         _cts.Dispose();
+        if (_outbox is IDisposable disposableOutbox)
+        {
+            disposableOutbox.Dispose();
+        }
     }
 
     private sealed class Subscription(Action dispose) : IDisposable

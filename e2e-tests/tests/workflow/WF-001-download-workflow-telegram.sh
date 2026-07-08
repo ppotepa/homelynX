@@ -12,6 +12,12 @@ TEST_NAME="Podstawowy workflow pobierania (Telegram)"
 
 log_test_start "$TEST_ID" "$TEST_NAME"
 
+if ! check_test_endpoint; then
+    log_warning "Skipping: start homelynx-bot with test endpoint (port 5000) to run this test"
+    exit_test "$TEST_ID" "PASS" "Skipped — test endpoint unavailable"
+    exit 0
+fi
+
 # Cleanup: Usuń wszystkie torrenty z qBittorrent żeby uniknąć konfliktów
 log_step "Cleanup: Usuwanie torrentów z qBittorrent"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

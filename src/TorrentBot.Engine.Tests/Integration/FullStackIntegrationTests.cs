@@ -197,6 +197,40 @@ public sealed class FullStackIntegrationTests
     }
 
     [Fact]
+    public async Task Telegram_nl_wybierz_drugi_selects_second_after_search()
+    {
+        var jackett = new FakeJackettClient();
+        jackett.SetResults(
+        [
+            new TorrentSearchResult("Alpha ISO", "magnet:1", null, 1000, 50, "jackett"),
+            new TorrentSearchResult("Beta ISO", "magnet:2", null, 900, 40, "jackett")
+        ]);
+        await using var scope = await StartEngineAsync(downloads: new DownloadsPlugin(jackett, new FakeQBittorrentClient()));
+        var services = PipelineBootstrap.Create(scope.Engine, scope.Engine.LlmPipeline);
+        var host = new TelegramBotHost(
+            scope.Engine,
+            services.Invocation,
+            conversationPipeline: services.Conversation,
+            conversationStore: scope.Engine.ConversationContextStore);
+        var user = new AclService().ResolveUser("admin");
+
+        const long chatId = 99001002;
+        var search = await host.HandleUpdateAsync(
+            new TelegramUpdate(chatId, user.UserId, "/download_search ubuntu"),
+            user,
+            isDryRun: true);
+        Assert.True(search.Success, search.Message);
+        Assert.Single(scope.Engine.ConversationContextStore!.GetOrCreate(chatId.ToString(), user.UserId).PendingActions);
+
+        var select = await host.HandleUpdateAsync(
+            new TelegramUpdate(chatId, user.UserId, "wybierz drugi"),
+            user,
+            isDryRun: true);
+        Assert.True(select.Success, select.Message);
+        Assert.Contains("Beta ISO", select.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Cli_torrent_workflow_search_produces_structured_json_items()
     {
         var writer = new StringWriter();
