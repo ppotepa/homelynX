@@ -58,11 +58,6 @@ internal static class SearchResultsArtifactParser
             }
         }
 
-        if (items.Count == 0 && total == 0)
-        {
-            return false;
-        }
-
         artifact = new SearchResultsArtifact(query, total, page, pageSize, items, hasMore, Math.Max(1, totalPages));
         return true;
     }

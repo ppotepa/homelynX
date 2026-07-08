@@ -17,20 +17,28 @@ public static class SearchResultsFormatting
             string.Empty
         };
 
-        foreach (var item in search.Items)
+        if (search.TotalCount == 0)
         {
-            lines.Add($"{item.Index}. {TrimName(item.Name)}");
-            lines.Add($"   {FormatSize(item.SizeBytes)} | {FormatSeeders(item.Seeders)} seederow");
-            lines.Add(string.Empty);
+            lines.Add("Brak wynikow dla tego zapytania.");
+            lines.Add("Sprobuj innej frazy lub /download_search <query>");
         }
-
-        lines.Add("Pobierz: /select N");
-        if (search.HasMore)
+        else
         {
-            lines.Add("Wiecej: /more");
-        }
+            foreach (var item in search.Items)
+            {
+                lines.Add($"{item.Index}. {TrimName(item.Name)}");
+                lines.Add($"   {FormatSize(item.SizeBytes)} | {FormatSeeders(item.Seeders)} seederow");
+                lines.Add(string.Empty);
+            }
 
-        lines.Add("Anuluj: /cancel_search");
+            lines.Add("Pobierz: /select N");
+            if (search.HasMore)
+            {
+                lines.Add("Wiecej: /more");
+            }
+
+            lines.Add("Anuluj: /cancel_search");
+        }
 
         while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1]))
         {
