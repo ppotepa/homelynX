@@ -13,7 +13,14 @@ configure_zerotier() {
   install_if_missing="$(get_env_value ZEROTIER_INSTALL_IF_MISSING)"
   dns_enabled="$(get_env_value ZEROTIER_DNS_ENABLED)"
 
+  # Support manual ZeroTier configuration: if zerotier-cli shows joined networks, skip warning
   if ! is_truthy "$enabled" && [ -z "$network_id" ]; then
+    if command -v zerotier-cli >/dev/null 2>&1; then
+      if as_root zerotier-cli listnetworks 2>/dev/null | grep -q 'OK'; then
+        log "ZeroTier appears manually configured (networks joined). Skipping auto-config."
+        return
+      fi
+    fi
     log "ZeroTier remote access is not configured. Set ZEROTIER_NETWORK_ID in .env to enable it."
     return
   fi

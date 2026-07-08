@@ -37,7 +37,7 @@ public sealed class TorrentSearchHandler : ICapabilityHandler
                 result.Seeders,
                 result.MagnetUri,
                 result.DownloadUrl)).ToList();
-            context.Engine.GetService<TorrentSearchSessionStore>()?.Save(context.User.UserId, query, mapped);
+            TorrentSearchConversationState.Save(TorrentSearchContext.Resolve(context), query, mapped);
             return new CapabilityResult(
                 Success: true,
                 Data: SearchResultsBuilder.BuildPageData(query, mapped, page: 0),
@@ -48,8 +48,7 @@ public sealed class TorrentSearchHandler : ICapabilityHandler
         var results = await downloader.SearchAsync(new DownloadSearchRequest(query, "torrent"), cancellationToken)
             .ConfigureAwait(false);
 
-        var store = context.Engine.GetService<TorrentSearchSessionStore>();
-        store?.Save(context.User.UserId, query, results.Items);
+        TorrentSearchConversationState.Save(TorrentSearchContext.Resolve(context), query, results.Items);
         var pageData = SearchResultsBuilder.BuildPageData(query, results.Items, page: 0);
 
         return new CapabilityResult(
@@ -81,10 +80,19 @@ public sealed class TorrentListHandler : ICapabilityHandler
             Success: true,
             Data: new Dictionary<string, object?>
             {
-                ["torrents"] = torrents,
+                ["artifactKind"] = TorrentContracts.List.ResponseSpec!.ArtifactKind,
+                ["formatHint"] = TorrentContracts.List.ResponseSpec.FormatHint,
+                ["torrents"] = torrents.Select(t => new Dictionary<string, object?>
+                {
+                    ["name"] = t.Name,
+                    ["state"] = t.State,
+                    ["progress"] = t.Progress,
+                    ["downloadedBytes"] = t.DownloadedBytes,
+                    ["sizeBytes"] = t.SizeBytes,
+                    ["dlspeed"] = t.DownloadSpeed
+                }).ToList(),
                 ["count"] = torrents.Count
             },
-            Message: $"{torrents.Count} torrent(s) in qBittorrent",
             IsDryRun: context.IsDryRun);
     }
 }

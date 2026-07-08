@@ -22,9 +22,7 @@ main() {
   configure_portal_port
   configure_media_library
   configure_zerotier
-  configure_surveillance_devices
   ensure_local_files
-  configure_tts_audio_override
   start_backend_services
   configure_jackett
   configure_jackett_flaresolverr

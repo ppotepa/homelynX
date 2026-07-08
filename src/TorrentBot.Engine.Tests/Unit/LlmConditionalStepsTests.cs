@@ -7,7 +7,7 @@ namespace TorrentBot.Engine.Tests.Unit;
 public sealed class LlmConditionalStepsTests
 {
     [Fact]
-    public void Stub_executor_skips_steps_when_saved_condition_not_met()
+    public async Task Stub_executor_skips_steps_when_saved_condition_not_met()
     {
         var executor = new StubLlmExecutor();
         var plan = new PlanEnvelope(
@@ -18,7 +18,7 @@ public sealed class LlmConditionalStepsTests
                 new PlanStep("torrent.search", Condition: "saved:missingKey")
             ]);
 
-        var result = executor.Execute(new LlmExecutionRequest(
+        var result = await executor.Execute(new LlmExecutionRequest(
             plan,
             [
                 new CapabilityMetadata("system.health", null, "", "USER", RiskLevel.Safe),

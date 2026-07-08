@@ -20,10 +20,11 @@ public sealed class DownloadListHandler : ICapabilityHandler
             Success: true,
             Data: new Dictionary<string, object?>
             {
+                ["artifactKind"] = DownloadContracts.List.ResponseSpec!.ArtifactKind,
+                ["formatHint"] = DownloadContracts.List.ResponseSpec.FormatHint,
                 ["downloads"] = result.Items,
                 ["count"] = result.Count
             },
-            Message: $"{result.Count} download(s) found",
             IsDryRun: context.IsDryRun);
     }
 }

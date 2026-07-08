@@ -15,19 +15,22 @@ public sealed class OllamaLlmExecutor : ILlmExecutor
         _fallback = fallback ?? new StubLlmExecutor();
     }
 
-    public LlmExecutionResult Execute(LlmExecutionRequest request)
+    public async Task<LlmExecutionResult> Execute(LlmExecutionRequest request)
     {
-        var fallback = _fallback.Execute(request);
+        var fallback = await _fallback.Execute(request).ConfigureAwait(false);
         if (!fallback.Success || request.IsDryRun)
         {
             return fallback;
         }
 
         var prompt =
-            "Validate this capability execution plan and respond with JSON {\"approved\":true} or {\"approved\":false,\"error\":\"...\"} only.\n" +
+            "You are a strict plan validator for a home automation bot.\n" +
+            "The plan below was produced by an LLM planner using the known capability manifest.\n" +
+            "Check if every step.capability is a real registered capability and parameters look plausible.\n" +
+            "Respond ONLY with JSON: {\"approved\": true} or {\"approved\": false, \"error\": \"short reason\"}.\n\n" +
             JsonSerializer.Serialize(request.Plan);
 
-        var response = _client.GenerateAsync(prompt).GetAwaiter().GetResult();
+        var response = await _client.GenerateAsync(prompt).ConfigureAwait(false);
         if (TryParseApproval(response, out var approved, out var error) && !approved)
         {
             return new LlmExecutionResult(

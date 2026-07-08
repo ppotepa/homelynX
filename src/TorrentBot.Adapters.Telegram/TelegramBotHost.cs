@@ -1,11 +1,15 @@
 using TorrentBot.Adapters.Telegram.Verbosity;
+using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Artifacts;
 using TorrentBot.Contracts.Context;
+using TorrentBot.Contracts.Conversation;
 using TorrentBot.Contracts.Invocation;
 using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine;
-using TorrentBot.Engine.Confirmations;
+using TorrentBot.Engine.Context;
+using TorrentBot.Engine.Pipeline;
+using TorrentBot.Engine.Conversation;
 using TorrentBot.Llm;
 using TorrentBot.Presentation;
 
@@ -16,31 +20,42 @@ public sealed record TelegramBotResponse(
     string Message,
     ExecutionResult? ExecutionResult = null,
     LlmPipelineResult? LlmResult = null,
-    RenderedOutput? Rendered = null);
+    RenderedOutput? Rendered = null,
+    Contracts.Pipeline.ExecutionPlan? Plan = null);
 
 public sealed class TelegramBotHost : IDisposable
 {
     private readonly IInvocationPipeline _pipeline;
+    private readonly IConversationPipeline _conversationPipeline;
     private readonly TelegramInvocationAdapter _adapter;
-    private readonly ConfirmationCallbackHandler _confirmationHandler;
+    private readonly ConversationResponseHandler _responseHandler;
+    private readonly ConversationContextStore _conversationStore;
     private readonly VerbosityStageRecorder _verbosityRecorder;
     private readonly ArtifactPresentation _presentation;
 
     public TelegramBotHost(
         IEngine engine,
-        IInvocationPipeline? pipeline = null,
+        IInvocationPipeline pipeline,
+        IConversationPipeline? conversationPipeline = null,
         TelegramInvocationAdapter? adapter = null,
-        ConfirmationCallbackHandler? confirmationHandler = null,
+        ConversationResponseHandler? responseHandler = null,
         LlmPipeline? llmPipeline = null,
-        ConfirmationStore? confirmationStore = null,
-        PendingInvocationStore? pendingInvocationStore = null,
+        ConversationContextStore? conversationStore = null,
         ArtifactPresentation? presentation = null)
     {
         _ = llmPipeline;
+        if (engine is not EngineHost engineHost)
+        {
+            throw new ArgumentException("TelegramBotHost requires EngineHost.", nameof(engine));
+        }
+
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
+        _conversationPipeline = conversationPipeline
+            ?? throw new ArgumentNullException(nameof(conversationPipeline));
         _adapter = adapter ?? new TelegramInvocationAdapter();
-        _confirmationHandler = confirmationHandler
-            ?? new ConfirmationCallbackHandler(confirmationStore, pendingInvocationStore);
+        _conversationStore = conversationStore ?? engineHost.ConversationContextStore
+            ?? throw new InvalidOperationException("ConversationContextStore is required.");
+        _responseHandler = responseHandler ?? new ConversationResponseHandler(_conversationStore);
         _presentation = presentation ?? PresentationBootstrap.CreateDefault();
         _verbosityRecorder = new VerbosityStageRecorder(engine);
     }
@@ -51,43 +66,59 @@ public sealed class TelegramBotHost : IDisposable
         ITelegramUpdate update,
         UserContext user,
         bool isDryRun = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        VerbosityStageRecorder? invocationRecorder = null)
     {
         ArgumentNullException.ThrowIfNull(update);
         ArgumentNullException.ThrowIfNull(user);
 
-        _verbosityRecorder.Record("parse", update.Text ?? update.CallbackData, invocationId: Guid.NewGuid().ToString("N"));
+        var recorder = invocationRecorder ?? _verbosityRecorder;
+        var progress = invocationRecorder is not null ? (IProgressReporter)invocationRecorder : null;
 
-        var confirmation = _confirmationHandler.Resolve(update);
-        if (confirmation.Handled)
+        recorder.Record("parse", update.Text ?? update.CallbackData, invocationId: Guid.NewGuid().ToString("N"));
+
+        var sessionId = update.ChatId.ToString();
+        var conversation = _conversationStore.GetOrCreate(sessionId, user.UserId);
+        var baseInvocation = CreateInvocation(_adapter.ToInvocation(update, user), isDryRun);
+
+        var responseResolution = _responseHandler.Resolve(
+            sessionId,
+            user.UserId,
+            update.IsCallback ? update.CallbackData : null,
+            update.IsCallback ? null : update.Text);
+
+        if (responseResolution.Handled)
         {
-            _verbosityRecorder.Record("confirm", confirmation.Confirmed ? "confirmed" : "rejected");
-            if (!confirmation.Confirmed)
+            if (!string.IsNullOrWhiteSpace(responseResolution.Error))
             {
-                return new TelegramBotResponse(false, confirmation.Error ?? "Action was not confirmed.");
+                return new TelegramBotResponse(false, responseResolution.Error);
             }
 
-            if (confirmation.PendingInvocation is not null)
+            if (responseResolution.UserResponse is not null || responseResolution.DirectCapability is not null)
             {
-                return await ExecuteConfirmedInvocationAsync(confirmation.PendingInvocation, confirmation.Token!, cancellationToken)
-                    .ConfigureAwait(false);
+                return await ExecuteUserResponseAsync(
+                    conversation,
+                    responseResolution,
+                    baseInvocation,
+                    cancellationToken,
+                    recorder,
+                    progress).ConfigureAwait(false);
             }
         }
 
-        var invocation = CreateInvocation(_adapter.ToInvocation(update, user), isDryRun);
+        var invocation = CloneInvocation(baseInvocation, progress);
+
         if (!invocation.IsExplicit)
         {
-            _verbosityRecorder.Record("plan", invocation.Text);
+            recorder.Record("plan", invocation.Text);
         }
         else
         {
-            _verbosityRecorder.Record("execute", invocation.CapabilityName ?? invocation.Command);
+            recorder.Record("execute", invocation.CapabilityName ?? invocation.Command);
         }
 
         var pipelineResult = await _pipeline.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
-        _verbosityRecorder.Record("respond", pipelineResult.Success ? "ok" : pipelineResult.Error);
-
-        RegisterConfirmationIfNeeded(invocation, pipelineResult);
+        recorder.Record("respond", pipelineResult.Success ? "ok" : pipelineResult.Error);
 
         var rendered = _presentation.Render(
             pipelineResult.Artifacts,
@@ -97,66 +128,51 @@ public sealed class TelegramBotHost : IDisposable
             pipelineResult.Success,
             rendered.Text,
             pipelineResult.Artifacts.RawResult,
-            Rendered: rendered);
+            Rendered: rendered,
+            Plan: pipelineResult.Plan);
     }
 
-    private async Task<TelegramBotResponse> ExecuteConfirmedInvocationAsync(
-        PendingInvocation pending,
-        string token,
-        CancellationToken cancellationToken)
+    private async Task<TelegramBotResponse> ExecuteUserResponseAsync(
+        ConversationContext conversation,
+        ConversationResponseResolution resolution,
+        Invocation baseInvocation,
+        CancellationToken cancellationToken,
+        VerbosityStageRecorder recorder,
+        IProgressReporter? progress)
     {
-        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal);
-        if (pending.Parameters is not null)
+        PipelineResult? pipelineResult = null;
+
+        if (resolution.UserResponse is not null)
         {
-            foreach (var (key, value) in pending.Parameters)
-            {
-                parameters[key] = value;
-            }
+            recorder.Record("confirm", resolution.Cancelled ? "rejected" : "confirmed");
+            pipelineResult = await _conversationPipeline.ProcessUserResponseAsync(
+                resolution.UserResponse,
+                conversation,
+                CloneInvocation(baseInvocation, progress),
+                cancellationToken).ConfigureAwait(false);
+        }
+        else if (resolution.DirectCapability is not null)
+        {
+            recorder.Record("execute", resolution.DirectCapability.CapabilityName);
+            pipelineResult = await _conversationPipeline.ExecuteDirectCapabilityAsync(
+                resolution.DirectCapability.CapabilityName,
+                resolution.DirectCapability.Parameters,
+                CloneInvocation(baseInvocation, progress),
+                cancellationToken).ConfigureAwait(false);
         }
 
-        parameters["confirmationToken"] = token;
-
-        var invocation = new Invocation
-        {
-            IsExplicit = true,
-            CapabilityName = pending.CapabilityName,
-            Parameters = parameters,
-            RequestContext = pending.RequestContext,
-            User = pending.User,
-            IsDryRun = pending.IsDryRun
-        };
-
-        _verbosityRecorder.Record("execute", pending.CapabilityName);
-        var pipelineResult = await _pipeline.RunAsync(invocation, cancellationToken).ConfigureAwait(false);
-        _verbosityRecorder.Record("respond", pipelineResult.Success ? "ok" : pipelineResult.Error);
+        recorder.Record("respond", pipelineResult?.Success == true ? "ok" : pipelineResult?.Error);
 
         var rendered = _presentation.Render(
-            pipelineResult.Artifacts,
+            pipelineResult?.Artifacts ?? new ExecutionArtifacts(false, [], null, pipelineResult?.Error),
             new RenderContext(RenderChannel.Telegram));
 
         return new TelegramBotResponse(
-            pipelineResult.Success,
+            pipelineResult?.Success ?? false,
             rendered.Text,
-            pipelineResult.Artifacts.RawResult,
-            Rendered: rendered);
-    }
-
-    private void RegisterConfirmationIfNeeded(Invocation invocation, PipelineResult pipelineResult)
-    {
-        var confirm = pipelineResult.Artifacts.Items.OfType<ConfirmationArtifact>().FirstOrDefault();
-        if (confirm is null)
-        {
-            return;
-        }
-
-        _confirmationHandler.RegisterPending(
-            confirm.Token,
-            new PendingInvocation(
-                invocation.CapabilityName ?? confirm.CapabilityName,
-                invocation.Parameters,
-                invocation.RequestContext,
-                invocation.User,
-                invocation.IsDryRun));
+            pipelineResult?.Artifacts.RawResult,
+            Rendered: rendered,
+            Plan: pipelineResult?.Plan);
     }
 
     private static Invocation CreateInvocation(Invocation invocation, bool isDryRun) =>
@@ -170,6 +186,21 @@ public sealed class TelegramBotHost : IDisposable
             RequestContext = invocation.RequestContext,
             User = invocation.User,
             IsDryRun = isDryRun
+        };
+
+    private static Invocation CloneInvocation(Invocation invocation, IProgressReporter? progress) =>
+        new()
+        {
+            IsExplicit = invocation.IsExplicit,
+            CapabilityName = invocation.CapabilityName,
+            Command = invocation.Command,
+            Text = invocation.Text,
+            Parameters = invocation.Parameters,
+            RequestContext = invocation.RequestContext,
+            User = invocation.User,
+            IsDryRun = invocation.IsDryRun,
+            Condition = invocation.Condition,
+            ProgressReporter = progress
         };
 
     public void Dispose() => _verbosityRecorder.Dispose();

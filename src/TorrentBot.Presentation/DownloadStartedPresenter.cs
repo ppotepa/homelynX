@@ -11,12 +11,11 @@ public sealed class DownloadStartedPresenter : IArtifactPresenter
     public RenderedOutput Present(IExecutionArtifact artifact, RenderContext context)
     {
         var download = (DownloadStartedArtifact)artifact;
-        var text = $"Pobieranie rozpoczete: {download.Name} ({download.Provider})";
-        if (!string.IsNullOrWhiteSpace(download.JobId))
-        {
-            text += $"\nJob: {download.JobId}";
-        }
-
+        var text = DownloadStartedFormatting.FormatMessage(
+            download.Name,
+            download.Provider,
+            download.JobId,
+            download.DownloadId);
         return new RenderedOutput(text);
     }
 }

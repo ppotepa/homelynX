@@ -22,5 +22,5 @@ public sealed record LlmExecutionResult(
 
 public interface ILlmExecutor
 {
-    LlmExecutionResult Execute(LlmExecutionRequest request);
+    Task<LlmExecutionResult> Execute(LlmExecutionRequest request);
 }

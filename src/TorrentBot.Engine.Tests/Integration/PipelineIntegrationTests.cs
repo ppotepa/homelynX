@@ -29,7 +29,7 @@ public sealed class PipelineIntegrationTests
         await engine.StartAsync();
         try
         {
-            var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+            var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline).Invocation;
             var result = await pipeline.RunAsync(new TorrentBot.Contracts.Invocation.Invocation
             {
                 IsExplicit = true,

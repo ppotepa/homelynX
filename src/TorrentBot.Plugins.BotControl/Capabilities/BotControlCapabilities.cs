@@ -26,19 +26,4 @@ internal static class BotControlCapabilities
         "Reload hot plugins.",
         "ADMIN",
         RiskLevel.Admin);
-
-    public static readonly CapabilityMetadata CoordStatusMetadata = new(
-        "coord.status",
-        "/coord_status",
-        "Show coord-input service status.",
-        "ALL",
-        RiskLevel.Safe,
-        IsReadOnly: true);
-
-    public static readonly CapabilityMetadata CoordSubmitMetadata = new(
-        "coord.submit",
-        "/coord_submit",
-        "Submit coordinates to the coord-input service.",
-        "USER",
-        RiskLevel.ConfirmationRequired);
 }

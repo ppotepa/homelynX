@@ -34,7 +34,7 @@ public sealed class TelegramSdkAdapterIntegrationTests
               "callback_query": {
                 "id": "cb-1",
                 "from": { "id": 7, "is_bot": false, "first_name": "Test" },
-                "data": "confirm:abc123",
+                "data": "pending:yes:abc123",
                 "message": {
                   "message_id": 11,
                   "date": 0,
@@ -142,7 +142,7 @@ public sealed class TelegramSdkAdapterIntegrationTests
     [InlineData("off", 1, null)]
     [InlineData("low", 2, "parse:")]
     [InlineData("medium", 3, "plan:")]
-    [InlineData("full", 3, "execute:")]
+    [InlineData("full", 3, "VERBOSE")]
     public async Task Telegram_production_adapter_applies_verbosity_levels_for_in_place_edits(
         string level,
         int expectedEdits,

@@ -12,6 +12,7 @@ public sealed class OllamaLlmClient
     public OllamaLlmClient(HttpClient httpClient, string baseUrl = "http://localhost:11434", string model = "llama3")
     {
         _httpClient = httpClient;
+        _httpClient.Timeout = TimeSpan.FromSeconds(60);
         _baseUrl = baseUrl.TrimEnd('/');
         _model = model;
     }
@@ -41,7 +42,15 @@ public sealed class OllamaLlmClient
                 ? value.GetString() ?? string.Empty
                 : string.Empty;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        catch (TaskCanceledException)
+        {
+            return string.Empty;
+        }
+        catch (HttpRequestException)
+        {
+            return string.Empty;
+        }
+        catch (JsonException)
         {
             return string.Empty;
         }

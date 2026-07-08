@@ -992,8 +992,8 @@ src/
 │   │
 │   ├── Bus/
 │   │   ├── IInternalBus.cs
-│   │   ├── InMemoryBus.cs
-│   │   └── Messages/
+│   │   ├── QueuedEventBus.cs
+│   │   └── Events/
 │   ├── Jobs/
 │   │   ├── Job.cs
 │   │   ├── IJobTracker.cs

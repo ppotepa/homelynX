@@ -4,6 +4,7 @@ using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine;
 using TorrentBot.Engine.Confirmations;
+using TorrentBot.Engine.Conversation;
 using TorrentBot.Presentation;
 using Telegram.Bot.Types;
 using TorrentBot.Adapters.Telegram.Verbosity;
@@ -21,8 +22,6 @@ public sealed class TelegramProductionAdapter
         IEngine engine,
         ITelegramMessenger messenger,
         AclService? acl = null,
-        ConfirmationStore? confirmationStore = null,
-        PendingInvocationStore? pendingStore = null,
         VerbositySettingsStore? verbositySettings = null,
         IInvocationPipeline? pipeline = null,
         ArtifactPresentation? presentation = null)
@@ -32,14 +31,20 @@ public sealed class TelegramProductionAdapter
         _verbositySettings = verbositySettings ?? new VerbositySettingsStore();
         var hostEngine = engine as EngineHost
             ?? throw new ArgumentException("Telegram adapter requires EngineHost.", nameof(engine));
-        var resolvedPipeline = pipeline ?? PipelineBootstrap.Create(hostEngine, hostEngine.LlmPipeline);
+        var services = pipeline is null
+            ? PipelineBootstrap.Create(hostEngine, hostEngine.LlmPipeline)
+            : new PipelineServices(pipeline, new ConversationPipeline(
+                hostEngine,
+                pipeline,
+                hostEngine.GetCapabilityRegistry(),
+                hostEngine.GetInternalBus()));
         var invocationAdapter = new TelegramInvocationAdapter(hostEngine.ResolveSlashCommand);
         _host = new TelegramBotHost(
             engine,
-            resolvedPipeline,
+            services.Invocation,
+            conversationPipeline: services.Conversation,
             adapter: invocationAdapter,
-            confirmationStore: confirmationStore,
-            pendingInvocationStore: pendingStore,
+            conversationStore: hostEngine.ConversationContextStore,
             presentation: presentation ?? PresentationBootstrap.CreateDefault());
     }
 
@@ -53,8 +58,6 @@ public sealed class TelegramProductionAdapter
             return;
         }
 
-        // Telegram only allows editing messages sent by the bot. Callback messages are bot-owned;
-        // plain user commands must get a separate progress message first.
         var progressMessageId = update.CallbackQuery?.Message?.MessageId
             ?? await _messenger.SendTextAsync(mapped.ChatId, "Working...", ct: ct).ConfigureAwait(false);
 
@@ -74,21 +77,64 @@ public sealed class TelegramProductionAdapter
         var verbosity = _verbositySettings.Get(mapped.ChatId);
         var user = _acl.ResolveUser(mapped.UserId);
 
-        if (verbosity >= VerbosityLevel.Low)
+        // For verbosity Full/Debug, create per-invocation recorder with real-time progress
+        VerbosityStageRecorder? invocationRecorder = null;
+        ProgressThrottler? throttler = null;
+        ProgressMessageFormatter? formatter = null;
+
+        if (verbosity >= VerbosityLevel.Full)
+        {
+            invocationRecorder = new VerbosityStageRecorder();
+            throttler = new ProgressThrottler(TimeSpan.FromSeconds(1));
+            formatter = new ProgressMessageFormatter();
+            formatter.SetUserText(mapped.Text ?? mapped.CallbackData ?? "(callback)");
+
+            throttler.Configure(async (text, token) =>
+            {
+                try
+                {
+                    await _messenger.EditTextAsync(mapped.ChatId, progressMessageId, text, token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Edit failed (e.g., content unchanged or rate limited) — ignore
+                }
+            }, ct);
+
+            invocationRecorder.OnStage += msg =>
+            {
+                formatter.HandleStage(msg.Stage, msg.Detail);
+                var text = formatter.Format();
+                var isImmediate = msg.Stage.Contains("error", StringComparison.OrdinalIgnoreCase)
+                    || msg.Stage == "step:error"
+                    || msg.Stage == "llm:validation_error";
+                throttler.Submit(text, immediate: isImmediate);
+            };
+        }
+        else if (verbosity >= VerbosityLevel.Low)
         {
             await DeliverTextAsync(mapped.ChatId, progressMessageId, "parse: received update", ct).ConfigureAwait(false);
         }
 
-        if (verbosity >= VerbosityLevel.Medium)
+        if (verbosity >= VerbosityLevel.Medium && verbosity < VerbosityLevel.Full)
         {
             await DeliverTextAsync(mapped.ChatId, progressMessageId, "plan: submitting to orchestrator", ct).ConfigureAwait(false);
         }
 
-        var response = await _host.HandleUpdateAsync(mapped, user, cancellationToken: ct).ConfigureAwait(false);
+        var response = await _host.HandleUpdateAsync(mapped, user, cancellationToken: ct, invocationRecorder: invocationRecorder).ConfigureAwait(false);
+
+        // Flush any pending progress edits before writing final response
+        if (throttler is not null)
+        {
+            await throttler.FlushAsync().ConfigureAwait(false);
+            throttler.Dispose();
+        }
+        invocationRecorder?.Dispose();
+
         var rendered = response.Rendered;
 
         if (rendered?.Buttons is { Count: > 0 } renderedButtons
-            && renderedButtons.Any(b => b.CallbackData.StartsWith("confirm:", StringComparison.OrdinalIgnoreCase)))
+            && renderedButtons.Any(b => b.CallbackData.StartsWith("pending:", StringComparison.OrdinalIgnoreCase)))
         {
             var buttons = renderedButtons
                 .Select(b => new TelegramInlineButton(b.Text, b.CallbackData))
@@ -97,20 +143,8 @@ public sealed class TelegramProductionAdapter
             return rendered.Text;
         }
 
-        if (TryExtractDeliverableMedia(response.ExecutionResult?.CapabilityResult?.Data, out var media))
-        {
-            if (media.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-            {
-                await _messenger.SendPhotoAsync(mapped.ChatId, media.Content, media.FileName, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await _messenger.SendDocumentAsync(mapped.ChatId, media.Content, media.FileName, ct).ConfigureAwait(false);
-            }
-        }
-
         var finalText = verbosity >= VerbosityLevel.Full
-            ? $"execute: done\nrespond: {rendered?.Text ?? response.Message}"
+            ? BuildVerboseResponse(mapped, response, rendered, formatter)
             : rendered?.Text ?? response.Message;
 
         if (rendered?.Buttons is { Count: > 0 } actionButtons)
@@ -137,30 +171,58 @@ public sealed class TelegramProductionAdapter
         }
     }
 
-    private static bool TryExtractDeliverableMedia(object? data, out SurveillanceMediaDelivery media)
+    private static string BuildVerboseResponse(ITelegramUpdate mapped, TelegramBotResponse response, RenderedOutput? rendered, ProgressMessageFormatter? formatter = null)
     {
-        media = default!;
-        if (data is not Dictionary<string, object?> dict)
+        var sb = new System.Text.StringBuilder();
+
+        // If we have a formatter with progress stages, include them
+        if (formatter is not null)
         {
-            return false;
+            sb.AppendLine("🔍 VERBOSE MODE (Debug)");
+            sb.AppendLine($"🕒 {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss}Z | chat={mapped.ChatId}");
+            sb.AppendLine();
+            sb.AppendLine(formatter.Format());
+            sb.AppendLine();
+            sb.AppendLine("───");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("🔍 VERBOSE MODE");
+            sb.AppendLine();
+            sb.AppendLine($"📝 Request: {mapped.Text ?? mapped.CallbackData ?? "(callback)"}");
+            sb.AppendLine();
         }
 
-        if (dict.TryGetValue("deliverable", out var deliverable)
-            && deliverable is bool ok
-            && ok
-            && dict.TryGetValue("base64", out var encoded)
-            && encoded is string base64
-            && dict.TryGetValue("file_name", out var fileName)
-            && fileName is string name
-            && dict.TryGetValue("content_type", out var contentType)
-            && contentType is string type)
+        // Show plan info if available
+        if (response.Plan is { } plan)
         {
-            media = new SurveillanceMediaDelivery(Convert.FromBase64String(base64), type, name);
-            return true;
+            sb.AppendLine($"🎯 Plan: {plan.Intent}");
+            sb.AppendLine($"   Steps: {plan.Steps.Count}");
+            foreach (var step in plan.Steps)
+            {
+                sb.AppendLine($"   • {step.CapabilityName}");
+                if (step.Parameters is { Count: > 0 })
+                {
+                    var paramStr = string.Join(", ", step.Parameters.Take(3).Select(p => $"{p.Key}={p.Value}"));
+                    sb.AppendLine($"     params: {paramStr}");
+                }
+            }
+            sb.AppendLine();
         }
 
-        return false;
+        // Show execution result
+        sb.AppendLine($"✅ Execution: {(response.ExecutionResult?.Success == true ? "Success" : "Failed")}");
+        if (response.ExecutionResult?.Error is string error)
+        {
+            sb.AppendLine($"   Error: {error}");
+        }
+        sb.AppendLine();
+
+        // Show response
+        sb.AppendLine("💬 Response:");
+        sb.AppendLine(rendered?.Text ?? response.Message ?? "(no content)");
+
+        return sb.ToString();
     }
-
-    private sealed record SurveillanceMediaDelivery(byte[] Content, string ContentType, string FileName);
 }

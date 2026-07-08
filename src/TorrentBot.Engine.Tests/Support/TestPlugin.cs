@@ -74,33 +74,46 @@ internal sealed class EchoCapabilityHandler : ICapabilityHandler
 
 internal sealed class PublishCapabilityHandler : ICapabilityHandler
 {
-    public Task<CapabilityResult> ExecuteAsync(
+    public async Task<CapabilityResult> ExecuteAsync(
         CapabilityContext context,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
         var value = parameters.TryGetValue("value", out var raw) ? raw?.ToString() ?? "event" : "event";
+        var received = new TaskCompletionSource<TestBusMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = context.Engine.Subscribe<TestBusMessage>(message => received.TrySetResult(message));
         context.Engine.Publish(new TestBusMessage(value));
-        return Task.FromResult(new CapabilityResult(Success: true, Data: new { published = value }));
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+        return new CapabilityResult(Success: true, Data: new { published = value });
     }
 }
 
 internal sealed class ContextSubscribeCapabilityHandler : ICapabilityHandler
 {
-    public Task<CapabilityResult> ExecuteAsync(
+    public async Task<CapabilityResult> ExecuteAsync(
         CapabilityContext context,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
         var payload = parameters.TryGetValue("value", out var raw) ? raw?.ToString() ?? "context-event" : "context-event";
-        TestBusMessage? received = null;
+        var received = new TaskCompletionSource<TestBusMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        using var _ = context.Engine.Subscribe<TestBusMessage>(message => received = message);
+        using var _ = context.Engine.Subscribe<TestBusMessage>(message => received.TrySetResult(message));
         context.Engine.Publish(new TestBusMessage(payload));
 
-        return Task.FromResult(new CapabilityResult(
-            Success: received?.Value == payload,
-            Data: new Dictionary<string, object?> { ["received"] = received?.Value, ["expected"] = payload }));
+        TestBusMessage? message = null;
+        try
+        {
+            message = await received.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // delivery did not arrive in time
+        }
+
+        return new CapabilityResult(
+            Success: message?.Value == payload,
+            Data: new Dictionary<string, object?> { ["received"] = message?.Value, ["expected"] = payload });
     }
 }
 

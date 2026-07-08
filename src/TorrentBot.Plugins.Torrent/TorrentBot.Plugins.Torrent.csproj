@@ -13,4 +13,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TorrentBot.Engine.Tests" />
+  </ItemGroup>
+
 </Project>

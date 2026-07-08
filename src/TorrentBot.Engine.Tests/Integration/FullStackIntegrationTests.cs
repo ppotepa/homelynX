@@ -102,13 +102,13 @@ public sealed class FullStackIntegrationTests
     public async Task Telegram_confirmation_callback_reexecutes_capability_with_token()
     {
         var confirmationStore = new ConfirmationStore();
-        var pendingStore = new PendingInvocationStore();
         await using var scope = await StartEngineAsync(confirmationStore: confirmationStore);
+        var services = PipelineBootstrap.Create(scope.Engine, scope.Engine.LlmPipeline);
         var host = new TelegramBotHost(
             scope.Engine,
-            PipelineBootstrap.Create(scope.Engine, scope.Engine.LlmPipeline),
-            confirmationStore: confirmationStore,
-            pendingInvocationStore: pendingStore);
+            services.Invocation,
+            conversationPipeline: services.Conversation,
+            conversationStore: scope.Engine.ConversationContextStore);
         var user = new AclService().ResolveUser("admin");
 
         var initial = await host.HandleUpdateAsync(
@@ -119,9 +119,11 @@ public sealed class FullStackIntegrationTests
 
         var token = ExtractConfirmationToken(initial.ExecutionResult);
         Assert.False(string.IsNullOrWhiteSpace(token));
+        Assert.Contains(scope.Engine.ConversationContextStore!.GetOrCreate("1", user.UserId).PendingActions,
+            a => a.Token == token);
 
         var confirmed = await host.HandleUpdateAsync(
-            new TelegramUpdate(1, user.UserId, CallbackData: $"confirm:{token}:download.cancel"),
+            new TelegramUpdate(1, user.UserId, CallbackData: $"pending:yes:{token}"),
             user);
 
         Assert.Contains("not found", confirmed.Message, StringComparison.OrdinalIgnoreCase);
@@ -132,7 +134,12 @@ public sealed class FullStackIntegrationTests
     {
         await using var scope = await StartEngineAsync();
         var llm = new LlmPipeline(FixedPlanLlmPlanner.HealthCheck(), new StubLlmExecutor());
-        var host = new TelegramBotHost(scope.Engine, PipelineBootstrap.Create(scope.Engine, llm), llmPipeline: llm);
+        var services = PipelineBootstrap.Create(scope.Engine, llm);
+        var host = new TelegramBotHost(
+            scope.Engine,
+            services.Invocation,
+            conversationPipeline: services.Conversation,
+            llmPipeline: llm);
         var user = new AclService().ResolveUser("admin");
 
         var slash = await host.HandleUpdateAsync(new TelegramUpdate(1, user.UserId, "/health"), user);
@@ -147,6 +154,46 @@ public sealed class FullStackIntegrationTests
         var plainStatus = ExtractHealthStatus(plain.ExecutionResult);
         Assert.Equal("healthy", slashStatus);
         Assert.Equal(slashStatus, plainStatus);
+    }
+
+    [Fact]
+    public async Task Telegram_select_callback_uses_displayed_1_based_index()
+    {
+        var jackett = new FakeJackettClient();
+        jackett.SetResults(
+        [
+            new TorrentSearchResult("t1", "Ubuntu 24.04", "magnet:1", 1000, 50, "jackett"),
+            new TorrentSearchResult("t2", "Ubuntu 22.04", "magnet:2", 900, 40, "jackett")
+        ]);
+        await using var scope = await StartEngineAsync(downloads: new DownloadsPlugin(jackett, new FakeQBittorrentClient()));
+        var services = PipelineBootstrap.Create(scope.Engine, scope.Engine.LlmPipeline);
+        var host = new TelegramBotHost(
+            scope.Engine,
+            services.Invocation,
+            conversationPipeline: services.Conversation,
+            conversationStore: scope.Engine.ConversationContextStore);
+        var user = new AclService().ResolveUser("admin");
+
+        const long chatId = 8153696940;
+        var search = await host.HandleUpdateAsync(
+            new TelegramUpdate(chatId, user.UserId, "/download_search ubuntu"),
+            user,
+            isDryRun: true);
+        Assert.True(search.Success, search.Message);
+
+        var selectFirst = await host.HandleUpdateAsync(
+            new TelegramUpdate(chatId, user.UserId, CallbackData: "select:1"),
+            user,
+            isDryRun: true);
+        Assert.True(selectFirst.Success, selectFirst.Message);
+        Assert.Contains("t1", selectFirst.Message, StringComparison.Ordinal);
+
+        var selectSecond = await host.HandleUpdateAsync(
+            new TelegramUpdate(chatId, user.UserId, CallbackData: "select:2"),
+            user,
+            isDryRun: true);
+        Assert.True(selectSecond.Success, selectSecond.Message);
+        Assert.Contains("t2", selectSecond.Message, StringComparison.Ordinal);
     }
 
     [Fact]

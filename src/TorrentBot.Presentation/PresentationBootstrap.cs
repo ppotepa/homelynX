@@ -10,6 +10,7 @@ public static class PresentationBootstrap
             new DownloadStartedPresenter(),
             new HelpPresenter(),
             new JobsListPresenter(),
+            new DownloadsListPresenter(),
             new ErrorPresenter(),
             new TextPresenter()
         ]);

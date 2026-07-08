@@ -29,11 +29,6 @@ ensure_local_files() {
     "$PROJECT_DIR/logs" \
     "$PROJECT_DIR/tts-data/models" \
     "$PROJECT_DIR/tts-data/output" \
-    "$PROJECT_DIR/surveillance-data/segments" \
-    "$PROJECT_DIR/surveillance-data/events" \
-    "$PROJECT_DIR/surveillance-data/snapshots" \
-    "$PROJECT_DIR/surveillance-data/clips" \
-    "$PROJECT_DIR/coord-data" \
     "$PROJECT_DIR/llm-data" \
     "$PROJECT_DIR/portal-data" \
     "$media_library_path/movies" \
@@ -64,8 +59,6 @@ ensure_local_files() {
 
   chown -R "$owner_uid:$owner_gid" \
     "$PROJECT_DIR/tts-data" \
-    "$PROJECT_DIR/surveillance-data" \
-    "$PROJECT_DIR/coord-data" \
     "$PROJECT_DIR/llm-data" \
     "$PROJECT_DIR/portal-data" \
     "$jellyfin_config_path" \

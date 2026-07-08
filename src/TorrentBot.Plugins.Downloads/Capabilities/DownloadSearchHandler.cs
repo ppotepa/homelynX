@@ -31,6 +31,7 @@ public sealed class DownloadSearchHandler : ICapabilityHandler
             Success: true,
             Data: new Dictionary<string, object?>
             {
+                ["artifactKind"] = DownloadContracts.Search.ResponseSpec!.ArtifactKind,
                 ["provider"] = provider,
                 ["query"] = query,
                 ["results"] = results.Items.Select(r => new Dictionary<string, object?>

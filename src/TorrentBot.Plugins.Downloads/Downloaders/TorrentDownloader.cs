@@ -58,6 +58,15 @@ public sealed class TorrentDownloader : IDownloader
         var torrent = torrents.FirstOrDefault(t => t.Hash.Equals(downloadId, StringComparison.OrdinalIgnoreCase))
                       ?? throw new KeyNotFoundException($"Torrent '{downloadId}' was not found.");
 
+        // Map rich qBittorrent state into DownloadStatus
+        double dls = torrent.DownloadSpeed;
+        double ups = torrent.UploadSpeed;
+        long? eta = null;
+        if (dls > 0 && torrent.SizeBytes > torrent.DownloadedBytes)
+        {
+            eta = (long)((torrent.SizeBytes - torrent.DownloadedBytes) / dls);
+        }
+
         return new DownloadStatus(
             torrent.Hash,
             Type,
@@ -65,7 +74,11 @@ public sealed class TorrentDownloader : IDownloader
             torrent.Paused ? "paused" : torrent.State,
             torrent.Progress,
             torrent.SizeBytes,
-            torrent.DownloadedBytes);
+            torrent.DownloadedBytes,
+            DownloadSpeed: dls,
+            UploadSpeed: ups,
+            Category: string.IsNullOrWhiteSpace(torrent.Category) ? null : torrent.Category,
+            EtaSeconds: eta);
     }
 
     public Task PauseAsync(string downloadId, CancellationToken ct = default) =>

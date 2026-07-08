@@ -10,12 +10,9 @@ LINE_LIMIT = 500
 EXTENSIONS = {".py", ".java", ".sh", ".ps1"}
 ALLOWLIST = {
     "src/core/command_handler.py",
-    "services/surveillance/app.py",
     "e2e/runner.py",
     "e2e/tui.py",
-    "services/coord-input/app.py",
     "install.sh",
-    "android/coord-input/app/src/main/java/dev/ppotepa/coordinput/LocationUploadService.java",
     "src/cli/main.py",
     "src/cli/telegram_history.py",
     "services/portal/app.py",
@@ -36,8 +33,6 @@ SKIP_DIRS = {
     "jellyfin-config",
     "cookies",
     "tts-data",
-    "surveillance-data",
-    "coord-data",
     "llm-data",
     "portal-data",
     "zerotier-one",

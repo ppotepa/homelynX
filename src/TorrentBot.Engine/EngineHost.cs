@@ -57,6 +57,27 @@ public sealed class EngineHost : IEngine
 
     public LlmPipeline? LlmPipeline => _options.LlmPipeline;
 
+    public ConversationContextStore? ConversationContextStore => _options.ConversationContextStore;
+
+    public IReadOnlyList<CapabilityContract> GetCapabilityContracts(string? scope = null)
+    {
+        var all = _capabilities.GetAllContracts();
+        if (string.IsNullOrWhiteSpace(scope))
+        {
+            return all;
+        }
+
+        return all
+            .Where(c => string.Equals(c.Scope, scope, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(c.Scope, "all", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    public void SetConversationContextStore(ConversationContextStore store)
+    {
+        _options.ConversationContextStore = store;
+    }
+
     public void RegisterPlugin(IPlugin plugin)
     {
         ArgumentNullException.ThrowIfNull(plugin);
@@ -81,8 +102,11 @@ public sealed class EngineHost : IEngine
             }
 
             _loggerFactory = _options.LoggerFactory ?? NullLoggerFactory.Instance;
-            _bus = new InMemoryBus();
+            _bus = new QueuedEventBus();
             _jobTracker = new InMemoryJobTracker();
+
+            _options.ConversationContextStore ??= new ConversationContextStore();
+            _registrationContext.RegisterService(_options.ConversationContextStore);
 
             foreach (var plugin in _pendingPlugins)
             {
@@ -96,6 +120,16 @@ public sealed class EngineHost : IEngine
 
             _capabilities.Freeze();
             _repositories.Freeze();
+
+            foreach (var source in _repositories.GetAllSources())
+            {
+                var collector = ContextCollectorFactory.Create(source);
+                if (collector is not null)
+                {
+                    _options.ConversationContextStore.RegisterCollector(collector);
+                }
+            }
+            
             _jobRunner = _options.JobRunner;
             _jobRunner?.Start(_jobTracker, _bus, cancellationToken);
 
@@ -117,13 +151,14 @@ public sealed class EngineHost : IEngine
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken = default)
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        IInternalBus? busToDispose;
         lock (_lifecycleGate)
         {
             if (!_isRunning)
             {
-                return Task.CompletedTask;
+                return;
             }
 
             _completionSubscription?.Dispose();
@@ -133,11 +168,15 @@ public sealed class EngineHost : IEngine
             _jobRunner?.Stop();
             _jobRunner = null;
             _isRunning = false;
+            busToDispose = _bus;
             _bus = null;
             _jobTracker = null;
         }
 
-        return Task.CompletedTask;
+        if (busToDispose is IAsyncDisposable asyncBus)
+        {
+            await asyncBus.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     public async Task<ExecutionResult> SubmitAsync(Invocation invocation, CancellationToken cancellationToken = default)
@@ -180,6 +219,8 @@ public sealed class EngineHost : IEngine
 
     public IReadOnlyList<QuerySourceMeta> GetQuerySourceManifests() => _repositories.GetManifests();
 
+    public IReadOnlyList<TorrentBot.Contracts.Repositories.ISnapshotSource> GetSnapshotSources() => _repositories.GetAllSources();
+
     public string SeedCompletedJob(string type = "download.url", string? chatId = null, string? userId = "admin")
     {
         var tracker = RequireJobTracker();
@@ -204,6 +245,7 @@ public sealed class EngineHost : IEngine
             return new ExecutionResult(Success: false, Error: "Natural-language invocation requires an LLM pipeline.");
         }
 
+        var progress = invocation.ProgressReporter;
         var scope = invocation.RequestContext.Properties?.TryGetValue("scope", out var scopeValue) == true
             ? scopeValue?.ToString() ?? "media"
             : "media";
@@ -215,7 +257,64 @@ public sealed class EngineHost : IEngine
             true,
             invocation.Text);
 
+        // Get or create conversation context
+        var sessionId = invocation.RequestContext.ChatId ?? invocation.RequestContext.TraceId;
+        var conversation = _options.ConversationContextStore?.GetOrCreate(sessionId, invocation.User.UserId)
+            ?? new TorrentBot.Contracts.Context.ConversationContext(sessionId, invocation.User.UserId);
+
+        // Refresh snapshots
+        progress?.Report("debug:phase:start", "context_refresh");
+        progress?.Report("context:refresh", null);
+        if (_options.ConversationContextStore is not null)
+        {
+            await _options.ConversationContextStore.RefreshSnapshotsAsync(conversation, cancellationToken).ConfigureAwait(false);
+        }
+        progress?.Report("debug:phase:end", "context_refresh");
+
+        // Debug: show what context is available (programmer wants to see what LLM actually saw)
+        if (progress is not null && conversation.Snapshots.Count > 0)
+        {
+            var snapSummary = string.Join(", ", conversation.Snapshots.Select(s =>
+            {
+                int count = 0;
+                if (s.Value.State.TryGetValue("items", out var items) && items is System.Collections.IEnumerable e)
+                {
+                    foreach (var _ in e) count++;
+                }
+                return $"{s.Key}({count})";
+            }));
+            progress.Report("debug:context:loaded", $"snapshots: {snapSummary}; history:{conversation.History.Count}");
+
+            // For Debug verbosity: show small samples of the most important snapshots
+            foreach (var (name, snap) in conversation.Snapshots.Take(3))
+            {
+                if (snap.State.TryGetValue("items", out var items) && items is System.Collections.IEnumerable itemList)
+                {
+                    var sample = string.Join(" | ", itemList.Cast<object>().Take(2).Select(i => i.ToString()?.Substring(0, Math.Min(80, i.ToString()!.Length))));
+                    if (!string.IsNullOrEmpty(sample))
+                        progress.Report("debug:context:sample", $"{name}: {sample}");
+                }
+            }
+        }
+
+        // Track request number and add user message to history
+        var requestNumber = conversation.NextRequestNumber();
+        conversation.AddMessage("user", invocation.Text ?? "", requestNumber);
+
+        // Debug: show request/session identity
+        progress?.Report("debug:request", $"session={sessionId} req#{requestNumber} trace={invocation.RequestContext.TraceId}");
+
+        // In debug: show recent history so dev sees what LLM has for multi-turn context
+        if (progress is not null && conversation.History.Count > 0)
+        {
+            var recent = string.Join(" ; ", conversation.History.TakeLast(3).Select(h => $"{h.Role}: {_Truncate(h.Content, 60)}"));
+            progress.Report("debug:history:recent", recent);
+        }
+
         var allowed = FilterCapabilities(invocation.User, scope);
+
+        progress?.Report("debug:phase:start", "llm_planning");
+        progress?.Report("llm:planning", $"{allowed.Count}|{scope}");
         var llmResult = await _options.LlmPipeline.RunAsync(
             new LlmPipelineRequest(
                 invocation.Text ?? string.Empty,
@@ -223,18 +322,43 @@ public sealed class EngineHost : IEngine
                 GetQuerySourceManifests(),
                 invocation.IsDryRun,
                 scope,
-                invocation.RequestContext),
+                invocation.RequestContext,
+                conversation,
+                requestNumber,
+                progress,
+                GetCapabilityContracts(scope)),
             cancellationToken).ConfigureAwait(false);
+
+        progress?.Report("llm:plan_ready", $"{llmResult.Plan.Steps.Count}|{llmResult.Plan.Intent}|{llmResult.Plan.Confidence:F2}");
+        progress?.Report("debug:phase:end", "llm_planning");
+
+        // Show plan details in debug
+        if (progress is not null && llmResult.Plan.Steps.Count > 0)
+        {
+            var planDetails = string.Join(" -> ", llmResult.Plan.Steps.Select(s => $"{s.Capability}({(s.Parameters?.Count ?? 0)}p)"));
+            progress.Report("debug:plan:details", planDetails);
+        }
 
         if (!llmResult.Execution.Success)
         {
-            return new ExecutionResult(Success: false, Error: llmResult.Execution.Error ?? "Plan validation failed.");
+            var errorMsg = llmResult.Execution.Error ?? "Plan validation failed.";
+            progress?.Report("llm:validation_error", errorMsg);
+            conversation.AddMessage("assistant", errorMsg, requestNumber);
+            return new ExecutionResult(Success: false, Error: errorMsg);
         }
+
+        progress?.Report("llm:validated", null);
+        progress?.Report("debug:phase:start", "execution");
 
         CapabilityResult? last = null;
         var saved = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var totalSteps = llmResult.Execution.StepsToExecute.Count;
+        var stepIndex = 0;
         foreach (var step in llmResult.Execution.StepsToExecute)
         {
+            stepIndex++;
+            progress?.Report("step:start", $"{stepIndex}/{totalSteps}|{step.Capability}");
+
             var stepInvocation = new Invocation
             {
                 IsExplicit = true,
@@ -242,27 +366,87 @@ public sealed class EngineHost : IEngine
                 Parameters = step.Parameters,
                 RequestContext = invocation.RequestContext,
                 User = invocation.User,
-                IsDryRun = invocation.IsDryRun
+                IsDryRun = invocation.IsDryRun,
+                ProgressReporter = progress
             };
+
+            // Debug: show exact params sent (programmer gold)
+            if (step.Parameters is { Count: > 0 })
+            {
+                var paramStr = string.Join(", ", step.Parameters.Select(p => $"{p.Key}={_Truncate(p.Value?.ToString(), 60)}"));
+                progress?.Report("debug:step:params", paramStr);
+            }
+
+            progress?.Report("debug:capability:about_to_execute", $"{step.Capability} (dry={invocation.IsDryRun})");
 
             var stepResult = await ExecuteCapabilityAsync(stepInvocation, step.Capability, step.Parameters, cancellationToken)
                 .ConfigureAwait(false);
             if (!stepResult.Success)
             {
-                return stepResult with { Error = stepResult.Error ?? $"Step '{step.Capability}' failed." };
+                var errorMsg = stepResult.Error ?? $"Step '{step.Capability}' failed.";
+                progress?.Report("step:error", $"{stepIndex}/{totalSteps}|{step.Capability}|{errorMsg}");
+                conversation.AddMessage("assistant", errorMsg, requestNumber);
+                return stepResult with { Error = errorMsg };
+            }
+
+            var detail = ExtractStepDetail(stepResult.CapabilityResult);
+            progress?.Report("step:done", $"{stepIndex}/{totalSteps}|{step.Capability}|{detail}");
+
+            // Debug: show result summary
+            if (stepResult.CapabilityResult?.Data is Dictionary<string, object?> data && data.Count > 0)
+            {
+                var resultSummary = string.Join(", ", data.Take(3).Select(kv => $"{kv.Key}={_Truncate(kv.Value?.ToString(), 40)}"));
+                progress?.Report("debug:step:result", resultSummary);
             }
 
             last = stepResult.CapabilityResult;
             if (!string.IsNullOrWhiteSpace(step.SaveAs))
             {
                 saved[step.SaveAs] = stepResult.CapabilityResult?.Data;
+                progress?.Report("debug:saved", $"{step.SaveAs} = {stepResult.CapabilityResult?.Data?.GetType().Name ?? "data"}");
             }
         }
 
+        progress?.Report("llm:responding", null);
+        progress?.Report("debug:phase:end", "execution");
+        progress?.Report("debug:phase:start", "response_compose");
+
+        var reply = await _options.LlmPipeline.ComposeReply(
+            invocation.Text ?? string.Empty,
+            llmResult.Plan,
+            llmResult.Execution,
+            last).ConfigureAwait(false);
+
+        progress?.Report("llm:responded", null);
+        progress?.Report("debug:phase:end", "response_compose");
+
+        // Add assistant response + structured previous action to history
+        // This helps the LM path on follow-ups (select 0 after search, pause after start, etc.)
+        var planSummary = llmResult.Plan.Steps.Count > 0 
+            ? $"[Executed: {string.Join(" -> ", llmResult.Plan.Steps.Select(s => s.Capability))}] " 
+            : "";
+        conversation.AddMessage("assistant", planSummary + reply, requestNumber);
+
         return new ExecutionResult(
             Success: true,
-            CapabilityResult: last ?? new CapabilityResult(true, Message: llmResult.Reply),
+            CapabilityResult: last ?? new CapabilityResult(true, Message: reply),
             IsDryRun: invocation.IsDryRun);
+    }
+
+    private static string _Truncate(string? s, int max) => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
+
+    private static string ExtractStepDetail(CapabilityResult? result)
+    {
+        if (result?.Data is not Dictionary<string, object?> data)
+            return "";
+
+        if (data.TryGetValue("count", out var count))
+            return $"count={count}";
+        if (data.TryGetValue("jobId", out var jobId))
+            return $"jobId={jobId}";
+        if (data.TryGetValue("confirmationRequired", out var cr) && cr is true)
+            return "confirmation_required";
+        return "";
     }
 
     private async Task<ExecutionResult> ExecuteCapabilityAsync(
@@ -374,7 +558,12 @@ public sealed class EngineHost : IEngine
             Error: "Confirmation required.",
             CapabilityResult: new CapabilityResult(
                 Success: false,
-                Data: new Dictionary<string, object?> { ["confirmationRequired"] = true, ["confirmationToken"] = issued },
+                Data: new Dictionary<string, object?>
+                {
+                    ["confirmationRequired"] = true,
+                    ["confirmationToken"] = issued,
+                    ["capabilityName"] = metadata.Name
+                },
                 Message: $"Confirmation required for '{metadata.Name}'. Token: {issued}",
                 IsDryRun: invocation.IsDryRun));
     }
@@ -422,6 +611,10 @@ public sealed class EngineHost : IEngine
             return _bus;
         }
     }
+
+    public CapabilityRegistry GetCapabilityRegistry() => _capabilities;
+
+    public IInternalBus? GetInternalBus() => _bus;
 
     public string? ResolveCapabilityName(Invocation invocation) =>
         ResolveCapabilityInternal(invocation);

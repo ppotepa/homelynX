@@ -97,7 +97,11 @@ public sealed class DownloadProcessManager : IDownloadProcessManager
                             ["status"] = status.Status,
                             ["progress"] = status.Progress,
                             ["size"] = status.SizeBytes,
-                            ["downloaded"] = status.DownloadedBytes
+                            ["downloaded"] = status.DownloadedBytes,
+                            ["dlspeed"] = status.DownloadSpeed,
+                            ["upspeed"] = status.UploadSpeed,
+                            ["category"] = status.Category,
+                            ["eta"] = status.EtaSeconds
                         });
                     }
                     catch (KeyNotFoundException)

@@ -13,6 +13,8 @@ public interface IPlugin
 public interface IPluginRegistrationContext
 {
     void RegisterCapability(CapabilityMetadata metadata, ICapabilityHandler handler);
+    void RegisterCapability(CapabilityContract contract, ICapabilityHandler handler, string? command = null);
     void RegisterSnapshotSource(ISnapshotSource source);
     void RegisterService<T>(T service) where T : class;
+    T? GetService<T>() where T : class;
 }

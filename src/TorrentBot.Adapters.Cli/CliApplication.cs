@@ -8,6 +8,7 @@ using TorrentBot.Bootstrap;
 using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine;
+using TorrentBot.Engine.Context;
 using TorrentBot.Llm;
 using TorrentBot.Presentation;
 
@@ -87,15 +88,64 @@ public sealed class CliApplication
         agentRoot.AddCommand(agentPlan);
         agentRoot.AddCommand(agentRun);
 
+        var runCmd = new Command("run", "Execute command or natural language (same path as Telegram)");
+        var runTextArg = new Argument<string>("text", "Command (e.g., '/downloads') or natural language (e.g., 'show downloads')");
+        var runUserOption = new Option<string>("--user", () => "cli-user", "User ID for ACL context");
+        var runSessionOption = new Option<string>("--session", () => "cli-session", "Session ID for context");
+        var runDryRunOption = new Option<bool>("--dry-run", "Simulate without persisting side effects");
+        runCmd.AddArgument(runTextArg);
+        runCmd.AddOption(runUserOption);
+        runCmd.AddOption(runSessionOption);
+        runCmd.AddOption(runDryRunOption);
+        runCmd.SetHandler(async (text, userId, sessionId, dryRun) =>
+        {
+            Environment.ExitCode = await RunMessageAsync(text, userId, sessionId, dryRun, engineFactory);
+        }, runTextArg, runUserOption, runSessionOption, runDryRunOption);
+
         root.AddCommand(capabilityRoot);
         root.AddCommand(new Command("capabilities", "Capability registry") { listCmd });
         root.AddCommand(queryCmd);
         root.AddCommand(agentRoot);
+        root.AddCommand(runCmd);
         return root;
     }
 
     public static Task<int> RunAsync(string[] args, Func<EngineHost>? engineFactory = null) =>
         BuildRootCommand(engineFactory).InvokeAsync(args);
+
+    internal static async Task<int> RunMessageAsync(
+        string text, string userId, string sessionId, bool dryRun, Func<EngineHost>? engineFactory = null)
+    {
+        var acl = AclService.FromEnvironment();
+        var user = acl.ResolveUser(userId);
+        var confirmationStore = new TorrentBot.Engine.Confirmations.FileBasedConfirmationStore();
+        var engine = engineFactory?.Invoke() ?? EngineBootstrap.Create(aclService: acl, confirmationStore: confirmationStore);
+        await engine.StartAsync();
+        
+        var contextStore = new ConversationContextStore();
+        var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline).Invocation;
+        var presentation = PresentationBootstrap.CreateDefault();
+        
+        await using var host = new CliBotHost(
+            engine, 
+            acl, 
+            pipeline, 
+            presentation: presentation,
+            contextStore: contextStore);
+        
+        var response = await host.HandleMessageAsync(text, userId, sessionId, dryRun);
+        
+        if (response.Success)
+        {
+            Console.WriteLine(response.Rendered?.Text ?? response.Message);
+            return 0;
+        }
+        else
+        {
+            Console.WriteLine(response.Message);
+            return 1;
+        }
+    }
 
     internal static async Task<int> RunCapabilityAsync(
         string capabilityName, bool dryRun, bool json, string userId,
@@ -113,7 +163,15 @@ public sealed class CliApplication
         var result = await scope.Engine.SubmitAsync(BuildInvocation("system.capabilities", false, scope.User, null));
         if (!result.Success)
         {
-            Console.Error.WriteLine(result.Error);
+            if (json)
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new { success = false, error = result.Error }, JsonOptions));
+            }
+            else
+            {
+                Console.WriteLine(result.Error);
+            }
+
             return 1;
         }
 
@@ -198,9 +256,13 @@ public sealed class CliApplication
         {
             Console.WriteLine(rendered.Text);
         }
+        else if (json)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new { success = false, message = rendered.Text, exitCode = rendered.ExitCode }, JsonOptions));
+        }
         else
         {
-            Console.Error.WriteLine(rendered.Text);
+            Console.WriteLine(rendered.Text);
         }
 
         return rendered.ExitCode;
@@ -235,9 +297,10 @@ public sealed class CliApplication
     {
         var acl = AclService.FromEnvironment();
         var user = acl.ResolveUser(userId);
-        var engine = engineFactory?.Invoke() ?? EngineBootstrap.Create(aclService: acl);
+        var confirmationStore = new TorrentBot.Engine.Confirmations.FileBasedConfirmationStore();
+        var engine = engineFactory?.Invoke() ?? EngineBootstrap.Create(aclService: acl, confirmationStore: confirmationStore);
         await engine.StartAsync();
-        var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+        var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline).Invocation;
         return new EngineScope(engine, user, pipeline);
     }
 

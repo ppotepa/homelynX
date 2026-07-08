@@ -21,6 +21,12 @@ public sealed class PluginRegistrationContext : IPluginRegistrationContext
     public void RegisterCapability(CapabilityMetadata metadata, ICapabilityHandler handler) =>
         _capabilities.Register(metadata, handler);
 
+    public void RegisterCapability(CapabilityContract contract, ICapabilityHandler handler, string? command = null)
+    {
+        var metadata = contract.ToMetadata(command);
+        _capabilities.Register(metadata, handler, contract);
+    }
+
     public void RegisterSnapshotSource(ISnapshotSource source) =>
         _repositories.Register(source);
 

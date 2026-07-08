@@ -7,21 +7,21 @@ internal static class TorrentCapabilities
     public static readonly CapabilityMetadata SearchMetadata = new(
         Name: "torrent.search",
         Command: "/search",
-        Description: "Search torrent indexers via Jackett",
+        Description: "Search torrent indexers via Jackett for a given query string. Returns numbered list of results the user can later select by index.",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user wants torrent-specific search results",
-        IntentHints: ["torrent", "search", "tracker"],
+        LlmUsage: "Use for content/torrent search requests like 'search for ubuntu', 'znajdz ubuntu', 'pobierz ubuntu'. Never confuse with disk usage or find large files.",
+        IntentHints: ["search", "znajdz", "find", "pobierz", "szukaj", "torrents for", "torrent search"],
         IsReadOnly: true);
 
     public static readonly CapabilityMetadata ListMetadata = new(
         Name: "torrent.list",
         Command: "/torrents",
-        Description: "List torrents managed by qBittorrent",
+        Description: "List torrents managed by qBittorrent with rich details (progress, speeds, state)",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user asks about torrent client state",
-        IntentHints: ["torrents", "list", "qbittorrent"],
+        LlmUsage: "Use when user says 'pokaż torrenty', 'list torrents', 'status torrenty', 'pokaż status torrenty', 'co się pobiera', 'status qbit'. Provides rich name, %, speed, state for each.",
+        IntentHints: ["torrents", "list", "qbittorrent", "pokaż torrenty", "torrenty", "status torrenty", "pokaż status torrenty"],
         IsReadOnly: true);
 
     public static readonly CapabilityMetadata PauseMetadata = new(
@@ -62,10 +62,11 @@ internal static class TorrentCapabilities
     public static readonly CapabilityMetadata SelectResultMetadata = new(
         Name: "torrent.select_result",
         Command: "/select",
-        Description: "Select a numbered torrent search result to download",
+        Description: "Select a numbered torrent search result to download. Use the numeric index from the most recent torrent.search results list.",
         Permission: "USER",
         Risk: RiskLevel.ConfirmationRequired,
-        LlmUsage: "Use after torrent.search when user picks a numbered result");
+        LlmUsage: "Use after a recent torrent.search (look for search results in conversation history or snapshots). Maps 'select 1', 'select the first', 'wybierz pierwszy' etc. to 1-based displayed index.",
+        IntentHints: ["select", "wybierz", "first", "1", "pick", "the first", "select 1", "wybierz 1", "pierwszy"]);
 
     public static readonly CapabilityMetadata CancelSearchMetadata = new(
         Name: "torrent.cancel_search",
@@ -82,5 +83,5 @@ internal static class TorrentCapabilities
         Permission: "USER",
         Risk: RiskLevel.ConfirmationRequired,
         LlmUsage: "Use when user wants to download by title without manual selection",
-        IntentHints: ["download", "candidate", "best"]);
+        IntentHints: ["download", "candidate", "best", "pobierz", "pobranie"]);
 }

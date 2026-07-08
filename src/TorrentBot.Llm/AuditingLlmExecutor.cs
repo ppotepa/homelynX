@@ -19,9 +19,9 @@ public sealed class AuditingLlmExecutor : ILlmExecutor
 
     public void SetAuditContext(IRequestContext context) => _context = context;
 
-    public LlmExecutionResult Execute(LlmExecutionRequest request)
+    public async Task<LlmExecutionResult> Execute(LlmExecutionRequest request)
     {
-        var result = _inner.Execute(request);
+        var result = await _inner.Execute(request).ConfigureAwait(false);
         if (_auditSink is not null && _context is not null)
         {
             foreach (var stepResult in result.StepResults.Where(s => !s.Skipped))

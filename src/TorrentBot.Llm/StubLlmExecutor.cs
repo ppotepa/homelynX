@@ -4,7 +4,7 @@ namespace TorrentBot.Llm;
 
 public sealed class StubLlmExecutor : ILlmExecutor
 {
-    public LlmExecutionResult Execute(LlmExecutionRequest request)
+    public Task<LlmExecutionResult> Execute(LlmExecutionRequest request)
     {
         var knownCapabilities = request.Capabilities
             .Select(c => c.Name)
@@ -25,21 +25,21 @@ public sealed class StubLlmExecutor : ILlmExecutor
             if (!knownCapabilities.Contains(step.Capability))
             {
                 stepResults.Add(new LlmStepResult(step, Success: false, Error: $"Capability '{step.Capability}' is not registered."));
-                return new LlmExecutionResult(
+                return Task.FromResult(new LlmExecutionResult(
                     Success: false,
                     StepResults: stepResults,
                     StepsToExecute: stepsToExecute,
-                    Error: $"Unknown capability '{step.Capability}'.");
+                    Error: $"Unknown capability '{step.Capability}'."));
             }
 
             if (step.ConfirmationToken is not null && !request.IsDryRun)
             {
                 stepResults.Add(new LlmStepResult(step, Success: false, Error: "Confirmation is required."));
-                return new LlmExecutionResult(
+                return Task.FromResult(new LlmExecutionResult(
                     Success: false,
                     StepResults: stepResults,
                     StepsToExecute: stepsToExecute,
-                    Error: "Plan step requires confirmation.");
+                    Error: "Plan step requires confirmation."));
             }
 
             stepResults.Add(new LlmStepResult(step, Success: true));
@@ -51,6 +51,6 @@ public sealed class StubLlmExecutor : ILlmExecutor
             }
         }
 
-        return new LlmExecutionResult(Success: true, StepResults: stepResults, StepsToExecute: stepsToExecute);
+        return Task.FromResult(new LlmExecutionResult(Success: true, StepResults: stepResults, StepsToExecute: stepsToExecute));
     }
 }

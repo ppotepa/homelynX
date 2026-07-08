@@ -1,4 +1,5 @@
 using TorrentBot.Contracts.Plugins;
+using TorrentBot.Engine.Context;
 using TorrentBot.Plugins.Torrent.Capabilities;
 
 namespace TorrentBot.Plugins.Torrent;
@@ -10,17 +11,20 @@ public sealed class TorrentPlugin : IPlugin
 
     public void Register(IPluginRegistrationContext context)
     {
-        var sessionStore = new TorrentSearchSessionStore();
-        context.RegisterService(sessionStore);
+        var conversationStore = context.GetService<ConversationContextStore>()
+            ?? throw new InvalidOperationException("ConversationContextStore is required for torrent search state.");
+        var searchService = new TorrentSearchSnapshotService(conversationStore);
+        context.RegisterService(searchService);
+        context.RegisterSnapshotSource(searchService);
 
-        context.RegisterCapability(TorrentCapabilities.SearchMetadata, new TorrentSearchHandler());
-        context.RegisterCapability(TorrentCapabilities.ListMetadata, new TorrentListHandler());
-        context.RegisterCapability(TorrentCapabilities.PauseMetadata, new TorrentPauseHandler());
-        context.RegisterCapability(TorrentCapabilities.ResumeMetadata, new TorrentResumeHandler());
-        context.RegisterCapability(TorrentCapabilities.DeleteMetadata, new TorrentDeleteHandler());
-        context.RegisterCapability(TorrentCapabilities.MoreResultsMetadata, new TorrentMoreResultsHandler());
-        context.RegisterCapability(TorrentCapabilities.SelectResultMetadata, new TorrentSelectResultHandler());
-        context.RegisterCapability(TorrentCapabilities.CancelSearchMetadata, new TorrentCancelSearchHandler());
-        context.RegisterCapability(TorrentCapabilities.DownloadCandidateMetadata, new TorrentDownloadCandidateHandler());
+        context.RegisterCapability(TorrentContracts.Search, new TorrentSearchHandler(), "/search");
+        context.RegisterCapability(TorrentContracts.List, new TorrentListHandler(), "/torrents");
+        context.RegisterCapability(TorrentContracts.Pause, new TorrentPauseHandler(), "/torrent_pause");
+        context.RegisterCapability(TorrentContracts.Resume, new TorrentResumeHandler(), "/torrent_resume");
+        context.RegisterCapability(TorrentContracts.Delete, new TorrentDeleteHandler(), "/torrent_delete");
+        context.RegisterCapability(TorrentContracts.MoreResults, new TorrentMoreResultsHandler(), "/more");
+        context.RegisterCapability(TorrentContracts.SelectResult, new TorrentSelectResultHandler(), "/select");
+        context.RegisterCapability(TorrentContracts.CancelSearch, new TorrentCancelSearchHandler(), "/cancel_search");
+        context.RegisterCapability(TorrentContracts.DownloadCandidate, new TorrentDownloadCandidateHandler(), "/download_candidate");
     }
 }

@@ -21,26 +21,6 @@ services:
         - action: rebuild
           path: ./docker-compose.dev.yaml
 
-  surveillance:
-    develop:
-      watch:
-        - action: rebuild
-          path: ./services/surveillance
-        - action: rebuild
-          path: ./docker-compose.yaml
-        - action: rebuild
-          path: ./docker-compose.dev.yaml
-
-  coord-input:
-    develop:
-      watch:
-        - action: rebuild
-          path: ./services/coord-input
-        - action: rebuild
-          path: ./docker-compose.yaml
-        - action: rebuild
-          path: ./docker-compose.dev.yaml
-
   tts:
     develop:
       watch:

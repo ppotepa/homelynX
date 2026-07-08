@@ -55,8 +55,8 @@ start_backend_services() {
   portal_port="$(get_env_value PORTAL_PORT)"
   portal_port="${portal_port:-80}"
 
-  log "Starting Homelynx portal, qBittorrent, Jackett, FlareSolverr, TTS, LLM, surveillance, coord-input and media library services."
-  services=(qbittorrent jackett flaresolverr tts llm surveillance coord-input)
+  log "Starting Homelynx portal, qBittorrent, Jackett, FlareSolverr, TTS, LLM and media library services."
+  services=(qbittorrent jackett flaresolverr tts llm)
   if is_truthy "$portal_enabled"; then
     services+=(portal)
   fi
@@ -76,8 +76,6 @@ start_backend_services() {
   wait_for_http "TTS" "http://127.0.0.1:5055/health" 120
   wait_for_http "LLM" "http://127.0.0.1:11434/api/tags" 180
   ensure_llm_model
-  wait_for_http "Surveillance" "http://127.0.0.1:5060/health" 120
-  wait_for_http "Coord Input" "http://127.0.0.1:5070/health" 90
 }
 start_bot() {
   local services=(homelynx-bot)

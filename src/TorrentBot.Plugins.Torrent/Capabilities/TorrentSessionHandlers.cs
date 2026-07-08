@@ -12,20 +12,20 @@ public sealed class TorrentMoreResultsHandler : ICapabilityHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        var store = context.Engine.GetService<TorrentSearchSessionStore>();
-        if (store is null || !store.TryGet(context.User.UserId, out var session))
+        var conversation = TorrentSearchContext.Resolve(context);
+        if (!TorrentSearchConversationState.TryGet(conversation, out var session))
         {
             return Task.FromResult(new CapabilityResult(Success: false, Message: "No active torrent search session."));
         }
 
         var nextPage = session.Page + 1;
-        var page = store.GetPage(context.User.UserId, nextPage);
+        var page = TorrentSearchConversationState.GetPage(conversation, nextPage);
         if (page.Count == 0)
         {
             return Task.FromResult(new CapabilityResult(Success: false, Message: "No more search results."));
         }
 
-        store.SetPage(context.User.UserId, nextPage);
+        TorrentSearchConversationState.SetPage(conversation, nextPage);
         return Task.FromResult(BuildResults(session.Query, session.Results, nextPage, "More torrent results"));
     }
 
@@ -47,8 +47,8 @@ public sealed class TorrentSelectResultHandler : ICapabilityHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        var store = context.Engine.GetService<TorrentSearchSessionStore>();
-        if (store is null || !store.TryGet(context.User.UserId, out var session))
+        var conversation = TorrentSearchContext.Resolve(context);
+        if (!TorrentSearchConversationState.TryGet(conversation, out var session))
         {
             return new CapabilityResult(Success: false, Message: "No active torrent search session.");
         }
@@ -59,11 +59,9 @@ public sealed class TorrentSelectResultHandler : ICapabilityHandler
             return new CapabilityResult(Success: false, Message: "Parameter 'index' is required.");
         }
 
-        var pageRelative = index.Value >= 1 ? index.Value - 1 : index.Value;
-        var globalIndex = session.Page * session.PageSize + pageRelative;
-        if (globalIndex < 0 || globalIndex >= session.Results.Count)
+        if (!TorrentSearchDisplay.TrySelectGlobalIndex(index.Value, session.Page, session.PageSize, session.Results.Count, out var globalIndex))
         {
-            return new CapabilityResult(Success: false, Message: $"Index {index} is out of range.");
+            return new CapabilityResult(Success: false, Message: $"Index {index} is out of range (use displayed numbers starting at 1).");
         }
 
         var selected = session.Results[globalIndex];
@@ -113,8 +111,7 @@ public sealed class TorrentCancelSearchHandler : ICapabilityHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        var store = context.Engine.GetService<TorrentSearchSessionStore>();
-        store?.Clear(context.User.UserId);
+        TorrentSearchConversationState.Clear(TorrentSearchContext.Resolve(context));
         return Task.FromResult(new CapabilityResult(Success: true, Message: "Torrent search session cleared."));
     }
 }
@@ -155,12 +152,13 @@ public sealed class TorrentDownloadCandidateHandler : ICapabilityHandler
                 result.MagnetUri,
                 result.DownloadUrl))
             .ToList();
-        context.Engine.GetService<TorrentSearchSessionStore>()?.Save(context.User.UserId, title, ordered);
+
+        TorrentSearchConversationState.Save(TorrentSearchContext.Resolve(context), title, ordered);
         var select = new TorrentSelectResultHandler();
 
         return await select.ExecuteAsync(
             context,
-            new Dictionary<string, object?> { ["index"] = 0 },
+            new Dictionary<string, object?> { ["index"] = 1 },
             cancellationToken).ConfigureAwait(false);
     }
 

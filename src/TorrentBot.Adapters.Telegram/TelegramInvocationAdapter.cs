@@ -12,7 +12,8 @@ public sealed class TelegramInvocationAdapter
         {
             ["/download_search"] = "torrent.search",
             ["/list"] = "system.help",
-            ["/commands"] = "system.help"
+            ["/commands"] = "system.help",
+            ["/llm_prompt"] = "system.llm_prompt"
         };
 
     public TelegramInvocationAdapter(Func<string, string?>? resolveCommand = null) =>
@@ -138,6 +139,9 @@ public sealed class TelegramInvocationAdapter
             "/find_large_files" => int.TryParse(remainder, out var minMb)
                 ? new Dictionary<string, object?> { ["min_mb"] = minMb }
                 : new Dictionary<string, object?> { ["text"] = remainder },
+            "/llm_prompt" => string.IsNullOrWhiteSpace(remainder)
+                ? new Dictionary<string, object?> { ["type"] = "planner" }
+                : new Dictionary<string, object?> { ["text"] = remainder, ["type"] = "planner" },
             _ => new Dictionary<string, object?> { ["text"] = remainder }
         };
     }

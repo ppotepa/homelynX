@@ -15,22 +15,11 @@ internal static class SearchResultsBuilder
     {
         var total = allResults.Count;
         var totalPages = pageSize > 0 ? Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)) : 1;
-        var slice = allResults
+        var pageResults = allResults
             .Skip(page * pageSize)
             .Take(pageSize)
-            .Select((result, offset) => new Dictionary<string, object?>
-            {
-                ["index"] = offset + 1,
-                ["name"] = result.Name,
-                ["sizeBytes"] = result.SizeBytes,
-                ["seeders"] = result.Seeders,
-                ["magnet"] = result.MagnetUri,
-                ["magnetUri"] = result.MagnetUri,
-                ["url"] = result.Url,
-                ["provider"] = result.Provider,
-                ["id"] = result.Id
-            })
             .ToList();
+        var slice = TorrentSearchDisplay.BuildItemRecords(pageResults, page, pageSize);
 
         return new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -48,15 +37,15 @@ internal static class SearchResultsBuilder
 
     public static IReadOnlyList<SearchResultItem> ToItems(IReadOnlyList<DownloadSearchResult> page, int pageIndex, int pageSize)
     {
-        return page
-            .Select((result, offset) => new SearchResultItem(
-                pageIndex * pageSize + offset + 1,
-                result.Name,
-                result.SizeBytes,
-                result.Seeders,
-                result.MagnetUri,
-                result.Url,
-                result.Provider))
+        return TorrentSearchDisplay.BuildItemRecords(page, pageIndex, pageSize)
+            .Select(record => new SearchResultItem(
+                record.TryGetValue("index", out var ix) && int.TryParse(ix?.ToString(), out var index) ? index : 1,
+                record.TryGetValue("name", out var n) ? n?.ToString() ?? "?" : "?",
+                record.TryGetValue("sizeBytes", out var sz) && long.TryParse(sz?.ToString(), out var size) ? size : 0,
+                record.TryGetValue("seeders", out var sd) && int.TryParse(sd?.ToString(), out var seeds) ? seeds : null,
+                record.TryGetValue("magnetUri", out var mu) ? mu?.ToString() : record.TryGetValue("magnet", out var m) ? m?.ToString() : null,
+                record.TryGetValue("url", out var u) ? u?.ToString() : null,
+                record.TryGetValue("provider", out var pr) ? pr?.ToString() ?? "torrent" : "torrent"))
             .ToList();
     }
 }

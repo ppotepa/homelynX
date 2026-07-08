@@ -1,9 +1,11 @@
 using TorrentBot.Contracts.Bus;
+using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Invocation;
 using TorrentBot.Contracts.Jobs;
 using TorrentBot.Contracts.Plugins;
 using TorrentBot.Contracts.Query;
 using TorrentBot.Contracts.Repositories;
+using TorrentBot.Engine.Context;
 
 namespace TorrentBot.Engine;
 
@@ -20,4 +22,6 @@ public interface IEngine
     IDisposable Subscribe<T>(Action<CorrelatedMessage<T>> handler) where T : class;
     IReadOnlyList<QuerySourceMeta> GetQuerySourceManifests();
     Task<QueryResult> QueryAsync(string source, QuerySpec spec, CancellationToken ct = default);
+    IReadOnlyList<CapabilityContract> GetCapabilityContracts(string? scope = null);
+    ConversationContextStore? ConversationContextStore { get; }
 }

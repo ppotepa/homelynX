@@ -16,7 +16,6 @@ using TorrentBot.Integrations.Models;
 using TorrentBot.Engine.Tests.Support;
 using TorrentBot.Llm;
 using TorrentBot.Plugins.Downloads;
-using TorrentBot.Plugins.Surveillance;
 using TorrentBot.Engine.Notifications;
 
 namespace TorrentBot.Engine.Tests.Integration;
@@ -147,11 +146,11 @@ public sealed class PhasesIntegrationTests
         var more = await scope.Engine.SubmitAsync(Invocation("torrent.more_results"));
         Assert.True(more.Success, more.Error);
 
-        var selectPending = await scope.Engine.SubmitAsync(Invocation("torrent.select_result", new Dictionary<string, object?> { ["index"] = 0 }));
+        var selectPending = await scope.Engine.SubmitAsync(Invocation("torrent.select_result", new Dictionary<string, object?> { ["index"] = 1 }));
         var selectToken = ExtractConfirmationToken(selectPending);
         var select = await scope.Engine.SubmitAsync(Invocation("torrent.select_result", new Dictionary<string, object?>
         {
-            ["index"] = 0,
+            ["index"] = 1,
             ["confirmationToken"] = selectToken
         }));
         Assert.True(select.Success, select.Error);
@@ -164,6 +163,31 @@ public sealed class PhasesIntegrationTests
             ["confirmationToken"] = candidateToken
         }));
         Assert.True(candidate.Success, candidate.Error);
+    }
+
+    [Fact]
+    public async Task Torrent_select_result_display_index_selects_correct_item()
+    {
+        var jackett = new FakeJackettClient();
+        jackett.SetResults(
+        [
+            new TorrentSearchResult("t1", "Ubuntu 24.04", "magnet:1", 1000, 50, "jackett"),
+            new TorrentSearchResult("t2", "Ubuntu 22.04", "magnet:2", 900, 40, "jackett"),
+            new TorrentSearchResult("t3", "Debian 12", "magnet:3", 800, 30, "jackett")
+        ]);
+        var qbit = new FakeQBittorrentClient();
+        await using var scope = await StartEngineAsync(new DownloadsPlugin(jackett, qbit));
+
+        var search = await scope.Engine.SubmitAsync(Invocation("torrent.search", new Dictionary<string, object?> { ["query"] = "ubuntu" }));
+        Assert.True(search.Success, search.Error);
+
+        var first = await scope.Engine.SubmitAsync(DryRunInvocation("torrent.select_result", new Dictionary<string, object?> { ["index"] = 1 }));
+        Assert.True(first.Success, first.Error);
+        Assert.Equal("torrent-0", ExtractSelectedId(first));
+
+        var second = await scope.Engine.SubmitAsync(DryRunInvocation("torrent.select_result", new Dictionary<string, object?> { ["index"] = 2 }));
+        Assert.True(second.Success, second.Error);
+        Assert.Equal("torrent-1", ExtractSelectedId(second));
     }
 
     [Fact]
@@ -284,7 +308,7 @@ public sealed class PhasesIntegrationTests
         }
     }
 
-    [Fact]
+    [Fact(Skip = "Surveillance plugin removed from codebase")]
     public async Task Surveillance_http_client_fetches_media_when_url_configured()
     {
         var mediaBytes = Encoding.UTF8.GetBytes("http-surveillance-image-bytes");
@@ -428,34 +452,27 @@ public sealed class PhasesIntegrationTests
         }
     }
 
-    [Fact]
-    public async Task Telegram_production_adapter_delivers_surveillance_photo_on_media_result()
+    private static async Task<EngineScope> StartEngineAsync(DownloadsPlugin? downloads = null)
     {
-        var messenger = new RecordingTelegramMessenger();
-        var engine = EngineBootstrap.Create(surveillancePlugin: new SurveillancePlugin(new FakeSurveillanceClient()));
-        await engine.StartAsync();
-        try
-        {
-            var adapter = new TelegramProductionAdapter(engine, messenger);
-            await adapter.HandleMappedUpdateAsync(
-                new TelegramUpdate(42, "admin", "/latest", MessageId: 55),
-                progressMessageId: 55);
-
-            Assert.NotEmpty(messenger.Photos);
-        }
-        finally
-        {
-            await engine.StopAsync();
-        }
-    }
-
-    private static async Task<EngineScope> StartEngineAsync(
-        DownloadsPlugin? downloads = null,
-        SurveillancePlugin? surveillance = null)
-    {
-        var engine = EngineBootstrap.Create(downloadsPlugin: downloads, surveillancePlugin: surveillance);
+        var engine = EngineBootstrap.Create(downloadsPlugin: downloads);
         await engine.StartAsync();
         return new EngineScope(engine);
+    }
+
+    private static string? ExtractSelectedId(ExecutionResult result)
+    {
+        if (result.CapabilityResult?.Data is not Dictionary<string, object?> data
+            || !data.TryGetValue("selected", out var selected))
+        {
+            return null;
+        }
+
+        return selected switch
+        {
+            DownloadSearchResult download => download.Id,
+            Dictionary<string, object?> dict when dict.TryGetValue("id", out var id) => id?.ToString(),
+            _ => selected?.GetType().GetProperty("Id")?.GetValue(selected)?.ToString()
+        };
     }
 
     private static string? ExtractConfirmationToken(ExecutionResult result)
@@ -472,6 +489,17 @@ public sealed class PhasesIntegrationTests
         new()
         {
             IsExplicit = true,
+            CapabilityName = capability,
+            Parameters = parameters,
+            RequestContext = new RequestContext(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), "admin", source: "test"),
+            User = new Acl.AclService().ResolveUser("admin")
+        };
+
+    private static Invocation DryRunInvocation(string capability, IReadOnlyDictionary<string, object?>? parameters = null) =>
+        new()
+        {
+            IsExplicit = true,
+            IsDryRun = true,
             CapabilityName = capability,
             Parameters = parameters,
             RequestContext = new RequestContext(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), "admin", source: "test"),

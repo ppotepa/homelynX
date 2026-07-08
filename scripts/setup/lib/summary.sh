@@ -31,8 +31,7 @@ SUMMARY_EOF
   Jackett:      http://localhost:9117
   FlareSolverr: http://localhost:8191
   LLM/Ollama:   http://localhost:11434
-  Surveillance: http://localhost:5060/health
-  Coord Input:  http://localhost:5070/health
+
 
 Access control:
   allowed-users.cfg was created.
@@ -50,17 +49,7 @@ ZeroTier remote access:
     ZEROTIER_DNS_DOMAIN=homelynx.zt
   Then set the ZeroTier Central DNS server to this host ZeroTier IP and search domain to homelynx.zt.
   Portal URL: http://homelynx.zt
-  Example URLs: http://jellyfin.homelynx.zt:8096, http://qbit.homelynx.zt:8080, http://coords.homelynx.zt:5070.
-
-Coord Input:
-  Android app path: android/coord-input
-  Server URL in Android app: http://<server-lan-ip>:5070/location
-  API key in Android app: COORD_INPUT_API_KEY from .env
-  Telegram bot token for @potepa_home_coord_input_bot: set COORD_TELEGRAM_BOT_TOKEN in .env.
-  Default flow: Android archives to SQLite every COORD_INTERVAL_SECONDS; Telegram direct push is disabled.
-  Bot commands: /last, /timeline 17m, /timeline 1h, /timeline 35d, /timeline 1y, /history, /status.
-  Android Wi-Fi deploy: ./android_deploy.sh --adb-target PHONE_IP:ADB_PORT
-  Optional pairing: ./android_deploy.sh --adb-pair PHONE_IP:PAIR_PORT --adb-pair-code CODE --adb-target PHONE_IP:ADB_PORT
+  Example URLs: http://jellyfin.homelynx.zt:8096, http://qbit.homelynx.zt:8080
 
 Media organizer:
   Dry run: ./scripts/media_organize.sh --dry-run
@@ -70,13 +59,11 @@ Media organizer:
 LLM audit:
   UI:      $portal_url/llm
   Stores:  ./portal-data/llm_audit.sqlite3
-  Records local LLM calls from surveillance summaries, coordinate timeline summaries, and media organizer classification.
+  Records local LLM calls from media organizer classification.
 
 Useful commands:
   docker compose ps
   docker compose logs -f homelynx-bot
-  docker compose logs -f coord-input
-  docker compose up -d --build coord-input
   docker compose restart homelynx-bot
 SUMMARY_EOF
 }

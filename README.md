@@ -2,7 +2,7 @@
 
 Private-homelab **media automation** control plane (.NET 8 / C#), replacing the legacy Python Telegram bot.
 
-Homelynx is the intelligent center for torrent search (Jackett) → download (qBittorrent) → media library (Jellyfin), with optional local LLM (Ollama), TTS, surveillance, and coordinate tracking. Interfaces:
+Homelynx is the intelligent center for torrent search (Jackett) → download (qBittorrent) → media library (Jellyfin), with optional local LLM (Ollama) and TTS. Interfaces:
 
 - **Telegram** — production bot (`homelynx-bot` container)
 - **CLI** — diagnostics, dry-run, automation (`TorrentBot.Adapters.Cli`)
@@ -15,7 +15,7 @@ Homelynx is the intelligent center for torrent search (Jackett) → download (qB
 
 Requires **sudo** (or root) for system steps (ZeroTier DNS, systemd). Docker must be running and accessible to your user.
 
-The installer configures `.env`, starts satellite services (qBittorrent, Jackett, portal, LLM, TTS, surveillance, coord-input, Jellyfin), then builds and starts the **C# `homelynx-bot`** service.
+The installer configures `.env`, starts satellite services (qBittorrent, Jackett, portal, LLM, TTS, Jellyfin), then builds and starts the **C# `homelynx-bot`** service.
 
 Reinstall without wiping data:
 
@@ -46,7 +46,7 @@ docker compose logs -f homelynx-bot
 
 Recreates containers defined in `docker-compose.yaml` (same project `homelynx`) without wiping data volumes.
 
-Satellite Docker services, ports, and `.env` keys (`QBIT_HOST`, `JACKETT_HOST`, `SURV_HOST`, …) are unchanged. The C# bootstrap resolves them automatically.
+Satellite Docker services, ports, and `.env` keys (`QBIT_HOST`, `JACKETT_HOST`, `LLM_URL`, …) are unchanged. The C# bootstrap resolves them automatically.
 
 ## Project layout
 
@@ -56,7 +56,7 @@ homelynx/
 ├── docker-compose.yaml     # Homelynx stack (project name: homelynx)
 ├── Dockerfile              # C# Telegram host image
 ├── acl/                    # ACL presets
-├── services/               # Portal, surveillance recorder, TTS, coord-input
+├── services/               # Portal, TTS
 ├── src/                    # .NET solution (assemblies still named TorrentBot.*)
 └── docs/
 ```

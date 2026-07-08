@@ -68,7 +68,9 @@ public sealed class UrlDownloader : IDownloader
             entry.Status,
             entry.Progress,
             entry.SizeBytes,
-            entry.DownloadedBytes));
+            entry.DownloadedBytes,
+            DownloadSpeed: 0,
+            EtaSeconds: null));
     }
 
     public Task PauseAsync(string downloadId, CancellationToken ct = default)

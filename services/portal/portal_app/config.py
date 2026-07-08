@@ -21,8 +21,6 @@ DOCKER_SOCKET = Path(os.getenv("PORTAL_DOCKER_SOCKET", "/var/run/docker.sock"))
 DOCKER_ENABLED = os.getenv("PORTAL_DOCKER_ENABLED", "false").lower() in TRUTHY
 SERVICE_CONTAINERS = {
     "homelynx-bot": "homelynx-bot",
-    "surveillance": "surveillance",
-    "coord-input": "coord-input",
     "tts": "tts",
     "llm": "llm",
     "jellyfin": "jellyfin",
@@ -33,10 +31,6 @@ SERVICE_CONTAINERS = {
 }
 MODULE_FLAGS = {
     "llm": "LLM_ENABLED",
-    "surveillance_notifications": "SURV_NOTIFY_ENABLED",
-    "surveillance_record_video": "SURV_RECORD_VIDEO",
-    "surveillance_record_audio": "SURV_RECORD_AUDIO",
-    "coord_notifications": "COORD_NOTIFY_ENABLED",
     "tts_playback": "TTS_PLAYBACK_ENABLED",
     "media_organizer_llm": "MEDIA_ORGANIZER_LLM_ENABLED",
 }

@@ -3,6 +3,7 @@ using TorrentBot.Engine;
 using TorrentBot.Contracts.Audit;
 using TorrentBot.Engine.Audit;
 using TorrentBot.Engine.Confirmations;
+using TorrentBot.Engine.Context;
 using TorrentBot.Engine.Jobs;
 using TorrentBot.Engine.Migration;
 using TorrentBot.Engine.Notifications;
@@ -16,7 +17,6 @@ using TorrentBot.Plugins.Downloads;
 using TorrentBot.Plugins.Jobs;
 using TorrentBot.Plugins.Media;
 using TorrentBot.Plugins.Query;
-using TorrentBot.Plugins.Surveillance;
 using TorrentBot.Plugins.System;
 using TorrentBot.Plugins.Torrent;
 
@@ -28,10 +28,9 @@ public static class EngineBootstrap
         Action<EngineHost>? configure = null,
         AclService? aclService = null,
         DownloadsPlugin? downloadsPlugin = null,
-        ConfirmationStore? confirmationStore = null,
+        IConfirmationStore? confirmationStore = null,
         LlmPipeline? llmPipeline = null,
         IAuditSink? auditSink = null,
-        SurveillancePlugin? surveillancePlugin = null,
         BotControlPlugin? botControlPlugin = null,
         MediaPlugin? mediaPlugin = null,
         JobsPlugin? jobsPlugin = null,
@@ -57,9 +56,9 @@ public static class EngineBootstrap
         engine.RegisterPlugin(downloadsPlugin ?? CreateDefaultDownloadsPlugin());
         engine.RegisterPlugin(new TorrentPlugin());
         engine.RegisterPlugin(mediaPlugin ?? CreateDefaultMediaPlugin());
-        engine.RegisterPlugin(surveillancePlugin ?? CreateDefaultSurveillancePlugin());
         engine.RegisterPlugin(botControlPlugin ?? new BotControlPlugin());
         engine.RegisterPlugin(jobsPlugin ?? new JobsPlugin());
+        
         configure?.Invoke(engine);
         return engine;
     }
@@ -67,6 +66,7 @@ public static class EngineBootstrap
     public static LlmPipeline CreateLlmPipeline(IAuditSink? auditSink = null)
     {
         var ollamaUrl = HomelynxEnv.FirstNonEmpty(
+            Environment.GetEnvironmentVariable("LLM_URL"),
             Environment.GetEnvironmentVariable("TORRENTBOT_OLLAMA_URL"),
             Environment.GetEnvironmentVariable("OLLAMA_HOST"),
             HomelynxEnv.GetServiceUrl(null, "LLM_HOST", "LLM_PORT", "LLM_HTTPS"));
@@ -89,8 +89,9 @@ public static class EngineBootstrap
             var plannerClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, plannerModel);
             var executorClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, executorModel);
             var responderClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, responderModel);
+            var auditLogger = new LlmAuditLogger();
             return new LlmPipeline(
-                new OllamaLlmPlanner(plannerClient),
+                new OllamaLlmPlanner(plannerClient, auditLogger),
                 new AuditingLlmExecutor(new OllamaLlmExecutor(executorClient), auditSink),
                 new OllamaLlmResponder(responderClient),
                 auditSink);
@@ -126,8 +127,10 @@ public static class EngineBootstrap
             Environment.GetEnvironmentVariable("QBIT_PASSWORD"),
             Environment.GetEnvironmentVariable("TORRENTBOT_QBITTORRENT_PASS"));
 
+        var jackettIndexers = Environment.GetEnvironmentVariable("JACKETT_SEARCH_INDEXERS");
+
         IJackettClient jackett = !string.IsNullOrWhiteSpace(jackettUrl)
-            ? new JackettClient(new HttpClient(), jackettUrl, jackettKey)
+            ? new JackettClient(new HttpClient { Timeout = TimeSpan.FromSeconds(30) }, jackettUrl, jackettKey, jackettIndexers)
             : CreateFakeJackett();
 
         IQBittorrentClient qbit = !string.IsNullOrWhiteSpace(qbitUrl)
@@ -160,19 +163,6 @@ public static class EngineBootstrap
         return !string.IsNullOrWhiteSpace(url)
             ? new HttpLegacyPythonDelegator(new HttpClient(), url)
             : new NoOpLegacyPythonDelegator();
-    }
-
-    private static SurveillancePlugin CreateDefaultSurveillancePlugin()
-    {
-        var baseUrl = HomelynxEnv.FirstNonEmpty(
-            Environment.GetEnvironmentVariable("TORRENTBOT_SURVEILLANCE_URL"),
-            HomelynxEnv.GetServiceUrl(null, "SURV_HOST", "SURV_PORT", "SURV_HTTPS"));
-        if (!string.IsNullOrWhiteSpace(baseUrl))
-        {
-            return new SurveillancePlugin(new HttpSurveillanceClient(new HttpClient(), baseUrl));
-        }
-
-        return new SurveillancePlugin(new FakeSurveillanceClient());
     }
 
     private static MediaPlugin CreateDefaultMediaPlugin()

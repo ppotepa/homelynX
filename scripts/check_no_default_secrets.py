@@ -11,7 +11,6 @@ BANNED_LITERALS = (
     "adminadmin",
     "adminpass",
     "your_telegram_bot_token_here",
-    "change_me_coord_input_api_key",
 )
 SKIP_PARTS = {
     ".git",
@@ -26,8 +25,6 @@ SKIP_PARTS = {
     "jellyfin-config",
     "cookies",
     "tts-data",
-    "surveillance-data",
-    "coord-data",
     "llm-data",
     "portal-data",
     "zerotier-one",

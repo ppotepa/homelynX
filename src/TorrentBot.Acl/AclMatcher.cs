@@ -22,7 +22,8 @@ public static class AclMatcher
             return upper switch
             {
                 "ADMIN" => true,
-                "ALL" or "USER" when permission is "ALL" or "PUBLIC" or "SAY" => true,
+                "ALL" => true,  // ALL can access everything
+                "USER" when permission is "ALL" or "PUBLIC" or "SAY" or "USER" => true,
                 "SAY" when permission is "SAY" or "PUBLIC" => true,
                 _ => upper == permission
             };

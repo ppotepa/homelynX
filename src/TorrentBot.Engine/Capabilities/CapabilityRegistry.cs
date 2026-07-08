@@ -5,10 +5,11 @@ namespace TorrentBot.Engine.Capabilities;
 public sealed class CapabilityRegistry
 {
     private readonly Dictionary<string, RegisteredCapability> _byName = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CapabilityContract> _contracts = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _byCommand = new(StringComparer.OrdinalIgnoreCase);
     private bool _frozen;
 
-    public void Register(CapabilityMetadata metadata, ICapabilityHandler handler)
+    public void Register(CapabilityMetadata metadata, ICapabilityHandler handler, CapabilityContract? contract = null)
     {
         if (_frozen)
         {
@@ -24,6 +25,10 @@ public sealed class CapabilityRegistry
         }
 
         _byName[metadata.Name] = new RegisteredCapability(metadata, handler);
+        if (contract is not null)
+        {
+            _contracts[metadata.Name] = contract;
+        }
 
         if (!string.IsNullOrWhiteSpace(metadata.Command))
         {
@@ -76,6 +81,12 @@ public sealed class CapabilityRegistry
 
     public IReadOnlyList<CapabilityMetadata> GetAllMetadata() =>
         _byName.Values.Select(v => v.Metadata).OrderBy(m => m.Name).ToList();
+
+    public CapabilityContract? GetContract(string name) =>
+        _contracts.TryGetValue(name, out var contract) ? contract : null;
+
+    public IReadOnlyList<CapabilityContract> GetAllContracts() =>
+        _contracts.Values.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
 
     private bool TryResolveCommand(string command, out string capabilityName)
     {

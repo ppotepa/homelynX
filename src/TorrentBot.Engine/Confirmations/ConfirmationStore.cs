@@ -1,6 +1,6 @@
 namespace TorrentBot.Engine.Confirmations;
 
-public sealed class ConfirmationStore
+public sealed class ConfirmationStore : IConfirmationStore
 {
     private readonly Dictionary<string, PendingConfirmation> _pending = new(StringComparer.Ordinal);
 

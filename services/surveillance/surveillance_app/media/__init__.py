@@ -1,1 +1,0 @@
-"""Surveillance media helpers."""

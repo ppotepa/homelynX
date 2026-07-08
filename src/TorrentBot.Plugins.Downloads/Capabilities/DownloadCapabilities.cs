@@ -7,11 +7,11 @@ internal static class DownloadCapabilities
     public static readonly CapabilityMetadata ListMetadata = new(
         Name: "download.list",
         Command: "/downloads",
-        Description: "Lists active and recent downloads",
+        Description: "Lists active and recent downloads with rich details: name, status, progress %, dlspeed, eta",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user asks what downloads are active or recent",
-        IntentHints: ["downloads", "list", "active"],
+        LlmUsage: "Use when the user asks 'pokaż pobierania', 'show downloads', 'status pobierania', 'jaki postęp'. Returns name, progress, speed, eta, status.",
+        IntentHints: ["downloads", "list", "active", "pobierania", "pokaż pobierania", "status", "postęp"],
         IsReadOnly: true);
 
     public static readonly CapabilityMetadata SearchMetadata = new(
@@ -37,20 +37,20 @@ internal static class DownloadCapabilities
     public static readonly CapabilityMetadata PauseMetadata = new(
         Name: "download.pause",
         Command: "/pause",
-        Description: "Pause a download",
+        Description: "Pause a download. Use after a download has been started in the conversation or from context/snapshots of active downloads.",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user wants to pause an active download",
-        IntentHints: ["pause", "wstrzymaj"]);
+        LlmUsage: "Use for 'pause the download', 'pauzuj', 'pause it', 'wstrzymaj pobieranie' etc. Refer to previous search/start or downloads snapshot.",
+        IntentHints: ["pause", "wstrzymaj", "pauzuj", "pause the", "pause download", "pause it"]);
 
     public static readonly CapabilityMetadata ResumeMetadata = new(
         Name: "download.resume",
         Command: "/resume",
-        Description: "Resume a paused download",
+        Description: "Resume a paused download. Use after pause in conversation or from active/paused state in snapshots.",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user wants to resume a paused download",
-        IntentHints: ["resume", "wznow"]);
+        LlmUsage: "Use for 'resume the download', 'wznów', 'resume it' after a prior pause or from context.",
+        IntentHints: ["resume", "wznow", "wznów", "resume the", "resume download"]);
 
     public static readonly CapabilityMetadata CancelMetadata = new(
         Name: "download.cancel",

@@ -32,6 +32,9 @@ public sealed class RepositoryAggregator
     public IReadOnlyList<QuerySourceMeta> GetManifests() =>
         _sources.Values.Select(s => s.GetManifest()).OrderBy(m => m.Name).ToList();
 
+    public IReadOnlyList<ISnapshotSource> GetAllSources() =>
+        _sources.Values.ToList();
+
     public ISnapshotSource? GetSource(string name) =>
         _sources.TryGetValue(name, out var snapshotSource) ? snapshotSource : null;
 

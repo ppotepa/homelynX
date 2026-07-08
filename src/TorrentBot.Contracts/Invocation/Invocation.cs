@@ -1,4 +1,5 @@
 using TorrentBot.Contracts.Context;
+using TorrentBot.Contracts.Pipeline;
 
 namespace TorrentBot.Contracts.Invocation;
 
@@ -12,4 +13,6 @@ public sealed class Invocation
     public required IRequestContext RequestContext { get; init; }
     public required UserContext User { get; init; }
     public bool IsDryRun { get; init; }
+    public string? Condition { get; init; }
+    public IProgressReporter? ProgressReporter { get; init; }
 }

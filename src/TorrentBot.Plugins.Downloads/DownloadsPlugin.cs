@@ -39,13 +39,13 @@ public sealed class DownloadsPlugin : IPlugin
         context.RegisterService(torrentDownloader);
         context.RegisterService(urlDownloader);
 
-        context.RegisterCapability(DownloadCapabilities.ListMetadata, new DownloadListHandler());
-        context.RegisterCapability(DownloadCapabilities.SearchMetadata, new DownloadSearchHandler());
-        context.RegisterCapability(DownloadCapabilities.StartMetadata, new DownloadStartHandler());
-        context.RegisterCapability(DownloadCapabilities.PauseMetadata, new DownloadPauseHandler());
-        context.RegisterCapability(DownloadCapabilities.ResumeMetadata, new DownloadResumeHandler());
-        context.RegisterCapability(DownloadCapabilities.CancelMetadata, new DownloadCancelHandler());
-        context.RegisterCapability(DownloadCapabilities.StartUrlMetadata, new DownloadStartUrlHandler());
+        context.RegisterCapability(DownloadContracts.List, new DownloadListHandler(), "/downloads");
+        context.RegisterCapability(DownloadContracts.Search, new DownloadSearchHandler(), "/download_search");
+        context.RegisterCapability(DownloadContracts.Start, new DownloadStartHandler(), "/download");
+        context.RegisterCapability(DownloadContracts.Pause, new DownloadPauseHandler(), "/pause");
+        context.RegisterCapability(DownloadContracts.Resume, new DownloadResumeHandler(), "/resume");
+        context.RegisterCapability(DownloadContracts.Cancel, new DownloadCancelHandler(), "/cancel");
+        context.RegisterCapability(DownloadContracts.StartUrl, new DownloadStartUrlHandler(), "/download_url");
 
         context.RegisterSnapshotSource(new DownloadsSnapshotSource(qBittorrent, urlDownloader, processManager));
         context.RegisterSnapshotSource(new JobsSnapshotSource(processManager));

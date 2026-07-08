@@ -33,9 +33,7 @@ def main() -> int:
     for module_name in modules:
         importlib.import_module(module_name)
 
-    load_from_path("coord_input_app_smoke", ROOT / "services/coord-input/app.py")
     load_from_path("portal_app_smoke", ROOT / "services/portal/app.py")
-    load_from_path("surveillance_app_smoke", ROOT / "services/surveillance/app.py")
     print("Smoke imports passed.")
     return 0
 

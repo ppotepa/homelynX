@@ -11,18 +11,8 @@ public sealed class ConfirmationPresenter : IArtifactPresenter
     public RenderedOutput Present(IExecutionArtifact artifact, RenderContext context)
     {
         var confirm = (ConfirmationArtifact)artifact;
-        IReadOnlyList<RenderedButton>? buttons = context.Channel == RenderChannel.Telegram
-            ? new[]
-            {
-                new RenderedButton("Confirm", $"confirm:{confirm.Token}"),
-                new RenderedButton("Cancel", $"cancel:{confirm.Token}")
-            }
-            : null;
-
-        var text = context.Channel == RenderChannel.Cli
-            ? $"{confirm.Message}\nConfirm with: --confirm {confirm.Token}"
-            : confirm.Message;
-
+        var text = ConfirmationFormatting.FormatMessage(confirm.Message, confirm.Token, context.Channel);
+        var buttons = ConfirmationFormatting.FormatButtons(confirm.Token, context.Channel);
         return new RenderedOutput(text, buttons, ExitCode: 1);
     }
 }

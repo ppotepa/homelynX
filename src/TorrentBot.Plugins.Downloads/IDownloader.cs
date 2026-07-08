@@ -44,4 +44,8 @@ public sealed record DownloadStatus(
     string Status,
     double Progress,
     long SizeBytes,
-    long DownloadedBytes);
+    long DownloadedBytes,
+    double DownloadSpeed = 0,
+    double UploadSpeed = 0,
+    string? Category = null,
+    long? EtaSeconds = null);

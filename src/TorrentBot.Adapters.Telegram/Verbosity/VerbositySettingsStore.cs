@@ -7,7 +7,8 @@ public enum VerbosityLevel
     Off,
     Low,
     Medium,
-    Full
+    Full,
+    Debug
 }
 
 public sealed class VerbositySettingsStore
@@ -57,8 +58,38 @@ public sealed class VerbositySettingsStore
             case "full":
                 level = VerbosityLevel.Full;
                 return true;
+            case "debug":
+            case "debig": // common typo tolerance
+                level = VerbosityLevel.Debug;
+                return true;
             default:
+                // tolerate small typos / partials for debug (very common in logs)
+                if (normalized.Contains("debug") || normalized.Contains("debig") || Levenshtein(normalized, "debug") <= 1)
+                {
+                    level = VerbosityLevel.Debug;
+                    return true;
+                }
                 return false;
         }
+    }
+
+    private static int Levenshtein(string a, string b)
+    {
+        if (a.Length == 0) return b.Length;
+        if (b.Length == 0) return a.Length;
+        var costs = new int[b.Length + 1];
+        for (var j = 0; j <= b.Length; j++) costs[j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            var prev = costs[0]; costs[0] = i;
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cur = costs[j];
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                costs[j] = Math.Min(Math.Min(costs[j] + 1, costs[j - 1] + 1), prev + cost);
+                prev = cur;
+            }
+        }
+        return costs[b.Length];
     }
 }

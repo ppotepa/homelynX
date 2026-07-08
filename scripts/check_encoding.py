@@ -20,8 +20,6 @@ SKIP_DIRS = {
     "jellyfin-config",
     "cookies",
     "tts-data",
-    "surveillance-data",
-    "coord-data",
     "llm-data",
     "portal-data",
     "zerotier-one",

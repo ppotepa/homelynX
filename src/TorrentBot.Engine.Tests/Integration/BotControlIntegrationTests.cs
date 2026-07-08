@@ -3,25 +3,12 @@ using TorrentBot.Bootstrap;
 using TorrentBot.Adapters.Cli;
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Invocation;
-using TorrentBot.Integrations.Fakes;
 
 namespace TorrentBot.Engine.Tests.Integration;
 
 [Collection("FullStack")]
 public sealed class BotControlIntegrationTests
 {
-    [Fact]
-    public async Task Coord_status_capability_returns_online_service_via_engine()
-    {
-        await using var scope = await StartEngineAsync();
-        var result = await scope.Engine.SubmitAsync(Invocation("coord.status"));
-
-        Assert.True(result.Success, result.Error);
-        var data = Assert.IsType<Dictionary<string, object?>>(result.CapabilityResult!.Data);
-        Assert.True((bool)data["online"]!);
-        Assert.Equal("coord-input", data["service"]?.ToString());
-    }
-
     [Fact]
     public async Task Bot_diag_capability_returns_engine_diagnostics()
     {
@@ -33,7 +20,7 @@ public sealed class BotControlIntegrationTests
 
     private static async Task<EngineScope> StartEngineAsync()
     {
-        var engine = EngineBootstrap.Create(botControlPlugin: new TorrentBot.Plugins.BotControl.BotControlPlugin(new FakeCoordInputClient()));
+        var engine = EngineBootstrap.Create(botControlPlugin: new TorrentBot.Plugins.BotControl.BotControlPlugin());
         await engine.StartAsync();
         return new EngineScope(engine);
     }

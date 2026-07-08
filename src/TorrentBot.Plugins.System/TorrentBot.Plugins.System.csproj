@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TorrentBot.Contracts\TorrentBot.Contracts.csproj" />
+    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

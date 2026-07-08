@@ -1,6 +1,5 @@
 using TorrentBot.Contracts.Plugins;
 using TorrentBot.Plugins.System.Capabilities;
-using TorrentBot.Plugins.System.Snapshots;
 
 namespace TorrentBot.Plugins.System;
 
@@ -11,14 +10,14 @@ public sealed class SystemPlugin : IPlugin
 
     public void Register(IPluginRegistrationContext context)
     {
-        context.RegisterCapability(SystemCapabilities.HealthMetadata, new HealthCapabilityHandler());
-        context.RegisterCapability(SystemCapabilities.StatusMetadata, new StatusCapabilityHandler());
-        context.RegisterCapability(SystemCapabilities.CapabilitiesMetadata, new CapabilitiesListHandler());
-        context.RegisterCapability(SystemCapabilities.PingMetadata, new PingCapabilityHandler());
-        context.RegisterCapability(SystemCapabilities.HelpMetadata, new SystemHelpHandler());
-        context.RegisterCapability(SystemCapabilities.LlmStatusMetadata, new SystemLlmStatusHandler());
-        context.RegisterCapability(SystemCapabilities.DiskUsageMetadata, new SystemDiskUsageHandler());
-        context.RegisterCapability(SystemCapabilities.FindLargeFilesMetadata, new SystemFindLargeFilesHandler());
-        context.RegisterSnapshotSource(new SystemRuntimeSnapshotSource());
+        context.RegisterCapability(SystemContracts.Health, new HealthCapabilityHandler(), "/health");
+        context.RegisterCapability(SystemContracts.Status, new StatusCapabilityHandler(), "/status");
+        context.RegisterCapability(SystemContracts.Capabilities, new CapabilitiesListHandler(), "/capabilities");
+        context.RegisterCapability(SystemContracts.Ping, new PingCapabilityHandler(), "/ping");
+        context.RegisterCapability(SystemContracts.Help, new SystemHelpHandler(), "/help");
+        context.RegisterCapability(SystemContracts.LlmStatus, new SystemLlmStatusHandler(), "/llm_status");
+        context.RegisterCapability(SystemContracts.DiskUsage, new SystemDiskUsageHandler(), "/disk_usage");
+        context.RegisterCapability(SystemContracts.FindLargeFiles, new SystemFindLargeFilesHandler(), "/find_large_files");
+        context.RegisterCapability(SystemContracts.LlmPrompt, new SystemLlmPromptDumpHandler(), "/llm_prompt");
     }
 }

@@ -12,11 +12,13 @@ public sealed class DownloadStartHandler : ICapabilityHandler
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
     {
-        var provider = GetString(parameters, "provider") ?? (GetString(parameters, "url") is not null ? "url" : "torrent");
+        var url = GetString(parameters, "url");
+        var magnet = GetString(parameters, "magnet");
+        var provider = GetString(parameters, "provider") ?? DetectProvider(url, magnet);
         var startRequest = new DownloadStartRequest(
             Provider: provider,
-            Url: GetString(parameters, "url"),
-            Magnet: GetString(parameters, "magnet"),
+            Url: url,
+            Magnet: magnet,
             Query: GetString(parameters, "query"),
             SearchIndex: GetInt(parameters, "index") ?? GetInt(parameters, "searchIndex"),
             Category: GetString(parameters, "category"),
@@ -82,4 +84,27 @@ public sealed class DownloadStartHandler : ICapabilityHandler
         parameters.TryGetValue(key, out var value) && int.TryParse(value?.ToString(), out var number)
             ? number
             : null;
+
+    private static string DetectProvider(string? url, string? magnet)
+    {
+        // Magnet URI zawsze oznacza torrent
+        if (!string.IsNullOrWhiteSpace(magnet) && magnet.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+        {
+            return "torrent";
+        }
+
+        // URL z Jackett oznacza torrent
+        if (!string.IsNullOrWhiteSpace(url))
+        {
+            if (url.Contains("/dl/", StringComparison.OrdinalIgnoreCase) ||
+                url.Contains("jackett", StringComparison.OrdinalIgnoreCase) ||
+                url.Contains(".torrent", StringComparison.OrdinalIgnoreCase))
+            {
+                return "torrent";
+            }
+        }
+
+        // Domyślnie URL
+        return "url";
+    }
 }
