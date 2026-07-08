@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Llm\llm-scenarios.json" CopyToOutputDirectory="PreserveNewest" Link="Llm\llm-scenarios.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TorrentBot.Engine\TorrentBot.Engine.csproj" />
     <ProjectReference Include="..\TorrentBot.Contracts\TorrentBot.Contracts.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.System\TorrentBot.Plugins.System.csproj" />

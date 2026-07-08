@@ -1,0 +1,1583 @@
+{
+  "scenarios": [
+    {
+      "id": "LLM-001",
+      "input": "download ubuntu 22 iso",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-002",
+      "input": "get debian 12",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "debian"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-003",
+      "input": "search for linux mint",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "mint",
+          "linux"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-004",
+      "input": "find windows 11 pro",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "windows"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-005",
+      "input": "download fedora workstation 39",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "fedora"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-006",
+      "input": "get arch linux iso",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "arch"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-007",
+      "input": "search manjaro kde",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "manjaro"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-008",
+      "input": "find pop os nvidia",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "pop"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-009",
+      "input": "download kali linux",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "kali"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-010",
+      "input": "get proxmox ve iso",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "proxmox"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-011",
+      "input": "search alpine linux docker",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "alpine"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-012",
+      "input": "find truenas scale",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "truenas"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-013",
+      "input": "download centos stream 9",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "centos"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-014",
+      "input": "get opensuse tumbleweed",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "opensuse"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-015",
+      "input": "search ubuntu server 24.04",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-016",
+      "input": "find debian netinst",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "debian"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-017",
+      "input": "download linux mint cinnamon",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "mint"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-018",
+      "input": "get windows server 2022",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "windows"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-019",
+      "input": "search freebsd 14",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "freebsd"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-020",
+      "input": "find android x86 iso",
+      "category": "search_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "android"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-021",
+      "input": "pobierz ubuntu 22",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-022",
+      "input": "ściągnij debian 12",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "debian"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-023",
+      "input": "szukaj linux mint",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "mint"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-024",
+      "input": "znajdź fedora 39",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "fedora"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-025",
+      "input": "pobierz windows 11",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "windows"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-026",
+      "input": "szukaj kali linux",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "kali"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-027",
+      "input": "pobierz arch linux",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "arch"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-028",
+      "input": "znajdź manjaro",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "manjaro"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-029",
+      "input": "ściągnij proxmox",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "proxmox"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-030",
+      "input": "szukaj truenas",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "truenas"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-031",
+      "input": "pobierz alpine linux",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "alpine"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-032",
+      "input": "znajdź pop os",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "pop"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-033",
+      "input": "szukaj centos 9",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "centos"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-034",
+      "input": "pobierz opensuse",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "opensuse"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-035",
+      "input": "ściągnij ubuntu server",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-036",
+      "input": "szukaj freebsd",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "freebsd"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-037",
+      "input": "pobierz android x86",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "android"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-038",
+      "input": "znajdź linux mint",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "mint"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-039",
+      "input": "szukaj windows server",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "windows"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-040",
+      "input": "pobierz debian netinst",
+      "category": "search_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "debian"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-041",
+      "input": "pokaż pobierania",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-042",
+      "input": "pokaz status pobierania",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-043",
+      "input": "show downloads",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-044",
+      "input": "list active downloads",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-045",
+      "input": "pokaż torrenty",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-046",
+      "input": "status torrentów",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-047",
+      "input": "list torrents",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-048",
+      "input": "show torrent status",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-049",
+      "input": "co się pobiera",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-050",
+      "input": "what is downloading",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute"
+        ]
+      }
+    },
+    {
+      "id": "LLM-051",
+      "input": "pokaż status",
+      "category": "status_pl",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-052",
+      "input": "jobs status",
+      "category": "status_en",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "query.execute",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-053",
+      "input": "list all commands",
+      "category": "help",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "firstCapability": "system.help"
+      }
+    },
+    {
+      "id": "LLM-054",
+      "input": "pomoc",
+      "category": "help",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "firstCapability": "system.help"
+      }
+    },
+    {
+      "id": "LLM-055",
+      "input": "/help",
+      "category": "help",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "firstCapability": "system.help"
+      }
+    },
+    {
+      "id": "LLM-056",
+      "input": "search breaking bad complete",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-057",
+      "input": "find matrix 1999 remaster",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-058",
+      "input": "download blade runner 2049",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-059",
+      "input": "szukaj gry witcher 3",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-060",
+      "input": "pobierz film inception",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-061",
+      "input": "search adobe photoshop mac",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-062",
+      "input": "find visual studio code",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-063",
+      "input": "download autocad 2024",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-064",
+      "input": "szukaj album pink floyd",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-065",
+      "input": "search documentary cosmos",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-066",
+      "input": "find ebook clean code",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-067",
+      "input": "download course python udemy",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-068",
+      "input": "szukaj serialu house of dragon",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-069",
+      "input": "search game cyberpunk 2077",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-070",
+      "input": "find album acdc highway",
+      "category": "media",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 3,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-071",
+      "input": "ubuntu",
+      "category": "edge",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-072",
+      "input": "22.04 lts",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-073",
+      "input": "test",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 0,
+        "allowEmptyPlan": true
+      }
+    },
+    {
+      "id": "LLM-074",
+      "input": "asdfgh qwerty",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 0,
+        "allowEmptyPlan": true
+      }
+    },
+    {
+      "id": "LLM-075",
+      "input": "hello",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": true
+      }
+    },
+    {
+      "id": "LLM-076",
+      "input": "maybe download something",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-077",
+      "input": "download",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-078",
+      "input": "iso",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": true
+      }
+    },
+    {
+      "id": "LLM-079",
+      "input": "pobierz coś fajnego",
+      "category": "edge",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "torrent.search",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-080",
+      "input": "need a linux distro",
+      "category": "edge",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "linux"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-081",
+      "input": "download list",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "system.help",
+          "download.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-082",
+      "input": "download status",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-083",
+      "input": "lista pobieran",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-084",
+      "input": "pokaż pobierania status",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.list",
+          "query.execute",
+          "torrent.list"
+        ]
+      }
+    },
+    {
+      "id": "LLM-085",
+      "input": "system health",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "firstCapability": "system.health"
+      }
+    },
+    {
+      "id": "LLM-086",
+      "input": "health check",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "system.health",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-087",
+      "input": "show capabilities",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "system.capabilities",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-088",
+      "input": "what can you do",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "system.help",
+          "system.capabilities"
+        ]
+      }
+    },
+    {
+      "id": "LLM-089",
+      "input": "cancel download",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.cancel",
+          "torrent.cancel_search",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-090",
+      "input": "pause all torrents",
+      "category": "exclusion",
+      "expect": {
+        "minSteps": 0,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "allowedCapabilities": [
+          "download.pause",
+          "torrent.list",
+          "system.help"
+        ]
+      }
+    },
+    {
+      "id": "LLM-091",
+      "input": "download ubuntu 22 iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "queryNotContains": [
+          "download ",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-092",
+      "input": "download ubuntu iso 22",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "queryNotContains": [
+          "download"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-093",
+      "input": "get linux mint 21 cinnamon iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "mint"
+        ],
+        "queryNotContains": [
+          "get ",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-094",
+      "input": "search for fedora 39 workstation iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "fedora"
+        ],
+        "queryNotContains": [
+          "search for",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-095",
+      "input": "pobierz debian 12 netinst iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "debian"
+        ],
+        "queryNotContains": [
+          "pobierz",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-096",
+      "input": "find windows 11 23h2 iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "windows"
+        ],
+        "queryNotContains": [
+          "find ",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-097",
+      "input": "szukaj arch linux latest iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "arch"
+        ],
+        "queryNotContains": [
+          "szukaj",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-098",
+      "input": "download proxmox backup server iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "proxmox"
+        ],
+        "queryNotContains": [
+          "download",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-099",
+      "input": "get kali linux 2024 iso image",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "kali"
+        ],
+        "queryNotContains": [
+          "get ",
+          " iso",
+          " image"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    },
+    {
+      "id": "LLM-100",
+      "input": "search ubuntu server arm64 iso",
+      "category": "query_quality",
+      "expect": {
+        "minSteps": 1,
+        "maxSteps": 2,
+        "allowEmptyPlan": false,
+        "queryContains": [
+          "ubuntu"
+        ],
+        "queryNotContains": [
+          "search",
+          " iso"
+        ],
+        "allowedCapabilities": [
+          "torrent.search",
+          "download.search"
+        ]
+      }
+    }
+  ]
+}
