@@ -45,9 +45,18 @@ public sealed class LlmPlannerAdapter : IPlanner
             conversation.AddMessage("user", invocation.Text, requestNumber);
         }
 
+        var originalText = invocation.Text ?? string.Empty;
+        var intent = LlmIntentNormalizer.Analyze(originalText);
+        if (invocation.ProgressReporter is not null && intent.WasNormalized)
+        {
+            invocation.ProgressReporter.Report(
+                "debug:llm:normalized",
+                $"\"{originalText}\" → \"{intent.NormalizedText}\"");
+        }
+
         var plan = await _planner.PlanAsync(
             new LlmPlanningRequest(
-                invocation.Text ?? string.Empty,
+                intent.NormalizedText,
                 allowed,
                 _querySources(),
                 scope,
@@ -56,6 +65,8 @@ public sealed class LlmPlannerAdapter : IPlanner
                 invocation.ProgressReporter,
                 _contractsProvider?.Invoke()),
             ct).ConfigureAwait(false);
+
+        plan = LlmPlanRepairer.Repair(intent, plan, conversation, requestNumber, invocation.ProgressReporter);
 
         var steps = plan.Steps
             .Select(step => new ExecutionPlanStep(step.Capability, step.Parameters, step.SaveAs, step.Condition))

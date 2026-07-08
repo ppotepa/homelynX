@@ -37,12 +37,20 @@ public sealed class ProgressMessageFormatter
                     break;
 
                 case "planning:done":
-                    ReplaceEntry("planning", "✅ Zaplanowano");
                     if (detail is not null)
                     {
                         var parts = detail.Split('|', 2);
                         if (int.TryParse(parts[0], out var count)) _planTotalSteps = count;
                         if (parts.Length > 1) _planIntent = parts[1];
+                    }
+
+                    if (_planTotalSteps <= 0)
+                    {
+                        _entries.Add(new StageEntry("planning", "❌ Brak kroków w planie (LLM nie rozpoznał intencji)"));
+                    }
+                    else
+                    {
+                        ReplaceEntry("planning", "✅ Zaplanowano");
                     }
                     break;
 
@@ -306,9 +314,17 @@ public sealed class ProgressMessageFormatter
 
             // === PLANNING ===
             sb.AppendLine("┌─ PLANNING ─────────────────────────────────────────────────┐");
-            if (!string.IsNullOrEmpty(_planIntent) && _planTotalSteps > 0)
+            if (_planTotalSteps <= 0 && _entries.All(e => !e.Key.Contains("planning", StringComparison.Ordinal) && !e.Key.Contains("llm", StringComparison.Ordinal)))
+            {
+                sb.AppendLine("│ ⚠️  No planning stages recorded");
+            }
+            else if (!string.IsNullOrEmpty(_planIntent) && _planTotalSteps > 0)
             {
                 sb.AppendLine($"│ 🎯 Intent: {_Truncate(_planIntent, 55)} ({_planTotalSteps} steps)");
+            }
+            else if (_planTotalSteps <= 0)
+            {
+                sb.AppendLine("│ ❌ Plan empty — try a slash command from /help");
             }
 
             foreach (var entry in _entries.Where(e => 
