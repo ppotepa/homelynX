@@ -27,7 +27,8 @@ public sealed class VerboseDownloadReproTests
                 new TelegramUpdate(42, "1001", "download ubuntu 22 iso", MessageId: 2),
                 progressMessageId: 2);
 
-            Assert.Contains("ubuntu 22 iso", response, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("ubuntu", response, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Wyniki:", response, StringComparison.Ordinal);
             Assert.Contains(messenger.Edited, edit =>
                 edit.Text.Contains("VERBOSE", StringComparison.OrdinalIgnoreCase)
                 && !edit.Text.Contains("No planning stages recorded", StringComparison.Ordinal));

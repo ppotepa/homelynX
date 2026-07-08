@@ -10,7 +10,7 @@ namespace TorrentBot.Engine.Tests.Unit;
 public sealed class LlmPlannerAdapterRepairTests
 {
     [Fact]
-    public async Task PlanAsync_repair_maps_download_ubuntu_22_iso_to_torrent_search_when_llm_returns_empty()
+    public async Task PlanAsync_does_not_force_torrent_search_when_llm_returns_empty()
     {
         var engine = EngineBootstrap.Create();
         await engine.StartAsync();
@@ -32,9 +32,7 @@ public sealed class LlmPlannerAdapterRepairTests
                 },
                 new PlanningContext(new TorrentBot.Acl.AclService().ResolveUser("admin"), IsReplay: false));
 
-            var step = Assert.Single(plan.Steps);
-            Assert.Equal("torrent.search", step.CapabilityName);
-            Assert.Equal("ubuntu 22 iso", step.Parameters?["query"]?.ToString());
+            Assert.Empty(plan.Steps);
         }
         finally
         {

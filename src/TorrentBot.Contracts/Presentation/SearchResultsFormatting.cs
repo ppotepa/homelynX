@@ -19,8 +19,8 @@ public static class SearchResultsFormatting
 
         if (search.TotalCount == 0)
         {
-            lines.Add("Brak wynikow dla tego zapytania.");
-            lines.Add("Sprobuj innej frazy lub /download_search <query>");
+            lines.Add("Brak wynikow — indexery nie zwrocily trafien dla tej frazy.");
+            lines.Add("Sprobuj innego zapytania lub /download_search <fraza>");
         }
         else
         {

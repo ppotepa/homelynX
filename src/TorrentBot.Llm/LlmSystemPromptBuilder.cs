@@ -136,6 +136,12 @@ public static class LlmSystemPromptBuilder
         builder.AppendLine("6. If the request cannot be served, return an empty steps array and explain in intent.");
         builder.AppendLine("7. Always provide a meaningful \"why\". Set realistic \"confidence\" (0.0-1.0).");
         builder.AppendLine();
+        builder.AppendLine("## torrent.search — you choose the query");
+        builder.AppendLine("- parameters.query is sent to Jackett indexers; YOU must infer a good search string from the user message.");
+        builder.AppendLine("- Prefer short indexer-friendly terms (distro name + version), not the full user sentence.");
+        builder.AppendLine("- Example: \"download ubuntu 22 iso\" → query \"ubuntu 22\" or \"ubuntu 22.04\", not \"download ubuntu 22 iso\".");
+        builder.AppendLine("- Indexers differ; if the user is vague, pick the most likely concise query yourself.");
+        builder.AppendLine();
         builder.AppendLine("## User request");
         var normalizedText = PolishLexicon.NormalizeForLlm(request.Text ?? "");
         if (!string.Equals(normalizedText, request.Text, StringComparison.Ordinal))

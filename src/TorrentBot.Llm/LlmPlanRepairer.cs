@@ -14,56 +14,8 @@ public static class LlmPlanRepairer
         int requestNumber = 0,
         IProgressReporter? progress = null)
     {
-        plan = RepairSearchIntent(intent, plan, progress);
         plan = RepairFollowUp(intent, plan, conversation, requestNumber, progress);
         return plan;
-    }
-
-    private static PlanEnvelope RepairSearchIntent(
-        LlmIntentContext intent,
-        PlanEnvelope plan,
-        IProgressReporter? progress)
-    {
-        var forcedQuery = intent.ForcedSearchQuery;
-        if (forcedQuery is null)
-        {
-            if (plan.Steps.Count == 0
-                && LlmIntentNormalizer.TryExtractDownloadSearchQuery(intent.OriginalText, out var fallbackQuery))
-            {
-                forcedQuery = fallbackQuery;
-            }
-            else
-            {
-                return plan;
-            }
-        }
-
-        var misrouted = plan.Steps.Count > 0
-            && string.Equals(plan.Steps[0].Capability, "query.execute", StringComparison.OrdinalIgnoreCase)
-            && plan.Steps[0].Parameters?.TryGetValue("source", out var src) == true
-            && !string.Equals(src?.ToString(), "downloads", StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(src?.ToString(), "jobs", StringComparison.OrdinalIgnoreCase);
-
-        if (plan.Steps.Count > 0 && !misrouted)
-        {
-            return plan;
-        }
-
-        progress?.Report("debug:llm:repair", $"forced torrent.search for query='{forcedQuery}'");
-
-        return new PlanEnvelope(
-            Intent: (plan.Intent ?? "search") + " [search-corrected-by-pipeline]",
-            Steps:
-            [
-                new PlanStep(
-                    Capability: "torrent.search",
-                    Parameters: new Dictionary<string, object?> { ["query"] = forcedQuery },
-                    Why: "Corrected by pipeline repair: user requested search/download-by-title; LLM returned empty or misrouted plan.",
-                    SaveAs: "search_results")
-            ],
-            Confidence: Math.Max(0.6, plan.Confidence),
-            ReplyMode: plan.ReplyMode,
-            Notes: "Auto-corrected search intent for LM path robustness");
     }
 
     private static PlanEnvelope RepairFollowUp(
@@ -88,7 +40,6 @@ public static class LlmPlanRepairer
             || followLower.Contains("lista")
             || followLower.Contains("list")
             || followLower.Contains("pobierania")
-            || (followLower.Contains("pobierz") && !LlmIntentNormalizer.TryExtractDownloadSearchQuery(intent.OriginalText, out _))
             || ((followLower.Contains("zacznij") || followLower.Contains("start")) && HasFollowContext(conversation, requestNumber));
 
         var hasFollowContext = HasFollowContext(conversation, requestNumber);
