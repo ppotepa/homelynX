@@ -104,10 +104,13 @@ public sealed class TelegramProductionAdapter
             invocationRecorder.OnStage += msg =>
             {
                 formatter.HandleStage(msg.Stage, msg.Detail);
-                var text = formatter.Format();
+                var text = formatter.Format(includeDebugArtifacts: false);
                 var isImmediate = msg.Stage.Contains("error", StringComparison.OrdinalIgnoreCase)
                     || msg.Stage == "step:error"
-                    || msg.Stage == "llm:validation_error";
+                    || msg.Stage == "llm:validation_error"
+                    || msg.Stage == "planning:done"
+                    || msg.Stage == "respond"
+                    || msg.Stage == "debug:pipeline:complete";
                 throttler.Submit(text, immediate: isImmediate);
             };
         }
@@ -139,19 +142,32 @@ public sealed class TelegramProductionAdapter
             var buttons = renderedButtons
                 .Select(b => new TelegramInlineButton(b.Text, b.CallbackData))
                 .ToArray();
-            await _messenger.SendTextAsync(mapped.ChatId, rendered.Text, buttons, ct).ConfigureAwait(false);
+            await _messenger.SendTextAsync(mapped.ChatId, TelegramMessageLimits.Truncate(rendered.Text), buttons, ct).ConfigureAwait(false);
             return rendered.Text;
         }
 
         var finalText = verbosity >= VerbosityLevel.Full
             ? BuildVerboseResponse(mapped, response, rendered, formatter)
             : rendered?.Text ?? response.Message;
+        finalText = TelegramMessageLimits.Truncate(finalText);
 
         if (rendered?.Buttons is { Count: > 0 } actionButtons)
         {
+            if (verbosity >= VerbosityLevel.Full && formatter is not null)
+            {
+                await DeliverTextAsync(
+                    mapped.ChatId,
+                    progressMessageId,
+                    formatter.Format(includeDebugArtifacts: true),
+                    ct).ConfigureAwait(false);
+            }
+
             var buttons = actionButtons.Select(b => new TelegramInlineButton(b.Text, b.CallbackData)).ToArray();
-            await _messenger.SendTextAsync(mapped.ChatId, finalText, buttons, ct).ConfigureAwait(false);
-            return finalText;
+            var actionText = verbosity >= VerbosityLevel.Full
+                ? TelegramMessageLimits.Truncate(rendered?.Text ?? response.Message)
+                : finalText;
+            await _messenger.SendTextAsync(mapped.ChatId, actionText, buttons, ct).ConfigureAwait(false);
+            return actionText;
         }
 
         await DeliverTextAsync(mapped.ChatId, progressMessageId, finalText, ct).ConfigureAwait(false);
@@ -161,13 +177,14 @@ public sealed class TelegramProductionAdapter
 
     private async Task DeliverTextAsync(long chatId, long messageId, string text, CancellationToken ct)
     {
+        var safeText = TelegramMessageLimits.Truncate(text);
         try
         {
-            await _messenger.EditTextAsync(chatId, messageId, text, ct).ConfigureAwait(false);
+            await _messenger.EditTextAsync(chatId, messageId, safeText, ct).ConfigureAwait(false);
         }
         catch
         {
-            await _messenger.SendTextAsync(chatId, text, ct: ct).ConfigureAwait(false);
+            await _messenger.SendTextAsync(chatId, safeText, ct: ct).ConfigureAwait(false);
         }
     }
 

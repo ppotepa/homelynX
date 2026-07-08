@@ -274,12 +274,32 @@ public sealed class ProgressMessageFormatter
         }
     }
 
-    public string Format()
+    public string Format(bool includeDebugArtifacts = true) =>
+        Format(includeDebugArtifacts, TelegramMessageLimits.MaxMessageLength);
+
+    public string Format(bool includeDebugArtifacts, int maxLength)
     {
         lock (_gate)
         {
             var sb = new StringBuilder();
             var elapsedTotal = (DateTime.UtcNow - _startTime).TotalMilliseconds;
+            var hasPlanningStages = _entries.Any(e =>
+                e.Key.Contains("planning", StringComparison.Ordinal)
+                || e.Key.Contains("llm", StringComparison.Ordinal)
+                || e.Key is "plan"
+                || e.Key.StartsWith("debug_inv", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_prompt", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_repair", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_norm", StringComparison.Ordinal));
+            var hasExecutionStages = _entries.Any(e =>
+                e.Key.StartsWith("step", StringComparison.Ordinal)
+                || e.Key.StartsWith("execute", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_cap", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_step", StringComparison.Ordinal)
+                || e.Key.Contains("pipeline", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_saved", StringComparison.Ordinal));
+            var isComplete = _entries.Any(e => e.Key == "respond");
+            var running = _entries.FirstOrDefault(e => e.IsRunning);
 
             sb.AppendLine("╔════════════════════════════════════════════════════════════╗");
             sb.AppendLine("║  🔍 VERBOSE DEBUG MODE - Full Pipeline Trace               ║");
@@ -287,7 +307,6 @@ public sealed class ProgressMessageFormatter
             sb.AppendLine("╚════════════════════════════════════════════════════════════╝");
             sb.AppendLine();
 
-            // === INPUT & CONTEXT ===
             sb.AppendLine("┌─ INPUT & CONTEXT ─────────────────────────────────────────┐");
             if (!string.IsNullOrEmpty(_userText))
             {
@@ -298,23 +317,29 @@ public sealed class ProgressMessageFormatter
                 sb.AppendLine($"│ 📦 {_lastContextSummary}");
             }
 
-            DateTime lastTime = _startTime;
-            foreach (var entry in _entries.Where(e => 
-                e.Key.StartsWith("debug_inv") || e.Key.StartsWith("debug_req") || 
-                e.Key.StartsWith("debug_context") || e.Key.StartsWith("debug_history") || 
-                e.Key.StartsWith("debug_norm") || e.Key.StartsWith("debug_ctx_sample")))
+            foreach (var entry in _entries.Where(e =>
+                e.Key.StartsWith("debug_inv", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_req", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_context", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_history", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_norm", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_ctx_sample", StringComparison.Ordinal)))
             {
-                var now = DateTime.UtcNow;
-                var delta = (now - lastTime).TotalMilliseconds;
-                lastTime = now;
-                sb.AppendLine($"│    {entry.Text} (+{delta:F0}ms)");
+                sb.AppendLine($"│    {entry.Text}");
             }
             sb.AppendLine("└────────────────────────────────────────────────────────────┘");
             sb.AppendLine();
 
-            // === PLANNING ===
             sb.AppendLine("┌─ PLANNING ─────────────────────────────────────────────────┐");
-            if (_planTotalSteps <= 0 && _entries.All(e => !e.Key.Contains("planning", StringComparison.Ordinal) && !e.Key.Contains("llm", StringComparison.Ordinal)))
+            if (!hasPlanningStages && !isComplete && running is null && elapsedTotal < 500)
+            {
+                sb.AppendLine("│ ⏳ Starting pipeline...");
+            }
+            else if (!hasPlanningStages && !isComplete)
+            {
+                sb.AppendLine("│ ⏳ Planning in progress...");
+            }
+            else if (_planTotalSteps <= 0 && !hasPlanningStages)
             {
                 sb.AppendLine("│ ⚠️  No planning stages recorded");
             }
@@ -322,27 +347,42 @@ public sealed class ProgressMessageFormatter
             {
                 sb.AppendLine($"│ 🎯 Intent: {_Truncate(_planIntent, 55)} ({_planTotalSteps} steps)");
             }
-            else if (_planTotalSteps <= 0)
+            else if (_planTotalSteps <= 0 && isComplete)
             {
                 sb.AppendLine("│ ❌ Plan empty — try a slash command from /help");
             }
 
-            foreach (var entry in _entries.Where(e => 
-                e.Key.Contains("planning") || e.Key.Contains("llm_plan") || 
-                e.Key.Contains("llm_validate") || e.Key.StartsWith("debug_prompt") || 
-                e.Key.StartsWith("debug_raw_response") || e.Key.StartsWith("debug_plan")))
+            foreach (var entry in _entries.Where(e =>
+                e.Key.Contains("planning", StringComparison.Ordinal)
+                || e.Key.Contains("llm_plan", StringComparison.Ordinal)
+                || e.Key.Contains("llm_validate", StringComparison.Ordinal)
+                || e.Key is "plan"
+                || e.Key.StartsWith("debug_prompt", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_raw_response", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_plan", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_repair", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_norm", StringComparison.Ordinal)))
             {
                 sb.AppendLine($"│ {entry.Text}");
             }
             sb.AppendLine("└────────────────────────────────────────────────────────────┘");
             sb.AppendLine();
 
-            // === EXECUTION ===
             sb.AppendLine("┌─ EXECUTION ────────────────────────────────────────────────┐");
-            foreach (var entry in _entries.Where(e => 
-                e.Key.StartsWith("step") || e.Key.StartsWith("debug_cap") || 
-                e.Key.StartsWith("debug_step") || e.Key.Contains("pipeline") || 
-                e.Key.StartsWith("debug_saved")))
+            if (!hasExecutionStages && hasPlanningStages && !isComplete)
+            {
+                sb.AppendLine("│ ⏳ Executing plan...");
+            }
+
+            foreach (var entry in _entries.Where(e =>
+                e.Key.StartsWith("step", StringComparison.Ordinal)
+                || e.Key.StartsWith("execute", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_cap", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_step", StringComparison.Ordinal)
+                || e.Key.Contains("pipeline", StringComparison.Ordinal)
+                || e.Key.StartsWith("debug_saved", StringComparison.Ordinal)
+                || e.Key == "respond"
+                || e.Key == "confirm"))
             {
                 sb.AppendLine($"│ {entry.Text}");
             }
@@ -354,7 +394,6 @@ public sealed class ProgressMessageFormatter
             sb.AppendLine("└────────────────────────────────────────────────────────────┘");
             sb.AppendLine();
 
-            var running = _entries.FirstOrDefault(e => e.IsRunning);
             if (running is not null)
             {
                 sb.AppendLine($"⏱️  Currently running: {running.Text}... ({elapsedTotal:F0}ms elapsed)");
@@ -364,30 +403,32 @@ public sealed class ProgressMessageFormatter
                 sb.AppendLine($"⏱️  Total elapsed: {elapsedTotal:F0}ms");
             }
 
-            // === DEBUG ARTIFACTS (SPOILERS) ===
-            sb.AppendLine();
-            sb.AppendLine("┌─ DEBUG ARTIFACTS (expand for full data) ────────────────────┐");
-
-            if (!string.IsNullOrEmpty(_fullPromptForDebug))
+            if (includeDebugArtifacts)
             {
-                sb.AppendLine("│ 🔍 FULL PROMPT:");
-                sb.AppendLine("│ ||");
-                sb.AppendLine("│ " + _Truncate(_fullPromptForDebug, 4096).Replace("\n", "\n│ "));
-                sb.AppendLine("│ ||");
-                sb.AppendLine($"│ (length: ~{_fullPromptForDebug.Length} chars)");
+                sb.AppendLine();
+                sb.AppendLine("┌─ DEBUG ARTIFACTS (expand for full data) ────────────────────┐");
+
+                if (!string.IsNullOrEmpty(_fullPromptForDebug))
+                {
+                    sb.AppendLine("│ 🔍 FULL PROMPT:");
+                    sb.AppendLine("│ ||");
+                    sb.AppendLine("│ " + _Truncate(_fullPromptForDebug, 1200).Replace("\n", "\n│ ", StringComparison.Ordinal));
+                    sb.AppendLine("│ ||");
+                    sb.AppendLine($"│ (length: ~{_fullPromptForDebug.Length} chars)");
+                }
+
+                if (!string.IsNullOrEmpty(_rawLlmResponseForDebug))
+                {
+                    sb.AppendLine("│ 🔍 RAW LLM RESPONSE (critical for plan debugging):");
+                    sb.AppendLine("│ ||");
+                    sb.AppendLine("│ " + _Truncate(_rawLlmResponseForDebug, 1200).Replace("\n", "\n│ ", StringComparison.Ordinal));
+                    sb.AppendLine("│ ||");
+                }
+
+                sb.AppendLine("└────────────────────────────────────────────────────────────┘");
             }
 
-            if (!string.IsNullOrEmpty(_rawLlmResponseForDebug))
-            {
-                sb.AppendLine("│ 🔍 RAW LLM RESPONSE (critical for plan debugging):");
-                sb.AppendLine("│ ||");
-                sb.AppendLine("│ " + _Truncate(_rawLlmResponseForDebug, 4096).Replace("\n", "\n│ "));
-                sb.AppendLine("│ ||");
-            }
-
-            sb.AppendLine("└────────────────────────────────────────────────────────────┘");
-
-            return sb.ToString().TrimEnd();
+            return TelegramMessageLimits.Truncate(sb.ToString().TrimEnd(), maxLength);
         }
     }
 

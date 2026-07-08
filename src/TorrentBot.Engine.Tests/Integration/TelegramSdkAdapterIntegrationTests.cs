@@ -142,7 +142,7 @@ public sealed class TelegramSdkAdapterIntegrationTests
     [InlineData("off", 1, null)]
     [InlineData("low", 2, "parse:")]
     [InlineData("medium", 3, "plan:")]
-    [InlineData("full", 3, "VERBOSE")]
+    [InlineData("full", 5, "VERBOSE")]
     public async Task Telegram_production_adapter_applies_verbosity_levels_for_in_place_edits(
         string level,
         int expectedEdits,
