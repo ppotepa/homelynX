@@ -41,8 +41,6 @@
   <ItemGroup>
     <Compile Remove="Integration\FullStackIntegrationTests.cs" />
     <Compile Remove="Integration\PhasesIntegrationTests.cs" />
-    <Compile Remove="Unit\TorrentSearchDisplayContractTests.cs" />
-    <Compile Remove="Integration\CliApplicationTests.cs" />
   </ItemGroup>
 
 </Project>
