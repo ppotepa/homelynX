@@ -1,196 +1,104 @@
-using TorrentBot.Contracts.Bus.Events;
 using TorrentBot.Contracts.Capabilities;
-using TorrentBot.Contracts.Context;
-using TorrentBot.Contracts.Conversation;
 using TorrentBot.Contracts.Invocation;
 using TorrentBot.Contracts.Pipeline;
-using TorrentBot.Engine.Bus;
+using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine.Context;
+using TorrentBot.Engine.Conversation;
 
 namespace TorrentBot.Engine.Pipeline;
 
 public sealed class InvocationPipeline : IInvocationPipeline
 {
     private readonly IEngine _engine;
-    private readonly IPlanner _deterministicPlanner;
-    private readonly IReadOnlyList<IPipelineBehavior> _behaviors;
     private readonly ConversationContextStore? _conversationStore;
     private readonly Func<IReadOnlyList<CapabilityContract>>? _contractsProvider;
-    private readonly IInternalBus? _bus;
+    private readonly IResponseConstructor? _responseConstructor;
+    private readonly Func<IConversationPipeline?>? _conversationPipelineProvider;
 
     public InvocationPipeline(
         IEngine engine,
-        IPlanner deterministicPlanner,
-        IEnumerable<IPipelineBehavior>? behaviors = null,
         ConversationContextStore? conversationStore = null,
         Func<IReadOnlyList<CapabilityContract>>? contractsProvider = null,
-        IInternalBus? bus = null)
+        IResponseConstructor? responseConstructor = null,
+        Func<IConversationPipeline?>? conversationPipelineProvider = null)
     {
         _engine = engine;
-        _deterministicPlanner = deterministicPlanner;
-        _behaviors = behaviors?.ToList() ?? [];
         _conversationStore = conversationStore;
         _contractsProvider = contractsProvider;
-        _bus = bus;
+        _responseConstructor = responseConstructor;
+        _conversationPipelineProvider = conversationPipelineProvider;
     }
 
-    public async Task<PipelineResult> RunAsync(Invocation invocation, CancellationToken ct = default)
+    public async Task<PipelineResult> RunAsync(
+        Invocation invocation,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(invocation);
 
-        var progress = invocation.ProgressReporter;
-        var sessionId = invocation.RequestContext?.ChatId ?? invocation.RequestContext?.TraceId ?? "default";
-        var conversation = _conversationStore?.GetOrCreate(sessionId, invocation.User?.UserId ?? "unknown");
-        var contracts = _contractsProvider?.Invoke() ?? [];
-        var capabilities = _engine is EngineHost host
-            ? host.FilterCapabilitiesForUser(invocation.User!, null)
-            : [];
+        var sessionId = invocation.RequestContext?.ChatId
+            ?? invocation.RequestContext?.TraceId
+            ?? "default";
+        var conversation = _conversationStore?.GetOrCreate(
+            sessionId,
+            invocation.User?.UserId ?? "unknown");
 
-        var behaviorContext = new PipelineBehaviorContext(
-            invocation,
-            conversation,
-            contracts,
-            capabilities,
-            new Dictionary<string, object?>(StringComparer.Ordinal));
+        var capabilityName = _engine is EngineHost host
+            ? host.ResolveCapabilityName(invocation)
+            : invocation.CapabilityName ?? invocation.Command;
 
-        foreach (var behavior in _behaviors)
+        var plan = string.IsNullOrWhiteSpace(capabilityName)
+            ? new ExecutionPlan(PlanSource.Deterministic, [])
+            : new ExecutionPlan(
+                PlanSource.Deterministic,
+                [new ExecutionPlanStep(capabilityName!, invocation.Parameters)]);
+
+        if (!string.IsNullOrWhiteSpace(capabilityName))
         {
-            behaviorContext = await behavior.BeforePlanAsync(behaviorContext, ct).ConfigureAwait(false);
+            invocation.ProgressReporter?.Report("command:start", capabilityName);
         }
 
-        if (progress is not null)
+        var result = await _engine.SubmitAsync(invocation, cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrWhiteSpace(capabilityName))
         {
-            var kind = invocation.IsExplicit ? "explicit" : "nl";
-            var capOrText = invocation.IsExplicit ? invocation.CapabilityName ?? invocation.Command : _Truncate(invocation.Text, 60);
-            progress.Report("debug:invocation:start", $"type={kind} user={invocation.User?.UserId} cap/text={capOrText} dry={invocation.IsDryRun}");
-            progress.Report("debug:phase:start", "planning");
+            invocation.ProgressReporter?.Report(
+                result.Success ? "command:done" : "command:error",
+                result.Success ? capabilityName : $"{capabilityName}|{result.Error}");
         }
 
-        var planningContext = new PlanningContext(invocation.User, IsReplay(invocation), GetReplayCapability(invocation), invocation.Parameters);
-        var planner = SelectPlanner(invocation, planningContext);
+        var contract = string.IsNullOrWhiteSpace(capabilityName)
+            ? null
+            : _contractsProvider?.Invoke().FirstOrDefault(c =>
+                string.Equals(c.Name, capabilityName, StringComparison.Ordinal));
 
-        progress?.Report("planning:start", "command");
-
-        var plan = await planner.PlanAsync(invocation, planningContext, ct).ConfigureAwait(false);
-
-        progress?.Report("planning:done", $"{plan.Steps.Count}|{plan.Intent}");
-        progress?.Report("debug:phase:end", "planning");
-        progress?.Report("debug:phase:start", "execution");
-
-        if (plan.Steps.Count == 0)
+        var enriched = ContractResponseConstructor.EnrichResultData(contract, result, conversation);
+        var items = _responseConstructor?.Construct(contract, result, conversation);
+        if (items is null || items.Count == 0)
         {
-            var unresolved = new ExecutionResult(Success: false, Error: invocation.IsExplicit
-                ? "Capability was not resolved."
-                : "Only slash commands are supported. Use /help to list available commands.");
-            return await FinalizeAsync(behaviorContext, new PipelineResult(false, ArtifactAccumulator.FromExecutionResult(unresolved), plan, unresolved.Error), ct).ConfigureAwait(false);
+            items = ArtifactAccumulator.FromExecutionResult(
+                enriched,
+                spec: contract?.ResponseSpec).Items;
         }
 
-        ExecutionResult? last = null;
-        var saved = new Dictionary<string, object?>(StringComparer.Ordinal);
-        var totalSteps = plan.Steps.Count;
-        var stepIndex = 0;
-        foreach (var step in plan.Steps)
+        var artifacts = new ExecutionArtifacts(
+            enriched.Success,
+            items,
+            enriched,
+            enriched.Error);
+
+        if (conversation is not null
+            && !string.IsNullOrWhiteSpace(capabilityName)
+            && enriched.CapabilityResult is not null)
         {
-            stepIndex++;
-            progress?.Report("step:start", $"{stepIndex}/{totalSteps}|{step.CapabilityName}");
-
-            if (invocation.RequestContext is not null)
-            {
-                _bus?.Publish(new ToolCallEvent(step.CapabilityName, step.Parameters), invocation.RequestContext);
-            }
-
-            var stepInvocation = new Invocation
-            {
-                IsExplicit = true,
-                CapabilityName = step.CapabilityName,
-                Parameters = step.Parameters,
-                RequestContext = invocation.RequestContext,
-                User = invocation.User,
-                IsDryRun = invocation.IsDryRun,
-                Condition = step.Condition,
-                ProgressReporter = progress
-            };
-
-            behaviorContext = behaviorContext with { Invocation = stepInvocation };
-
-            last = await _engine.SubmitAsync(stepInvocation, ct).ConfigureAwait(false);
-            if (!last.Success)
-            {
-                progress?.Report("step:error", $"{stepIndex}/{totalSteps}|{step.CapabilityName}|{last.Error}");
-                return await FinalizeAsync(
-                    behaviorContext,
-                    new PipelineResult(false, ArtifactAccumulator.FromExecutionResult(last), plan, last.Error),
-                    ct).ConfigureAwait(false);
-            }
-
-            progress?.Report("step:done", $"{stepIndex}/{totalSteps}|{step.CapabilityName}|{ExtractStepDetail(last)}");
-
-            if (!string.IsNullOrWhiteSpace(step.SaveAs))
-            {
-                saved[step.SaveAs] = last.CapabilityResult?.Data ?? new Dictionary<string, object?>();
-            }
+            _conversationPipelineProvider?.Invoke()?.RegisterPendingFromResult(
+                conversation,
+                capabilityName!,
+                contract,
+                invocation.Parameters,
+                enriched.CapabilityResult,
+                invocation.RequestContext);
         }
 
-        progress?.Report("debug:phase:end", "execution");
-        progress?.Report("debug:pipeline:complete", $"steps_executed={totalSteps} success=true");
-        return await FinalizeAsync(
-            behaviorContext,
-            new PipelineResult(true, ArtifactAccumulator.FromExecutionResult(last!), plan),
-            ct).ConfigureAwait(false);
+        return new PipelineResult(enriched.Success, artifacts, plan, enriched.Error);
     }
-
-    private async Task<PipelineResult> FinalizeAsync(
-        PipelineBehaviorContext behaviorContext,
-        PipelineResult pipelineResult,
-        CancellationToken ct)
-    {
-        var current = pipelineResult;
-        foreach (var behavior in _behaviors)
-        {
-            var (ctx, updated) = await behavior.AfterExecutionAsync(behaviorContext, current, ct).ConfigureAwait(false);
-            behaviorContext = ctx;
-            if (updated is not null)
-            {
-                current = updated;
-            }
-        }
-
-        return current;
-    }
-
-    private static string ExtractStepDetail(ExecutionResult result)
-    {
-        if (result.CapabilityResult?.Data is not Dictionary<string, object?> data)
-        {
-            return "";
-        }
-
-        if (data.TryGetValue("count", out var count))
-        {
-            return $"count={count}";
-        }
-
-        if (data.TryGetValue("jobId", out var jobId))
-        {
-            return $"jobId={jobId}";
-        }
-
-        if (data.TryGetValue("confirmationRequired", out var cr) && cr is true)
-        {
-            return "confirmation_required";
-        }
-
-        return "";
-    }
-
-    private IPlanner SelectPlanner(Invocation invocation, PlanningContext context) => _deterministicPlanner;
-
-    private static bool IsReplay(Invocation invocation) =>
-        invocation.Parameters?.ContainsKey("confirmationToken") == true;
-
-    private static string? GetReplayCapability(Invocation invocation) =>
-        invocation.CapabilityName ?? invocation.Command;
-
-    private static string _Truncate(string? text, int max) =>
-        string.IsNullOrEmpty(text) ? "" : text.Length <= max ? text : text.Substring(0, max) + "…";
 }
