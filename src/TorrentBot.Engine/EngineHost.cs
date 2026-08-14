@@ -13,7 +13,6 @@ using TorrentBot.Contracts.Repositories;
 using TorrentBot.Contracts.Audit;
 using TorrentBot.Engine.Notifications;
 using TorrentBot.Engine.Audit;
-using TorrentBot.Engine.Migration;
 using TorrentBot.Engine.Bus;
 using TorrentBot.Engine.Capabilities;
 using TorrentBot.Engine.Confirmations;
@@ -125,7 +124,7 @@ public sealed class EngineHost : IEngine
                     _options.ConversationContextStore.RegisterCollector(collector);
                 }
             }
-            
+
             _jobRunner = _options.JobRunner;
             _jobRunner?.Start(_jobTracker, _bus, cancellationToken);
 
@@ -180,16 +179,6 @@ public sealed class EngineHost : IEngine
         ArgumentNullException.ThrowIfNull(invocation);
         ArgumentNullException.ThrowIfNull(invocation.RequestContext);
         ArgumentNullException.ThrowIfNull(invocation.User);
-
-        if (_options.LegacyDelegator?.IsEnabled == true)
-        {
-            var delegated = await _options.LegacyDelegator.TryDelegateAsync(invocation, cancellationToken)
-                .ConfigureAwait(false);
-            if (delegated is not null)
-            {
-                return delegated;
-            }
-        }
 
         if (!invocation.IsExplicit)
         {
