@@ -15,19 +15,12 @@ public sealed class ConversationResponseHandler
 
     public ConversationResponseResolution Resolve(string sessionId, string userId, string? callbackData, string? text = null)
     {
+        _ = text;
         var context = _store.GetOrCreate(sessionId, userId);
 
-        if (!string.IsNullOrWhiteSpace(callbackData))
-        {
-            return ResolveCallback(context, userId, callbackData);
-        }
-
-        if (!string.IsNullOrWhiteSpace(text))
-        {
-            return ResolveText(context, userId, text);
-        }
-
-        return ConversationResponseResolution.NotHandled;
+        return !string.IsNullOrWhiteSpace(callbackData)
+            ? ResolveCallback(context, userId, callbackData)
+            : ConversationResponseResolution.NotHandled;
     }
 
     private static ConversationResponseResolution ResolveCallback(ConversationContext context, string userId, string callbackData)
@@ -78,37 +71,6 @@ public sealed class ConversationResponseHandler
                 "select",
                 indexPart,
                 new Dictionary<string, object?> { ["index"] = index }));
-        }
-
-        return ConversationResponseResolution.NotHandled;
-    }
-
-    private static ConversationResponseResolution ResolveText(ConversationContext context, string userId, string text)
-    {
-        var indexPending = context.PendingActions.FirstOrDefault(a =>
-            string.Equals(a.ExpectedResponse.Type, "index", StringComparison.OrdinalIgnoreCase));
-        if (indexPending is not null)
-        {
-            if (!IndexSelectionParsing.TryParseDisplayIndex(text, out var index))
-            {
-                return ConversationResponseResolution.NotHandled;
-            }
-
-            return ConversationResponseResolution.ForUserResponse(new UserResponse(
-                indexPending.Token,
-                userId,
-                "select",
-                text,
-                new Dictionary<string, object?> { ["index"] = index }));
-        }
-
-        var yesNoPending = context.PendingActions.FirstOrDefault(a =>
-            string.Equals(a.ExpectedResponse.Type, "yes_no", StringComparison.OrdinalIgnoreCase));
-        if (yesNoPending is not null && YesNoResponseParsing.TryParse(text, out var responseType))
-        {
-            return ConversationResponseResolution.ForUserResponse(
-                new UserResponse(yesNoPending.Token, userId, responseType, text),
-                cancelled: responseType == "cancel");
         }
 
         return ConversationResponseResolution.NotHandled;
