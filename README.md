@@ -1,72 +1,69 @@
 # Homelynx
 
-Private-homelab **media automation** control plane (.NET 8 / C#), replacing the legacy Python Telegram bot.
+Homelynx is a .NET 8 homelab media-control application with explicit Telegram and CLI commands.
 
-Homelynx is the intelligent center for torrent search (Jackett) → download (qBittorrent) → media library (Jellyfin), with plugin-backed text commands and optional TTS. Interfaces:
+Core flow:
 
-- **Telegram** — production bot (`homelynx-bot` container)
-- **CLI** — diagnostics, dry-run, automation (`TorrentBot.Adapters.Cli`)
+`Telegram / CLI → command routing → capability registry → handler → integration → response`
 
-## Install (full homelab stack)
+There is no natural-language command planner. User actions are explicit commands such as `/search ubuntu`, `/select 2`, `/downloads`, `/status` and `/health`. Telegram buttons are supported for explicit selection and confirmation callbacks.
+
+## Services
+
+The Docker stack contains the Homelynx bot plus the services it integrates with: qBittorrent, Jackett, FlareSolverr, Jellyfin, portal and TTS.
+
+## Install
 
 ```bash
 ./install.sh
 ```
 
-Requires **sudo** (or root) for system steps (ZeroTier DNS, systemd). Docker must be running and accessible to your user.
+Docker must be available. Some host setup performed by the installer can require elevated privileges.
 
-The installer configures `.env`, starts satellite services (qBittorrent, Jackett, portal, TTS, Jellyfin), then builds and starts the **C# `homelynx-bot`** service.
-
-Reinstall without wiping data:
+Reinstall without intentionally wiping application data:
 
 ```bash
 ./install.sh --reinstall
 ```
 
-### Bot only (development)
+### Development
 
 ```bash
 cd src
-dotnet run --project TorrentBot.Adapters.Telegram.Host -- --harness   # no Telegram token
+dotnet run --project TorrentBot.Adapters.Telegram.Host -- --harness
 dotnet run --project TorrentBot.Adapters.Cli -- capability call system.health --json
 ```
 
-Production container:
+Production bot container:
 
 ```bash
 docker compose up -d --build homelynx-bot
 docker compose logs -f homelynx-bot
 ```
 
-## Reinstall
+## Main capabilities
 
-```bash
-./install.sh --reinstall
-```
+- torrent search, selection and torrent control
+- download start/list/cancel
+- jobs and download completion tracking
+- media listing and TTS
+- system status, health, metrics and capability help
+- read-only structured queries through DuckDB
+- ACL and confirmation checks for protected operations
 
-Recreates containers defined in `docker-compose.yaml` (same project `homelynx`) without wiping data volumes.
-
-Satellite Docker services, ports, and `.env` keys (`QBIT_HOST`, `JACKETT_HOST`, …) are resolved automatically by the C# bootstrap.
+Search state is intentionally retained between `/search` and `/select`; this is application session state, not conversational inference.
 
 ## Project layout
 
-```
-homelynx/
-├── install.sh              # Full stack installer
-├── docker-compose.yaml     # Homelynx stack (project name: homelynx)
-├── Dockerfile              # C# Telegram host image
-├── acl/                    # ACL presets
-├── services/               # Portal, TTS
-├── src/                    # .NET solution (assemblies still named TorrentBot.*)
+```text
+homelynX/
+├── install.sh
+├── docker-compose.yaml
+├── Dockerfile
+├── acl/
+├── services/
+├── src/
 └── docs/
 ```
 
-## Documentation
-
-- [docs/README.md](docs/README.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/FUNCTIONALITY.md](docs/FUNCTIONALITY.md)
-
-## License
-
-Private / internal homelab tool.
+See [docs/README.md](docs/README.md) for architecture and capability documentation.
