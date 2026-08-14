@@ -4,7 +4,6 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
@@ -18,9 +17,6 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
   </ItemGroup>
 
   <ItemGroup>
@@ -45,10 +41,6 @@
   <ItemGroup>
     <Compile Remove="Integration\FullStackIntegrationTests.cs" />
     <Compile Remove="Integration\PhasesIntegrationTests.cs" />
-    <Compile Remove="Integration\LlmPlannerScenarioTests.cs" />
-    <Compile Remove="Support\FixedPlanLlmPlanner.cs" />
-    <Compile Remove="Support\Llm*.cs" />
-    <Compile Remove="Unit\Llm*.cs" />
     <Compile Remove="Unit\TorrentSearchDisplayContractTests.cs" />
     <Compile Remove="Integration\CliApplicationTests.cs" />
   </ItemGroup>
