@@ -16,7 +16,5 @@ internal static class QueryContracts
         ],
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("list", FormatHint: "query_results"),
-        LlmUsage: "Use to inspect downloads, jobs, or runtime state. Not for content search.",
-        IntentHints: ["query", "list", "show", "find"],
         IsReadOnly: true);
 }

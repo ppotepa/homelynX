@@ -9,11 +9,9 @@ public static class CapabilityContractExtensions
             Description: contract.Description ?? contract.ExactSemantics,
             Permission: contract.Risk is RiskLevel.Admin ? "ADMIN" : "USER",
             Risk: contract.Risk,
-            LlmUsage: contract.LlmUsage ?? contract.ExactSemantics,
-            IntentHints: contract.IntentHints,
             IsReadOnly: contract.IsReadOnly,
             Scope: contract.Scope);
 
     public static CapabilityContract WithCommand(this CapabilityContract contract, string? command) =>
-        contract; // command lives in metadata at registration time
+        contract;
 }

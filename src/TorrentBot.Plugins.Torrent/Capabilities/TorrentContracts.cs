@@ -22,8 +22,6 @@ internal static class TorrentContracts
                 NextCapability: "torrent.select_result")
         ],
         Description: "Search torrent indexers via Jackett for a given query string.",
-        LlmUsage: "Use for content/torrent search requests like 'search for ubuntu', 'znajdz ubuntu'.",
-        IntentHints: ["search", "znajdz", "find", "pobierz", "szukaj"],
         IsReadOnly: true);
 
     public static readonly CapabilityContract List = new(
@@ -33,8 +31,6 @@ internal static class TorrentContracts
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("list", FormatHint: "rich_status", ItemsKey: "torrents"),
         Description: "List torrents managed by qBittorrent with rich details.",
-        LlmUsage: "Use when user asks 'pokaż torrenty', 'list torrents', 'status torrenty'.",
-        IntentHints: ["torrents", "list", "status torrenty"],
         IsReadOnly: true);
 
     public static readonly CapabilityContract SelectResult = new(
@@ -54,9 +50,7 @@ internal static class TorrentContracts
                 ActionType: "await_confirm",
                 ExpectedResponse: new ExpectedResponseShape("yes_no"),
                 NextCapability: "torrent.select_result")
-        ],
-        LlmUsage: "Use after torrent.search when user says 'select 1', 'wybierz pierwszy' (indexes match displayed numbers).",
-        IntentHints: ["select", "wybierz", "first", "pierwszy"]);
+        ]);
 
     public static readonly CapabilityContract MoreResults = new(
         Name: "torrent.more_results",
@@ -79,9 +73,7 @@ internal static class TorrentContracts
         Parameters: [new ParameterSpec("title", "string", "Title to search", Required: true)],
         Risk: RiskLevel.ConfirmationRequired,
         UserInteractions: new UserInteractionSpec(RequiresConfirmation: true),
-        ResponseSpec: new ResponseConstructionSpec("download_started", SelectedKey: "selected"),
-        LlmUsage: "Use when user wants to download by title without manual selection.",
-        IntentHints: ["download", "candidate", "pobierz"]);
+        ResponseSpec: new ResponseConstructionSpec("download_started", SelectedKey: "selected"));
 
     public static readonly CapabilityContract Pause = new(
         Name: "torrent.pause",
