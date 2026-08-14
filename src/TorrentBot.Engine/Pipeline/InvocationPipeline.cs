@@ -46,12 +46,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
             ? host.ResolveCapabilityName(invocation)
             : invocation.CapabilityName ?? invocation.Command;
 
-        var plan = string.IsNullOrWhiteSpace(capabilityName)
-            ? new ExecutionPlan(PlanSource.Deterministic, [])
-            : new ExecutionPlan(
-                PlanSource.Deterministic,
-                [new ExecutionPlanStep(capabilityName!, invocation.Parameters)]);
-
         if (!string.IsNullOrWhiteSpace(capabilityName))
         {
             invocation.ProgressReporter?.Report("command:start", capabilityName);
@@ -99,6 +93,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
                 invocation.RequestContext);
         }
 
-        return new PipelineResult(enriched.Success, artifacts, plan, enriched.Error);
+        return new PipelineResult(enriched.Success, artifacts, enriched.Error);
     }
 }
