@@ -2,7 +2,6 @@ using TorrentBot.Bootstrap;
 using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Conversation;
-using TorrentBot.Llm;
 
 namespace TorrentBot.Engine.Tests.Unit;
 
@@ -54,32 +53,6 @@ public sealed class ArchitectureContractTests
         Assert.Equal(2, resolution.Parameters!["index"]);
         Assert.Equal("ubuntu", resolution.Parameters!["query"]);
         Assert.Empty(context.PendingActions);
-    }
-
-    [Fact]
-    public async Task Planner_prompt_includes_contract_and_pending_sections_without_critical_rules()
-    {
-        await using var scope = await StartEngineAsync();
-        var conversation = scope.Engine.ConversationContextStore!.GetOrCreate("chat-1", "admin");
-        conversation.AddPendingAction(new PendingUserAction(
-            "pending-1",
-            "download.start",
-            DownloadContract(),
-            new ExpectedResponseShape("yes_no")));
-
-        var prompt = LlmSystemPromptBuilder.BuildPlannerPrompt(new LlmPlanningRequest(
-            "start download",
-            [],
-            [],
-            Conversation: conversation,
-            Contracts: scope.Engine.GetCapabilityContracts()));
-
-        Assert.Contains("Tool & Capability Contracts", prompt, StringComparison.Ordinal);
-        Assert.Contains("Pending Actions", prompt, StringComparison.Ordinal);
-        Assert.Contains("pending-1", prompt, StringComparison.Ordinal);
-        Assert.Contains("How to construct response", prompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("CRITICAL SEARCH RULE", prompt, StringComparison.Ordinal);
-        Assert.DoesNotContain("CRITICAL FOLLOW-UP RULE", prompt, StringComparison.Ordinal);
     }
 
     private static CapabilityContract DownloadContract() =>

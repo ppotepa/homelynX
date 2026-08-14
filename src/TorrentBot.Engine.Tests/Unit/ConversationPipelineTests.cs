@@ -19,7 +19,7 @@ public sealed class ConversationPipelineTests
         await engine.StartAsync();
         try
         {
-            var services = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+            var services = PipelineBootstrap.Create(engine);
             var conversation = engine.ConversationContextStore!.GetOrCreate("chat-1", "admin");
             var contract = new CapabilityContract(
                 "system.health",
@@ -63,7 +63,7 @@ public sealed class ConversationPipelineTests
         engine.StartAsync().GetAwaiter().GetResult();
         try
         {
-            var services = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+            var services = PipelineBootstrap.Create(engine);
             var conversation = engine.ConversationContextStore!.GetOrCreate("chat-1", "admin");
             var contract = engine.GetCapabilityContracts().First(c => c.Name == "torrent.search");
 
@@ -103,7 +103,7 @@ public sealed class ConversationPipelineTests
         await engine.StartAsync();
         try
         {
-            var services = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+            var services = PipelineBootstrap.Create(engine);
             const string chatId = "chat-1";
             var conversation = engine.ConversationContextStore!.GetOrCreate(chatId, "admin");
             var baseInvocation = new Invocation
@@ -180,7 +180,7 @@ public sealed class ConversationPipelineTests
         await engine.StartAsync();
         try
         {
-            var services = PipelineBootstrap.Create(engine, engine.LlmPipeline);
+            var services = PipelineBootstrap.Create(engine);
             var conversation = engine.ConversationContextStore!.GetOrCreate("chat-1", "admin");
             var contract = new CapabilityContract(
                 "torrent.delete",

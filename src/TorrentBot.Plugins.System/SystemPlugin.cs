@@ -15,9 +15,7 @@ public sealed class SystemPlugin : IPlugin
         context.RegisterCapability(SystemContracts.Capabilities, new CapabilitiesListHandler(), "/capabilities");
         context.RegisterCapability(SystemContracts.Ping, new PingCapabilityHandler(), "/ping");
         context.RegisterCapability(SystemContracts.Help, new SystemHelpHandler(), "/help");
-        context.RegisterCapability(SystemContracts.LlmStatus, new SystemLlmStatusHandler(), "/llm_status");
         context.RegisterCapability(SystemContracts.DiskUsage, new SystemDiskUsageHandler(), "/disk_usage");
         context.RegisterCapability(SystemContracts.FindLargeFiles, new SystemFindLargeFilesHandler(), "/find_large_files");
-        context.RegisterCapability(SystemContracts.LlmPrompt, new SystemLlmPromptDumpHandler(), "/llm_prompt");
     }
 }

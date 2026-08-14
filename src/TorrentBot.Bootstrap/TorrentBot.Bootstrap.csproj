@@ -9,7 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\TorrentBot.Engine\TorrentBot.Engine.csproj" />
     <ProjectReference Include="..\TorrentBot.Integrations\TorrentBot.Integrations.csproj" />
-    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
     <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.System\TorrentBot.Plugins.System.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Query\TorrentBot.Plugins.Query.csproj" />

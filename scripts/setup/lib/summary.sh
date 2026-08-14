@@ -22,7 +22,6 @@ SUMMARY_EOF
   cat <<SUMMARY_EOF
   Portal:      $portal_url
   Admin:       $portal_url/admin
-  LLM audit:   $portal_url/llm
 SUMMARY_EOF
   cat <<'SUMMARY_EOF'
   Telegram bot: Docker service homelynx-bot (C#)
@@ -30,7 +29,6 @@ SUMMARY_EOF
   Jellyfin:     http://localhost:8096
   Jackett:      http://localhost:9117
   FlareSolverr: http://localhost:8191
-  LLM/Ollama:   http://localhost:11434
 
 
 Access control:
@@ -55,11 +53,6 @@ Media organizer:
   Dry run: ./scripts/media_organize.sh --dry-run
   Apply:   ./scripts/media_organize.sh --apply
   Default mode is hardlink, so qBittorrent can keep seeding from downloads while Jellyfin sees organized media.
-
-LLM audit:
-  UI:      $portal_url/llm
-  Stores:  ./portal-data/llm_audit.sqlite3
-  Records local LLM calls from media organizer classification.
 
 Useful commands:
   docker compose ps

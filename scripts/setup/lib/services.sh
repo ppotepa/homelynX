@@ -55,8 +55,8 @@ start_backend_services() {
   portal_port="$(get_env_value PORTAL_PORT)"
   portal_port="${portal_port:-80}"
 
-  log "Starting Homelynx portal, qBittorrent, Jackett, FlareSolverr, TTS, LLM and media library services."
-  services=(qbittorrent jackett flaresolverr tts llm)
+  log "Starting Homelynx portal, qBittorrent, Jackett, FlareSolverr, TTS and media library services."
+  services=(qbittorrent jackett flaresolverr tts)
   if is_truthy "$portal_enabled"; then
     services+=(portal)
   fi
@@ -74,8 +74,6 @@ start_backend_services() {
     wait_for_http "Jellyfin" "http://127.0.0.1:${jellyfin_port}" 180
   fi
   wait_for_http "TTS" "http://127.0.0.1:5055/health" 120
-  wait_for_http "LLM" "http://127.0.0.1:11434/api/tags" 180
-  ensure_llm_model
 }
 start_bot() {
   local services=(homelynx-bot)

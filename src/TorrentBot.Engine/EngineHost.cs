@@ -6,7 +6,6 @@ using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Invocation;
 using TorrentBot.Contracts.Jobs;
-using TorrentBot.Contracts.Llm;
 using TorrentBot.Contracts.Plugins;
 using TorrentBot.Contracts.Query;
 using TorrentBot.Contracts.ProcessManagers;
@@ -22,7 +21,6 @@ using TorrentBot.Engine.Context;
 using TorrentBot.Engine.Jobs;
 using TorrentBot.Engine.Plugins;
 using TorrentBot.Engine.Repositories;
-using TorrentBot.Llm;
 
 namespace TorrentBot.Engine;
 
@@ -54,8 +52,6 @@ public sealed class EngineHost : IEngine
     {
         get { lock (_lifecycleGate) { return _isRunning; } }
     }
-
-    public LlmPipeline? LlmPipeline => _options.LlmPipeline;
 
     public ConversationContextStore? ConversationContextStore => _options.ConversationContextStore;
 
@@ -197,7 +193,8 @@ public sealed class EngineHost : IEngine
 
         if (!invocation.IsExplicit)
         {
-            return await HandleNaturalLanguageAsync(invocation, cancellationToken).ConfigureAwait(false);
+            return new ExecutionResult(Success: false,
+                Error: "Only slash commands are supported. Use /help to list available commands.");
         }
 
         var capabilityName = ResolveCapabilityInternal(invocation);
@@ -237,217 +234,6 @@ public sealed class EngineHost : IEngine
 
     public Task<QueryResult> QueryAsync(string source, QuerySpec spec, CancellationToken ct = default) =>
         _repositories.QueryAsync(source, spec, ct);
-
-    private async Task<ExecutionResult> HandleNaturalLanguageAsync(Invocation invocation, CancellationToken cancellationToken)
-    {
-        if (_options.LlmPipeline is null)
-        {
-            return new ExecutionResult(Success: false, Error: "Natural-language invocation requires an LLM pipeline.");
-        }
-
-        var progress = invocation.ProgressReporter;
-        var scope = invocation.RequestContext.Properties?.TryGetValue("scope", out var scopeValue) == true
-            ? scopeValue?.ToString() ?? "media"
-            : "media";
-
-        _options.AuditSink?.Write(
-            "natural_intent",
-            invocation.RequestContext,
-            "llm",
-            true,
-            invocation.Text);
-
-        // Get or create conversation context
-        var sessionId = invocation.RequestContext.ChatId ?? invocation.RequestContext.TraceId;
-        var conversation = _options.ConversationContextStore?.GetOrCreate(sessionId, invocation.User.UserId)
-            ?? new TorrentBot.Contracts.Context.ConversationContext(sessionId, invocation.User.UserId);
-
-        // Refresh snapshots
-        progress?.Report("debug:phase:start", "context_refresh");
-        progress?.Report("context:refresh", null);
-        if (_options.ConversationContextStore is not null)
-        {
-            await _options.ConversationContextStore.RefreshSnapshotsAsync(conversation, cancellationToken).ConfigureAwait(false);
-        }
-        progress?.Report("debug:phase:end", "context_refresh");
-
-        // Debug: show what context is available (programmer wants to see what LLM actually saw)
-        if (progress is not null && conversation.Snapshots.Count > 0)
-        {
-            var snapSummary = string.Join(", ", conversation.Snapshots.Select(s =>
-            {
-                int count = 0;
-                if (s.Value.State.TryGetValue("items", out var items) && items is System.Collections.IEnumerable e)
-                {
-                    foreach (var _ in e) count++;
-                }
-                return $"{s.Key}({count})";
-            }));
-            progress.Report("debug:context:loaded", $"snapshots: {snapSummary}; history:{conversation.History.Count}");
-
-            // For Debug verbosity: show small samples of the most important snapshots
-            foreach (var (name, snap) in conversation.Snapshots.Take(3))
-            {
-                if (snap.State.TryGetValue("items", out var items) && items is System.Collections.IEnumerable itemList)
-                {
-                    var sample = string.Join(" | ", itemList.Cast<object>().Take(2).Select(i => i.ToString()?.Substring(0, Math.Min(80, i.ToString()!.Length))));
-                    if (!string.IsNullOrEmpty(sample))
-                        progress.Report("debug:context:sample", $"{name}: {sample}");
-                }
-            }
-        }
-
-        // Track request number and add user message to history
-        var requestNumber = conversation.NextRequestNumber();
-        conversation.AddMessage("user", invocation.Text ?? "", requestNumber);
-
-        // Debug: show request/session identity
-        progress?.Report("debug:request", $"session={sessionId} req#{requestNumber} trace={invocation.RequestContext.TraceId}");
-
-        // In debug: show recent history so dev sees what LLM has for multi-turn context
-        if (progress is not null && conversation.History.Count > 0)
-        {
-            var recent = string.Join(" ; ", conversation.History.TakeLast(3).Select(h => $"{h.Role}: {_Truncate(h.Content, 60)}"));
-            progress.Report("debug:history:recent", recent);
-        }
-
-        var allowed = FilterCapabilities(invocation.User, scope);
-
-        progress?.Report("debug:phase:start", "llm_planning");
-        progress?.Report("llm:planning", $"{allowed.Count}|{scope}");
-        var llmResult = await _options.LlmPipeline.RunAsync(
-            new LlmPipelineRequest(
-                invocation.Text ?? string.Empty,
-                allowed,
-                GetQuerySourceManifests(),
-                invocation.IsDryRun,
-                scope,
-                invocation.RequestContext,
-                conversation,
-                requestNumber,
-                progress,
-                GetCapabilityContracts(scope)),
-            cancellationToken).ConfigureAwait(false);
-
-        progress?.Report("llm:plan_ready", $"{llmResult.Plan.Steps.Count}|{llmResult.Plan.Intent}|{llmResult.Plan.Confidence:F2}");
-        progress?.Report("debug:phase:end", "llm_planning");
-
-        // Show plan details in debug
-        if (progress is not null && llmResult.Plan.Steps.Count > 0)
-        {
-            var planDetails = string.Join(" -> ", llmResult.Plan.Steps.Select(s => $"{s.Capability}({(s.Parameters?.Count ?? 0)}p)"));
-            progress.Report("debug:plan:details", planDetails);
-        }
-
-        if (!llmResult.Execution.Success)
-        {
-            var errorMsg = llmResult.Execution.Error ?? "Plan validation failed.";
-            progress?.Report("llm:validation_error", errorMsg);
-            conversation.AddMessage("assistant", errorMsg, requestNumber);
-            return new ExecutionResult(Success: false, Error: errorMsg);
-        }
-
-        progress?.Report("llm:validated", null);
-        progress?.Report("debug:phase:start", "execution");
-
-        CapabilityResult? last = null;
-        var saved = new Dictionary<string, object?>(StringComparer.Ordinal);
-        var totalSteps = llmResult.Execution.StepsToExecute.Count;
-        var stepIndex = 0;
-        foreach (var step in llmResult.Execution.StepsToExecute)
-        {
-            stepIndex++;
-            progress?.Report("step:start", $"{stepIndex}/{totalSteps}|{step.Capability}");
-
-            var stepInvocation = new Invocation
-            {
-                IsExplicit = true,
-                CapabilityName = step.Capability,
-                Parameters = step.Parameters,
-                RequestContext = invocation.RequestContext,
-                User = invocation.User,
-                IsDryRun = invocation.IsDryRun,
-                ProgressReporter = progress
-            };
-
-            // Debug: show exact params sent (programmer gold)
-            if (step.Parameters is { Count: > 0 })
-            {
-                var paramStr = string.Join(", ", step.Parameters.Select(p => $"{p.Key}={_Truncate(p.Value?.ToString(), 60)}"));
-                progress?.Report("debug:step:params", paramStr);
-            }
-
-            progress?.Report("debug:capability:about_to_execute", $"{step.Capability} (dry={invocation.IsDryRun})");
-
-            var stepResult = await ExecuteCapabilityAsync(stepInvocation, step.Capability, step.Parameters, cancellationToken)
-                .ConfigureAwait(false);
-            if (!stepResult.Success)
-            {
-                var errorMsg = stepResult.Error ?? $"Step '{step.Capability}' failed.";
-                progress?.Report("step:error", $"{stepIndex}/{totalSteps}|{step.Capability}|{errorMsg}");
-                conversation.AddMessage("assistant", errorMsg, requestNumber);
-                return stepResult with { Error = errorMsg };
-            }
-
-            var detail = ExtractStepDetail(stepResult.CapabilityResult);
-            progress?.Report("step:done", $"{stepIndex}/{totalSteps}|{step.Capability}|{detail}");
-
-            // Debug: show result summary
-            if (stepResult.CapabilityResult?.Data is Dictionary<string, object?> data && data.Count > 0)
-            {
-                var resultSummary = string.Join(", ", data.Take(3).Select(kv => $"{kv.Key}={_Truncate(kv.Value?.ToString(), 40)}"));
-                progress?.Report("debug:step:result", resultSummary);
-            }
-
-            last = stepResult.CapabilityResult;
-            if (!string.IsNullOrWhiteSpace(step.SaveAs))
-            {
-                saved[step.SaveAs] = stepResult.CapabilityResult?.Data;
-                progress?.Report("debug:saved", $"{step.SaveAs} = {stepResult.CapabilityResult?.Data?.GetType().Name ?? "data"}");
-            }
-        }
-
-        progress?.Report("llm:responding", null);
-        progress?.Report("debug:phase:end", "execution");
-        progress?.Report("debug:phase:start", "response_compose");
-
-        var reply = await _options.LlmPipeline.ComposeReply(
-            invocation.Text ?? string.Empty,
-            llmResult.Plan,
-            llmResult.Execution,
-            last).ConfigureAwait(false);
-
-        progress?.Report("llm:responded", null);
-        progress?.Report("debug:phase:end", "response_compose");
-
-        // Add assistant response + structured previous action to history
-        // This helps the LM path on follow-ups (select 0 after search, pause after start, etc.)
-        var planSummary = llmResult.Plan.Steps.Count > 0 
-            ? $"[Executed: {string.Join(" -> ", llmResult.Plan.Steps.Select(s => s.Capability))}] " 
-            : "";
-        conversation.AddMessage("assistant", planSummary + reply, requestNumber);
-
-        return new ExecutionResult(
-            Success: true,
-            CapabilityResult: last ?? new CapabilityResult(true, Message: reply),
-            IsDryRun: invocation.IsDryRun);
-    }
-
-    private static string _Truncate(string? s, int max) => string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s.Substring(0, max) + "…");
-
-    private static string ExtractStepDetail(CapabilityResult? result)
-    {
-        if (result?.Data is not Dictionary<string, object?> data)
-            return "";
-
-        if (data.TryGetValue("count", out var count))
-            return $"count={count}";
-        if (data.TryGetValue("jobId", out var jobId))
-            return $"jobId={jobId}";
-        if (data.TryGetValue("confirmationRequired", out var cr) && cr is true)
-            return "confirmation_required";
-        return "";
-    }
 
     private async Task<ExecutionResult> ExecuteCapabilityAsync(
         Invocation invocation,

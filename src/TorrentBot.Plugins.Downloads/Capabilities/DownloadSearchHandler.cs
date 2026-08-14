@@ -16,7 +16,7 @@ public sealed class DownloadSearchHandler : ICapabilityHandler
             return new CapabilityResult(Success: false, Message: "Parameter 'query' is required.", IsDryRun: context.IsDryRun);
         }
 
-        var provider = GetString(parameters, "provider") ?? "torrent";
+        var provider = DownloaderProviderNormalizer.Normalize(GetString(parameters, "provider"));
         var registry = context.Engine.GetService<DownloaderRegistry>();
         if (registry is null)
         {

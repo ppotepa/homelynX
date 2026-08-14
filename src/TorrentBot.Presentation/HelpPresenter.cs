@@ -40,7 +40,7 @@ public sealed class HelpPresenter : IArtifactPresenter
             lines.RemoveAt(lines.Count - 1);
         }
 
-        lines.Add("Wiecej: /capabilities | NL: napisz co chcesz zrobic");
+        lines.Add("Wiecej: /capabilities");
 
         return new RenderedOutput(string.Join('\n', lines));
     }

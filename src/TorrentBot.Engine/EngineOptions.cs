@@ -6,7 +6,6 @@ using TorrentBot.Engine.Context;
 using TorrentBot.Engine.Jobs;
 using TorrentBot.Engine.Migration;
 using TorrentBot.Engine.Notifications;
-using TorrentBot.Llm;
 
 namespace TorrentBot.Engine;
 
@@ -15,7 +14,6 @@ public sealed class EngineOptions
     public ILoggerFactory? LoggerFactory { get; init; }
     public bool DryRunSkipsJobPersistence { get; init; } = true;
     public AclService? AclService { get; init; }
-    public LlmPipeline? LlmPipeline { get; init; }
     public IConfirmationStore? ConfirmationStore { get; init; }
     public IAuditSink? AuditSink { get; init; }
     public FeatureFlags FeatureFlags { get; init; } = new();

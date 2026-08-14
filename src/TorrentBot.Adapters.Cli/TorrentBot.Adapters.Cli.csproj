@@ -4,7 +4,6 @@
     <ProjectReference Include="..\TorrentBot.Bootstrap\TorrentBot.Bootstrap.csproj" />
     <ProjectReference Include="..\TorrentBot.Contracts\TorrentBot.Contracts.csproj" />
     <ProjectReference Include="..\TorrentBot.Engine\TorrentBot.Engine.csproj" />
-    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
     <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Downloads\TorrentBot.Plugins.Downloads.csproj" />
     <ProjectReference Include="..\TorrentBot.Presentation\TorrentBot.Presentation.csproj" />

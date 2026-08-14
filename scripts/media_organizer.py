@@ -314,20 +314,12 @@ def build_plan(args: argparse.Namespace) -> dict[str, Any]:
     library = Path(args.library).expanduser().resolve()
     plans_dir = library / "_organizer" / "plans"
     items: list[PlanItem] = []
-    llm_base = args.llm_url
 
     for idx, item in enumerate(iter_media_items(source), start=1):
         files = collect_files(item)
         if not files:
             continue
         category, confidence, reason, target_rel = classify_rules(item, files)
-        if args.llm and confidence < args.llm_threshold:
-            llm = ask_llm(llm_base, args.llm_model, item, files, args.llm_timeout)
-            if llm and llm["confidence"] >= confidence:
-                category = llm["category"]
-                confidence = llm["confidence"]
-                reason = f"LLM: {llm['reason']}"
-                target_rel = llm["target_path"]
         target_rel = safe_relative_target(target_rel, category)
         target = unique_target(library / target_rel)
         ensure_inside(library, target)
@@ -433,12 +425,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--library", default=os.getenv("MEDIA_LIBRARY_PATH", "/home/ppotepa/mediaserver"))
     parser.add_argument("--mode", choices=["hardlink", "copy", "move"], default=os.getenv("MEDIA_ORGANIZER_MODE", "hardlink"))
     parser.add_argument("--min-confidence", type=float, default=float(os.getenv("MEDIA_ORGANIZER_MIN_CONFIDENCE", "0.70")))
-    parser.add_argument("--llm", action="store_true", default=os.getenv("MEDIA_ORGANIZER_LLM_ENABLED", "true").lower() in {"1", "true", "yes", "on"})
-    parser.add_argument("--no-llm", dest="llm", action="store_false")
-    parser.add_argument("--llm-url", default=os.getenv("MEDIA_ORGANIZER_LLM_URL", "http://127.0.0.1:11434"))
-    parser.add_argument("--llm-model", default=os.getenv("MEDIA_ORGANIZER_LLM_MODEL") or os.getenv("LLM_MODEL", "qwen3:0.6b"))
-    parser.add_argument("--llm-threshold", type=float, default=float(os.getenv("MEDIA_ORGANIZER_LLM_THRESHOLD", "0.80")))
-    parser.add_argument("--llm-timeout", type=int, default=int(os.getenv("MEDIA_ORGANIZER_LLM_TIMEOUT_SECONDS", "20")))
     parser.add_argument("--apply", action="store_true", help="Apply the generated plan. Default is dry-run only.")
     parser.add_argument("--dry-run", dest="apply", action="store_false", help="Generate and print a plan without changing files.")
     parser.add_argument("--env", default=".env", help="Load defaults from dotenv file before parsing environment-backed paths.")

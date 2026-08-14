@@ -21,7 +21,7 @@ internal static class DownloadContracts
         Parameters:
         [
             new ParameterSpec("query", "string", "Search terms", Required: true),
-            new ParameterSpec("provider", "string", "Provider name", DefaultValue: "torrent")
+            new ParameterSpec("provider", "string", "Downloader type: \"torrent\" (Jackett/qBittorrent) or \"url\" only — never Jackett/all/empty", DefaultValue: "torrent")
         ],
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("search_results", ItemsKey: "results", QueryKey: "query"),

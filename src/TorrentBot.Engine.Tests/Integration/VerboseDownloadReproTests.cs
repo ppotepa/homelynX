@@ -24,7 +24,7 @@ public sealed class VerboseDownloadReproTests
 
             messenger.Edited.Clear();
             var response = await adapter.HandleMappedUpdateAsync(
-                new TelegramUpdate(42, "1001", "download ubuntu 22 iso", MessageId: 2),
+                new TelegramUpdate(42, "1001", "/search ubuntu 22 iso", MessageId: 2),
                 progressMessageId: 2);
 
             Assert.Contains("ubuntu", response, StringComparison.OrdinalIgnoreCase);

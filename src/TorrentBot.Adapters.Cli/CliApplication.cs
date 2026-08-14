@@ -9,7 +9,6 @@ using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine;
 using TorrentBot.Engine.Context;
-using TorrentBot.Llm;
 using TorrentBot.Presentation;
 
 namespace TorrentBot.Adapters.Cli;
@@ -63,33 +62,8 @@ public sealed class CliApplication
             Environment.ExitCode = await RunQueryAsync(source, where, json, userId, engineFactory);
         }, sourceArg, whereOption, jsonOption, userOption);
 
-        var agentPlan = new Command("plan", "Plan natural-language request");
-        var textArg = new Argument<string>("text");
-        agentPlan.AddArgument(textArg);
-        agentPlan.AddOption(dryRunOption);
-        agentPlan.AddOption(jsonOption);
-        agentPlan.AddOption(userOption);
-        agentPlan.SetHandler(async (text, dryRun, json, userId) =>
-        {
-            Environment.ExitCode = await RunAgentAsync(text, dryRun, json, userId, execute: false, engineFactory);
-        }, textArg, dryRunOption, jsonOption, userOption);
-
-        var agentRun = new Command("run", "Execute natural-language request");
-        agentRun.AddArgument(textArg);
-        agentRun.AddOption(dryRunOption);
-        agentRun.AddOption(jsonOption);
-        agentRun.AddOption(userOption);
-        agentRun.SetHandler(async (text, dryRun, json, userId) =>
-        {
-            Environment.ExitCode = await RunAgentAsync(text, dryRun, json, userId, execute: true, engineFactory);
-        }, textArg, dryRunOption, jsonOption, userOption);
-
-        var agentRoot = new Command("agent", "LLM agent operations");
-        agentRoot.AddCommand(agentPlan);
-        agentRoot.AddCommand(agentRun);
-
-        var runCmd = new Command("run", "Execute command or natural language (same path as Telegram)");
-        var runTextArg = new Argument<string>("text", "Command (e.g., '/downloads') or natural language (e.g., 'show downloads')");
+        var runCmd = new Command("run", "Execute a slash command (same path as Telegram)");
+        var runTextArg = new Argument<string>("text", "Slash command, for example '/help' or '/downloads'");
         var runUserOption = new Option<string>("--user", () => "cli-user", "User ID for ACL context");
         var runSessionOption = new Option<string>("--session", () => "cli-session", "Session ID for context");
         var runDryRunOption = new Option<bool>("--dry-run", "Simulate without persisting side effects");
@@ -105,7 +79,6 @@ public sealed class CliApplication
         root.AddCommand(capabilityRoot);
         root.AddCommand(new Command("capabilities", "Capability registry") { listCmd });
         root.AddCommand(queryCmd);
-        root.AddCommand(agentRoot);
         root.AddCommand(runCmd);
         return root;
     }
@@ -123,7 +96,7 @@ public sealed class CliApplication
         await engine.StartAsync();
         
         var contextStore = new ConversationContextStore();
-        var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline).Invocation;
+        var pipeline = PipelineBootstrap.Create(engine).Invocation;
         var presentation = PresentationBootstrap.CreateDefault();
         
         await using var host = new CliBotHost(
@@ -225,22 +198,6 @@ public sealed class CliApplication
         return false;
     }
 
-    internal static async Task<int> RunAgentAsync(
-        string text, bool dryRun, bool json, string userId, bool execute, Func<EngineHost>? engineFactory = null)
-    {
-        await using var scope = await StartEngineAsync(engineFactory, userId);
-        var invocation = new Invocation
-        {
-            IsExplicit = false,
-            Text = text,
-            IsDryRun = execute ? dryRun : true,
-            RequestContext = new RequestContext(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), userId, source: "cli"),
-            User = scope.User
-        };
-        var pipelineResult = await scope.Pipeline.RunAsync(invocation);
-        return WritePipelineResult(pipelineResult, json);
-    }
-
     private static int WritePipelineResult(PipelineResult result, bool json)
     {
         var presentation = PresentationBootstrap.CreateDefault();
@@ -300,7 +257,7 @@ public sealed class CliApplication
         var confirmationStore = new TorrentBot.Engine.Confirmations.FileBasedConfirmationStore();
         var engine = engineFactory?.Invoke() ?? EngineBootstrap.Create(aclService: acl, confirmationStore: confirmationStore);
         await engine.StartAsync();
-        var pipeline = PipelineBootstrap.Create(engine, engine.LlmPipeline).Invocation;
+        var pipeline = PipelineBootstrap.Create(engine).Invocation;
         return new EngineScope(engine, user, pipeline);
     }
 

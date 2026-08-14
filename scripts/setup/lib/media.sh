@@ -27,9 +27,6 @@ configure_media_library() {
   set_env_value TEMP_PATH "/downloads/incomplete"
   set_env_default MEDIA_ORGANIZER_MODE "hardlink"
   set_env_default MEDIA_ORGANIZER_MIN_CONFIDENCE "0.70"
-  set_env_default MEDIA_ORGANIZER_LLM_ENABLED "true"
-  set_env_default MEDIA_ORGANIZER_LLM_MODEL "$(get_env_value LLM_MODEL)"
-  set_env_default MEDIA_ORGANIZER_LLM_URL "http://127.0.0.1:11434"
 
   log "Media library path: $selected"
 }

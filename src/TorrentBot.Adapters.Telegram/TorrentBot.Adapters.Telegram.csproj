@@ -10,7 +10,6 @@
     <ProjectReference Include="..\TorrentBot.Plugins.Torrent\TorrentBot.Plugins.Torrent.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Media\TorrentBot.Plugins.Media.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.BotControl\TorrentBot.Plugins.BotControl.csproj" />
-    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
     <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
     <ProjectReference Include="..\TorrentBot.Bootstrap\TorrentBot.Bootstrap.csproj" />
     <ProjectReference Include="..\TorrentBot.Presentation\TorrentBot.Presentation.csproj" />

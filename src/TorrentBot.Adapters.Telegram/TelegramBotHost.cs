@@ -10,7 +10,6 @@ using TorrentBot.Engine;
 using TorrentBot.Engine.Context;
 using TorrentBot.Engine.Pipeline;
 using TorrentBot.Engine.Conversation;
-using TorrentBot.Llm;
 using TorrentBot.Presentation;
 
 namespace TorrentBot.Adapters.Telegram;
@@ -19,7 +18,6 @@ public sealed record TelegramBotResponse(
     bool Success,
     string Message,
     ExecutionResult? ExecutionResult = null,
-    LlmPipelineResult? LlmResult = null,
     RenderedOutput? Rendered = null,
     Contracts.Pipeline.ExecutionPlan? Plan = null);
 
@@ -39,11 +37,9 @@ public sealed class TelegramBotHost : IDisposable
         IConversationPipeline? conversationPipeline = null,
         TelegramInvocationAdapter? adapter = null,
         ConversationResponseHandler? responseHandler = null,
-        LlmPipeline? llmPipeline = null,
         ConversationContextStore? conversationStore = null,
         ArtifactPresentation? presentation = null)
     {
-        _ = llmPipeline;
         if (engine is not EngineHost engineHost)
         {
             throw new ArgumentException("TelegramBotHost requires EngineHost.", nameof(engine));
@@ -108,13 +104,13 @@ public sealed class TelegramBotHost : IDisposable
 
         var invocation = CloneInvocation(baseInvocation, progress);
 
-        if (!invocation.IsExplicit)
+        if (invocation.IsExplicit)
         {
-            recorder.Record("plan", invocation.Text);
+            recorder.Record("execute", invocation.CapabilityName ?? invocation.Command);
         }
         else
         {
-            recorder.Record("execute", invocation.CapabilityName ?? invocation.Command);
+            recorder.Record("error", "Only slash commands are supported");
         }
 
         var pipelineResult = await _pipeline.RunAsync(invocation, cancellationToken).ConfigureAwait(false);

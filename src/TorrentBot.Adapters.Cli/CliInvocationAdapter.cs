@@ -1,10 +1,16 @@
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Invocation;
+using TorrentBot.Engine;
 
 namespace TorrentBot.Adapters.Cli;
 
 public sealed class CliInvocationAdapter
 {
+    private readonly Func<string, string?>? _resolveCommand;
+
+    public CliInvocationAdapter(Func<string, string?>? resolveCommand = null) =>
+        _resolveCommand = resolveCommand;
+
     public Invocation ToInvocation(string text, UserContext user, bool isDryRun = false)
     {
         ArgumentNullException.ThrowIfNull(text);
@@ -12,13 +18,11 @@ public sealed class CliInvocationAdapter
 
         var trimmed = text.Trim();
 
-        // Check if it's a slash command
         if (trimmed.StartsWith('/'))
         {
             return ParseSlashCommand(trimmed, user, isDryRun);
         }
 
-        // Otherwise it's natural language
         return new Invocation
         {
             IsExplicit = false,
@@ -33,44 +37,20 @@ public sealed class CliInvocationAdapter
         };
     }
 
-    private static Invocation ParseSlashCommand(string text, UserContext user, bool isDryRun)
+    private Invocation ParseSlashCommand(string text, UserContext user, bool isDryRun)
     {
-        // Remove leading slash
-        var command = text[1..];
-        
-        // Split into command and parameters
-        var parts = command.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        var commandName = parts[0];
-        var parametersText = parts.Length > 1 ? parts[1] : null;
-
-        // Parse parameters
-        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal);
-        if (!string.IsNullOrWhiteSpace(parametersText))
-        {
-            // Simple parameter parsing: key=value or just value
-            var paramParts = parametersText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var part in paramParts)
-            {
-                var eqIndex = part.IndexOf('=');
-                if (eqIndex > 0)
-                {
-                    var key = part[..eqIndex];
-                    var value = part[(eqIndex + 1)..];
-                    parameters[key] = value;
-                }
-                else
-                {
-                    // If no key, use "query" as default (common for search commands)
-                    parameters["query"] = part;
-                }
-            }
-        }
+        var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var command = SlashCommandRouting.NormalizeCommand(parts[0]);
+        var capabilityName = SlashCommandRouting.ResolveCapabilityOverride(command)
+            ?? _resolveCommand?.Invoke(command);
+        var parameters = SlashCommandRouting.ParseParameters(command, parts.Length > 1 ? parts[1] : null);
 
         return new Invocation
         {
             IsExplicit = true,
-            Command = $"/{commandName}",
-            Parameters = parameters.Count > 0 ? parameters : null,
+            Command = command,
+            CapabilityName = capabilityName,
+            Parameters = parameters,
             IsDryRun = isDryRun,
             RequestContext = new RequestContext(
                 Guid.NewGuid().ToString("N"),

@@ -6,7 +6,6 @@ using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
 using TorrentBot.Engine;
 using TorrentBot.Engine.Context;
-using TorrentBot.Llm;
 using TorrentBot.Presentation;
 
 namespace TorrentBot.Adapters.Cli;
@@ -39,7 +38,8 @@ public sealed class CliBotHost : IAsyncDisposable
     {
         _acl = acl ?? AclService.FromEnvironment();
         _pipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-        _adapter = new CliInvocationAdapter();
+        _adapter = new CliInvocationAdapter(command =>
+            engine is EngineHost host ? host.ResolveSlashCommand(command) : null);
         _presentation = presentation ?? PresentationBootstrap.CreateDefault();
         _contextStore = contextStore ?? new ConversationContextStore();
     }

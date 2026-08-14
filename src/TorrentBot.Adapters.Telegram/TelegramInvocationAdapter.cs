@@ -1,20 +1,12 @@
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Invocation;
+using TorrentBot.Engine;
 
 namespace TorrentBot.Adapters.Telegram;
 
 public sealed class TelegramInvocationAdapter
 {
     private readonly Func<string, string?>? _resolveCommand;
-
-    private static readonly Dictionary<string, string> CommandCapabilityOverrides =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["/download_search"] = "torrent.search",
-            ["/list"] = "system.help",
-            ["/commands"] = "system.help",
-            ["/llm_prompt"] = "system.llm_prompt"
-        };
 
     public TelegramInvocationAdapter(Func<string, string?>? resolveCommand = null) =>
         _resolveCommand = resolveCommand;
@@ -74,9 +66,9 @@ public sealed class TelegramInvocationAdapter
         if (text.StartsWith('/'))
         {
             var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            var command = NormalizeSlashCommand(parts[0]);
+            var command = SlashCommandRouting.NormalizeCommand(parts[0]);
             var capabilityName = ResolveCapabilityName(command);
-            var parameters = ParseSlashParameters(command, parts.Length > 1 ? parts[1] : null);
+            var parameters = SlashCommandRouting.ParseParameters(command, parts.Length > 1 ? parts[1] : null);
 
             return new Invocation
             {
@@ -100,89 +92,13 @@ public sealed class TelegramInvocationAdapter
 
     private string? ResolveCapabilityName(string command)
     {
-        if (CommandCapabilityOverrides.TryGetValue(command, out var overridden))
+        var overridden = SlashCommandRouting.ResolveCapabilityOverride(command);
+        if (overridden is not null)
         {
             return overridden;
         }
 
         return _resolveCommand?.Invoke(command);
-    }
-
-    private static string NormalizeSlashCommand(string raw)
-    {
-        var command = raw.Trim().ToLowerInvariant();
-        var at = command.IndexOf('@');
-        if (at > 0)
-        {
-            command = command[..at];
-        }
-
-        return command;
-    }
-
-    private static IReadOnlyDictionary<string, object?>? ParseSlashParameters(string command, string? remainder)
-    {
-        if (string.IsNullOrWhiteSpace(remainder))
-        {
-            return null;
-        }
-
-        return command switch
-        {
-            "/search" or "/torrent_search" or "/download_search" => new Dictionary<string, object?> { ["query"] = remainder },
-            "/select" => new Dictionary<string, object?> { ["index"] = int.TryParse(remainder, out var index) ? index : remainder },
-            "/download_candidate" => new Dictionary<string, object?> { ["title"] = remainder, ["query"] = remainder },
-            "/download" => ParseKeyValuePairs(remainder),
-            "/pause" or "/resume" or "/cancel" => ParseControlParameters(remainder),
-            "/torrent_pause" or "/torrent_resume" or "/torrent_delete" => new Dictionary<string, object?> { ["hash"] = remainder },
-            "/job_cancel" => new Dictionary<string, object?> { ["jobId"] = remainder, ["id"] = remainder },
-            "/find_large_files" => int.TryParse(remainder, out var minMb)
-                ? new Dictionary<string, object?> { ["min_mb"] = minMb }
-                : new Dictionary<string, object?> { ["text"] = remainder },
-            "/llm_prompt" => string.IsNullOrWhiteSpace(remainder)
-                ? new Dictionary<string, object?> { ["type"] = "planner" }
-                : new Dictionary<string, object?> { ["text"] = remainder, ["type"] = "planner" },
-            _ => new Dictionary<string, object?> { ["text"] = remainder }
-        };
-    }
-
-    private static Dictionary<string, object?> ParseControlParameters(string remainder)
-    {
-        if (remainder.StartsWith("job:", StringComparison.OrdinalIgnoreCase))
-        {
-            return new Dictionary<string, object?> { ["jobId"] = remainder[4..] };
-        }
-
-        return new Dictionary<string, object?> { ["id"] = remainder, ["hash"] = remainder };
-    }
-
-    private static Dictionary<string, object?> ParseKeyValuePairs(string remainder)
-    {
-        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
-        foreach (var token in remainder.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var idx = token.IndexOf('=');
-            if (idx > 0)
-            {
-                result[token[..idx]] = token[(idx + 1)..];
-            }
-            else if (!result.ContainsKey("url") && Uri.TryCreate(token, UriKind.Absolute, out _))
-            {
-                result["url"] = token;
-                result["provider"] = "url";
-            }
-            else if (!result.ContainsKey("query"))
-            {
-                result["query"] = token;
-            }
-        }
-
-        if (!result.ContainsKey("provider"))
-        {
-            result["provider"] = result.ContainsKey("url") ? "url" : "torrent";
-        }
-
-        return result;
     }
 
     private static bool TryMapCallbackInvocation(

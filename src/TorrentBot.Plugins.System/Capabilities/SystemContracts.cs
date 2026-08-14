@@ -54,14 +54,6 @@ internal static class SystemContracts
         IsReadOnly: true,
         Scope: "all");
 
-    public static readonly CapabilityContract LlmStatus = new(
-        Name: "system.llm_status",
-        ExactSemantics: "Show configured LLM planner/executor/responder models.",
-        Parameters: [],
-        Risk: RiskLevel.Safe,
-        IsReadOnly: true,
-        Scope: "all");
-
     public static readonly CapabilityContract DiskUsage = new(
         Name: "system.disk_usage",
         ExactSemantics: "Show disk usage for the media root drive. Only for storage questions.",
@@ -76,11 +68,4 @@ internal static class SystemContracts
         Risk: RiskLevel.Safe,
         IsReadOnly: true);
 
-    public static readonly CapabilityContract LlmPrompt = new(
-        Name: "system.llm_prompt",
-        ExactSemantics: "Debug: return the full LLM planner system prompt for given text.",
-        Parameters: [new ParameterSpec("text", "string", "User text to plan for")],
-        Risk: RiskLevel.Safe,
-        IsReadOnly: true,
-        Scope: "all");
 }

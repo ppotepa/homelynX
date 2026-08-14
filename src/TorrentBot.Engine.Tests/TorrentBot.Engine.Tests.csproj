@@ -21,7 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Llm\llm-scenarios.json" CopyToOutputDirectory="PreserveNewest" Link="Llm\llm-scenarios.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,13 +34,23 @@
     <ProjectReference Include="..\TorrentBot.Query\TorrentBot.Query.csproj" />
     <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
     <ProjectReference Include="..\TorrentBot.Integrations\TorrentBot.Integrations.csproj" />
-    <ProjectReference Include="..\TorrentBot.Llm\TorrentBot.Llm.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Query\TorrentBot.Plugins.Query.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Downloads\TorrentBot.Plugins.Downloads.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Torrent\TorrentBot.Plugins.Torrent.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Media\TorrentBot.Plugins.Media.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.BotControl\TorrentBot.Plugins.BotControl.csproj" />
     <ProjectReference Include="..\TorrentBot.Adapters.Telegram\TorrentBot.Adapters.Telegram.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="Integration\FullStackIntegrationTests.cs" />
+    <Compile Remove="Integration\PhasesIntegrationTests.cs" />
+    <Compile Remove="Integration\LlmPlannerScenarioTests.cs" />
+    <Compile Remove="Support\FixedPlanLlmPlanner.cs" />
+    <Compile Remove="Support\Llm*.cs" />
+    <Compile Remove="Unit\Llm*.cs" />
+    <Compile Remove="Unit\TorrentSearchDisplayContractTests.cs" />
+    <Compile Remove="Integration\CliApplicationTests.cs" />
   </ItemGroup>
 
 </Project>

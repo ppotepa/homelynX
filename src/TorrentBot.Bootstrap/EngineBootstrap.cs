@@ -11,7 +11,6 @@ using TorrentBot.Integrations.Clients;
 using TorrentBot.Integrations.Fakes;
 using TorrentBot.Integrations.Interfaces;
 using TorrentBot.Integrations.Models;
-using TorrentBot.Llm;
 using TorrentBot.Plugins.BotControl;
 using TorrentBot.Plugins.Downloads;
 using TorrentBot.Plugins.Jobs;
@@ -29,7 +28,6 @@ public static class EngineBootstrap
         AclService? aclService = null,
         DownloadsPlugin? downloadsPlugin = null,
         IConfirmationStore? confirmationStore = null,
-        LlmPipeline? llmPipeline = null,
         IAuditSink? auditSink = null,
         BotControlPlugin? botControlPlugin = null,
         MediaPlugin? mediaPlugin = null,
@@ -38,13 +36,11 @@ public static class EngineBootstrap
         IDownloadCompletionNotifier? completionNotifier = null)
     {
         var audit = auditSink ?? CreateAuditSink();
-        var pipeline = llmPipeline ?? CreateLlmPipeline(audit);
         var engine = new EngineHost(new EngineOptions
         {
             AclService = aclService ?? AclService.FromEnvironment(),
             AuditSink = audit,
             ConfirmationStore = confirmationStore ?? new ConfirmationStore(),
-            LlmPipeline = pipeline,
             FeatureFlags = FeatureFlags.FromEnvironment(),
             LegacyDelegator = legacyDelegator ?? CreateLegacyDelegator(),
             JobRunner = new BackgroundJobRunner(),
@@ -61,46 +57,6 @@ public static class EngineBootstrap
         
         configure?.Invoke(engine);
         return engine;
-    }
-
-    public static LlmPipeline CreateLlmPipeline(IAuditSink? auditSink = null)
-    {
-        var ollamaUrl = HomelynxEnv.FirstNonEmpty(
-            Environment.GetEnvironmentVariable("LLM_URL"),
-            Environment.GetEnvironmentVariable("TORRENTBOT_OLLAMA_URL"),
-            Environment.GetEnvironmentVariable("OLLAMA_HOST"),
-            HomelynxEnv.GetServiceUrl(null, "LLM_HOST", "LLM_PORT", "LLM_HTTPS"));
-        if (!string.IsNullOrWhiteSpace(ollamaUrl))
-        {
-            var defaultModel = HomelynxEnv.FirstNonEmpty(
-                Environment.GetEnvironmentVariable("LLM_MODEL"),
-                "llama3")!;
-            var plannerModel = HomelynxEnv.FirstNonEmpty(
-                Environment.GetEnvironmentVariable("TORRENTBOT_OLLAMA_PLANNER_MODEL"),
-                Environment.GetEnvironmentVariable("LLM_PLANNER_MODEL"),
-                defaultModel)!;
-            var executorModel = HomelynxEnv.FirstNonEmpty(
-                Environment.GetEnvironmentVariable("TORRENTBOT_OLLAMA_EXECUTOR_MODEL"),
-                plannerModel)!;
-            var responderModel = HomelynxEnv.FirstNonEmpty(
-                Environment.GetEnvironmentVariable("TORRENTBOT_OLLAMA_RESPONDER_MODEL"),
-                Environment.GetEnvironmentVariable("LLM_RESPONDER_MODEL"),
-                plannerModel)!;
-            var plannerClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, plannerModel);
-            var executorClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, executorModel);
-            var responderClient = new OllamaLlmClient(new HttpClient(), ollamaUrl, responderModel);
-            var auditLogger = new LlmAuditLogger();
-            return new LlmPipeline(
-                new OllamaLlmPlanner(plannerClient, auditLogger),
-                new AuditingLlmExecutor(new OllamaLlmExecutor(executorClient), auditSink),
-                new OllamaLlmResponder(responderClient),
-                auditSink);
-        }
-
-        return new LlmPipeline(
-            new UnconfiguredLlmPlanner(),
-            new AuditingLlmExecutor(new StubLlmExecutor(), auditSink),
-            auditSink: auditSink);
     }
 
     public static LegacyPythonCoexistence CreateCoexistenceRouter() => new();

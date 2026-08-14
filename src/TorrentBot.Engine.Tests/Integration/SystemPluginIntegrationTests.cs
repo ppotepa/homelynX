@@ -51,7 +51,7 @@ public sealed class SystemPluginIntegrationTests
 
         Assert.True(result.Success);
         var data = Assert.IsType<Dictionary<string, object?>>(result.CapabilityResult!.Data);
-        Assert.Equal(9, data["count"]);
+        Assert.Equal(7, data["count"]);
         var list = Assert.IsAssignableFrom<List<Dictionary<string, object?>>>(data["capabilities"]);
         Assert.Contains(list, c => (string?)c["name"] == "system.health");
 

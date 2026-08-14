@@ -32,7 +32,7 @@ public sealed class TelegramProductionAdapter
         var hostEngine = engine as EngineHost
             ?? throw new ArgumentException("Telegram adapter requires EngineHost.", nameof(engine));
         var services = pipeline is null
-            ? PipelineBootstrap.Create(hostEngine, hostEngine.LlmPipeline)
+            ? PipelineBootstrap.Create(hostEngine)
             : new PipelineServices(pipeline, new ConversationPipeline(
                 hostEngine,
                 pipeline,
@@ -107,7 +107,6 @@ public sealed class TelegramProductionAdapter
                 var text = formatter.Format(includeDebugArtifacts: false);
                 var isImmediate = msg.Stage.Contains("error", StringComparison.OrdinalIgnoreCase)
                     || msg.Stage == "step:error"
-                    || msg.Stage == "llm:validation_error"
                     || msg.Stage == "planning:done"
                     || msg.Stage == "respond"
                     || msg.Stage == "debug:pipeline:complete";

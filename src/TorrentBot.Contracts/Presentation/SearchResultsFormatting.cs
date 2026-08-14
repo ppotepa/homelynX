@@ -79,7 +79,7 @@ public static class SearchResultsFormatting
         }
 
         var buttons = new List<RenderedButton>();
-        foreach (var item in search.Items.Take(3))
+        foreach (var item in search.Items)
         {
             buttons.Add(new RenderedButton($"Pobierz {item.Index}", $"select:{item.Index}"));
         }

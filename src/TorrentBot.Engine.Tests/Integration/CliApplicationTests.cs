@@ -3,7 +3,6 @@ using TorrentBot.Adapters.Cli;
 using TorrentBot.Engine.Tests.Support;
 using TorrentBot.Integrations.Fakes;
 using TorrentBot.Integrations.Models;
-using TorrentBot.Llm;
 using TorrentBot.Plugins.Downloads;
 
 namespace TorrentBot.Engine.Tests.Integration;
@@ -107,30 +106,4 @@ public sealed class CliApplicationTests
         Assert.Equal("downloading", clause["value"]);
     }
 
-    [Fact]
-    public async Task Cli_agent_plan_active_downloads_executes_via_orchestrator()
-    {
-        var writer = new StringWriter();
-        var originalOut = Console.Out;
-        Console.SetOut(writer);
-
-        try
-        {
-            var exitCode = await CliApplication.RunAsync(
-                ["agent", "plan", "are there any active downloads?", "--json", "--dry-run", "--user", "admin"],
-                () => EngineBootstrap.Create(
-                    llmPipeline: new LlmPipeline(
-                        FixedPlanLlmPlanner.ActiveDownloads(),
-                        new StubLlmExecutor())));
-
-            Assert.Equal(0, exitCode);
-            var output = writer.ToString();
-            Assert.Contains("downloads", output);
-            Assert.Contains("\"Success\": true", output);
-        }
-        finally
-        {
-            Console.SetOut(originalOut);
-        }
-    }
 }

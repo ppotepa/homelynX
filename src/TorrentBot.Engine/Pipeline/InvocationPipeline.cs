@@ -6,7 +6,6 @@ using TorrentBot.Contracts.Invocation;
 using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Engine.Bus;
 using TorrentBot.Engine.Context;
-using TorrentBot.Llm;
 
 namespace TorrentBot.Engine.Pipeline;
 
@@ -14,7 +13,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
 {
     private readonly IEngine _engine;
     private readonly IPlanner _deterministicPlanner;
-    private readonly IPlanner? _llmPlanner;
     private readonly IReadOnlyList<IPipelineBehavior> _behaviors;
     private readonly ConversationContextStore? _conversationStore;
     private readonly Func<IReadOnlyList<CapabilityContract>>? _contractsProvider;
@@ -23,7 +21,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
     public InvocationPipeline(
         IEngine engine,
         IPlanner deterministicPlanner,
-        IPlanner? llmPlanner = null,
         IEnumerable<IPipelineBehavior>? behaviors = null,
         ConversationContextStore? conversationStore = null,
         Func<IReadOnlyList<CapabilityContract>>? contractsProvider = null,
@@ -31,7 +28,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
     {
         _engine = engine;
         _deterministicPlanner = deterministicPlanner;
-        _llmPlanner = llmPlanner;
         _behaviors = behaviors?.ToList() ?? [];
         _conversationStore = conversationStore;
         _contractsProvider = contractsProvider;
@@ -73,7 +69,7 @@ public sealed class InvocationPipeline : IInvocationPipeline
         var planningContext = new PlanningContext(invocation.User, IsReplay(invocation), GetReplayCapability(invocation), invocation.Parameters);
         var planner = SelectPlanner(invocation, planningContext);
 
-        progress?.Report("planning:start", planner == _llmPlanner ? "llm" : "deterministic");
+        progress?.Report("planning:start", "command");
 
         var plan = await planner.PlanAsync(invocation, planningContext, ct).ConfigureAwait(false);
 
@@ -85,9 +81,7 @@ public sealed class InvocationPipeline : IInvocationPipeline
         {
             var unresolved = new ExecutionResult(Success: false, Error: invocation.IsExplicit
                 ? "Capability was not resolved."
-                : plan.Source == PlanSource.Llm
-                    ? "LLM could not derive a plan for that request. Try a slash command from /help."
-                    : "I could not derive a plan for that request.");
+                : "Only slash commands are supported. Use /help to list available commands.");
             return await FinalizeAsync(behaviorContext, new PipelineResult(false, ArtifactAccumulator.FromExecutionResult(unresolved), plan, unresolved.Error), ct).ConfigureAwait(false);
         }
 
@@ -98,12 +92,6 @@ public sealed class InvocationPipeline : IInvocationPipeline
         foreach (var step in plan.Steps)
         {
             stepIndex++;
-            if (!PlanStepConditionEvaluator.ShouldExecute(step.Condition, saved))
-            {
-                progress?.Report("step:skip", $"{stepIndex}/{totalSteps}|{step.CapabilityName}");
-                continue;
-            }
-
             progress?.Report("step:start", $"{stepIndex}/{totalSteps}|{step.CapabilityName}");
 
             if (invocation.RequestContext is not null)
@@ -195,8 +183,7 @@ public sealed class InvocationPipeline : IInvocationPipeline
         return "";
     }
 
-    private IPlanner SelectPlanner(Invocation invocation, PlanningContext context) =>
-        context.IsReplay || invocation.IsExplicit ? _deterministicPlanner : _llmPlanner ?? _deterministicPlanner;
+    private IPlanner SelectPlanner(Invocation invocation, PlanningContext context) => _deterministicPlanner;
 
     private static bool IsReplay(Invocation invocation) =>
         invocation.Parameters?.ContainsKey("confirmationToken") == true;
