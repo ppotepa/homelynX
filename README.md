@@ -58,8 +58,10 @@ Search state is intentionally retained between `/search` and `/select`; this is 
 The bot also exposes deterministic utility commands:
 
 ```text
-/chiptune notes="C4/8 E4/8 G4/4" bpm=140 preset=gameboy format=mp3
-/chiptune                         # attach a .mid file
+/chiptune notes="C4/8 E4/8 G4/4" bpm=140 chip=gameboy format=mp3
+/chiptune degrees="1/8 3/8 5/8 8/4" key=D scale=minor chip=nes
+/chiptune generate=riff key=E scale=phrygian chip=sms bars=4 seed=42
+/chiptune format=mp3             # attach a .mid file
 /read https://example.com/article
 /screenshot https://example.com device=mobile format=png
 /track add RR123456789PL label="Parcel" notify=important
@@ -70,6 +72,8 @@ The bot also exposes deterministic utility commands:
 ```
 
 Screenshots are delivered as Telegram photos when possible and automatically fall back to documents when Telegram rejects an oversized or very tall image. Web Reader and screenshots require Chromium (`/usr/bin/chromium` in Docker). Parcel polling uses AfterShip when `AFTERSHIP_API_KEY` is configured; without it, `/track` keeps a local record and manual lookup link. Location commands store only coordinates explicitly supplied by each user.
+
+Chiptune rendering uses a pinned headless Furnace build in Docker for Game Boy, NES, SNES and Sega Master System hardware emulation. Composer buttons remain valid for seven days in the tools SQLite database.
 
 ## Project layout
 

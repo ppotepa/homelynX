@@ -5,5 +5,6 @@
 - [FUNCTIONALITY.md](FUNCTIONALITY.md) — maintained user-facing capabilities.
 - [PLUGINS_AND_CAPABILITIES.md](PLUGINS_AND_CAPABILITIES.md) — plugin and capability model.
 - [QUERY.md](QUERY.md) — structured DuckDB query subsystem.
+- [CHIPTUNE.md](CHIPTUNE.md) — deterministic composition, MIDI and hardware rendering.
 
 The maintained application is based on explicit commands. Historical planner and free-form command documentation is intentionally not part of the current docs.
