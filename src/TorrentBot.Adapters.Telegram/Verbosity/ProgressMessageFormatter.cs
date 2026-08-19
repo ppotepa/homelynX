@@ -29,6 +29,15 @@ public sealed class ProgressMessageFormatter
                 case "command:start":
                     _entries.Add($"Wykonuję: {detail}");
                     break;
+                case "capability:start":
+                    _entries.Add($"Plugin/tool start: {detail}");
+                    break;
+                case "capability:done":
+                    _entries.Add($"Plugin/tool gotowy: {detail}");
+                    break;
+                case "capability:error":
+                    _entries.Add($"Plugin/tool błąd: {detail}");
+                    break;
                 case "command:done":
                     _entries.Add($"Zakończono: {detail}");
                     break;

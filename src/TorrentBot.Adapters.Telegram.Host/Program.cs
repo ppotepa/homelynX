@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
+using System.Collections.Concurrent;
 using TorrentBot.Adapters.Telegram.Sdk;
 using TorrentBot.Bootstrap;
 using TorrentBot.Plugins.Tools;
@@ -79,6 +80,8 @@ public static class Program
         }
 
         var offset = 0;
+        using var updateSlots = new SemaphoreSlim(8, 8);
+        var updateTasks = new ConcurrentBag<Task>();
         while (!cts.Token.IsCancellationRequested)
         {
             try
@@ -87,7 +90,9 @@ public static class Program
                 foreach (var update in updates)
                 {
                     offset = update.Id + 1;
-                    await adapter.HandleUpdateAsync(update, cts.Token).ConfigureAwait(false);
+                    // Do not let a long-running tool (for example chiptune rendering)
+                    // block polling. Telegram commands must remain responsive.
+                    updateTasks.Add(DispatchUpdateAsync(update, adapter, updateSlots, cts.Token));
                 }
             }
             catch (OperationCanceledException)
@@ -99,6 +104,9 @@ public static class Program
                 await Task.Delay(1000, cts.Token).ConfigureAwait(false);
             }
         }
+
+        try { await Task.WhenAll(updateTasks).ConfigureAwait(false); }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
 
         await engine.StopAsync(CancellationToken.None).ConfigureAwait(false);
         if (shortenerTask is not null)
@@ -112,6 +120,31 @@ public static class Program
             catch (OperationCanceledException) { }
         }
         return 0;
+    }
+
+    private static async Task DispatchUpdateAsync(
+        Update update,
+        TelegramProductionAdapter adapter,
+        SemaphoreSlim slots,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await adapter.HandleUpdateAsync(update, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[telegram] update {update.Id} failed: {ex}");
+        }
     }
 
     private static async Task RunShortenerEndpointAsync(string[] args, ShortLinkService shortLinks, CancellationToken ct)

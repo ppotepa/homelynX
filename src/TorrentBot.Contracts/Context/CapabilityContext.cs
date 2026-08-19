@@ -3,6 +3,7 @@ using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Jobs;
 using TorrentBot.Contracts.Query;
 using TorrentBot.Contracts.Repositories;
+using TorrentBot.Contracts.Pipeline;
 
 namespace TorrentBot.Contracts.Context;
 
@@ -13,6 +14,7 @@ public class CapabilityContext
     public required UserContext User { get; init; }
     public string? JobId { get; init; }
     public bool IsDryRun { get; init; }
+    public IProgressReporter? ProgressReporter { get; init; }
 }
 
 public interface IEngineContext

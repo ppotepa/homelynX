@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Diagnostics;
 using TorrentBot.Acl;
 using TorrentBot.Contracts.Bus;
 using TorrentBot.Contracts.Capabilities;
@@ -283,9 +284,16 @@ public sealed class EngineHost : IEngine
             Engine = engineContext,
             Request = requestContext,
             User = invocation.User,
-            IsDryRun = invocation.IsDryRun
+            IsDryRun = invocation.IsDryRun,
+            ProgressReporter = invocation.ProgressReporter
         };
 
+        var logger = engineContext.GetLogger("capability");
+        var stopwatch = Stopwatch.StartNew();
+        invocation.ProgressReporter?.Report("capability:start", capabilityName);
+        logger.LogInformation(
+            "Capability {Capability} started. TraceId={TraceId} InvocationId={InvocationId} UserId={UserId}",
+            capabilityName, requestContext.TraceId, requestContext.InvocationId, requestContext.UserId);
         try
         {
             var result = await registered.Handler.ExecuteAsync(
@@ -294,6 +302,12 @@ public sealed class EngineHost : IEngine
                 cancellationToken).ConfigureAwait(false);
 
             var capabilityResult = result with { IsDryRun = invocation.IsDryRun };
+            invocation.ProgressReporter?.Report(
+                capabilityResult.Success ? "capability:done" : "capability:error",
+                capabilityResult.Success ? capabilityName : $"{capabilityName}|{capabilityResult.Message}");
+            logger.LogInformation(
+                "Capability {Capability} finished. Success={Success} ElapsedMs={ElapsedMs} TraceId={TraceId}",
+                capabilityName, capabilityResult.Success, stopwatch.ElapsedMilliseconds, requestContext.TraceId);
             _options.AuditSink?.Write("capability_execute", requestContext, capabilityName, capabilityResult.Success);
             return new ExecutionResult(
                 Success: capabilityResult.Success,
@@ -302,6 +316,11 @@ public sealed class EngineHost : IEngine
         }
         catch (Exception ex)
         {
+            invocation.ProgressReporter?.Report("capability:error", $"{capabilityName}|{ex.Message}");
+            logger.LogError(
+                ex,
+                "Capability {Capability} failed. ElapsedMs={ElapsedMs} TraceId={TraceId}",
+                capabilityName, stopwatch.ElapsedMilliseconds, requestContext.TraceId);
             _options.AuditSink?.Write("capability_execute", requestContext, capabilityName, false, ex.Message);
             return new ExecutionResult(Success: false, Error: ex.Message, IsDryRun: invocation.IsDryRun);
         }
