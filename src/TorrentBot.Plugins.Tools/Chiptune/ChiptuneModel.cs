@@ -68,6 +68,7 @@ internal sealed record ChiptuneSpec
     public int Octave { get; init; } = 4;
     public int Octaves { get; init; } = 2;
     public string? Range { get; init; }
+    public string? Progression { get; init; }
     public string Direction { get; init; } = "updown";
     public int Bars { get; init; } = 4;
     public int Seed { get; init; }
@@ -75,7 +76,16 @@ internal sealed record ChiptuneSpec
     public string Format { get; init; } = "mp3";
     public int SampleRate { get; init; } = 44_100;
     public int Repeat { get; init; } = 1;
+    public string Wave { get; init; } = "square";
+    public int Duty { get; init; } = 25;
+    public int Attack { get; init; }
+    public int Decay { get; init; } = 8;
+    public int Sustain { get; init; } = 12;
+    public int Release { get; init; } = 8;
+    public int Vibrato { get; init; }
+    public int Filter { get; init; }
 }
 
 internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role);
-internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick);
+internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick,
+    string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0);

@@ -39,13 +39,38 @@ public sealed class ChiptuneTests
     }
 
     [Theory]
-    [InlineData("chip=c64", "C64/SID")]
     [InlineData("chip=unknown", "Unknown chip")]
     [InlineData("format=xyz", "Unknown format")]
     public void Invalid_options_fail_before_render(string option, string expected)
     {
         var ex = Assert.Throws<FormatException>(()=>ChiptuneParser.Parse($"notes=C4/4 {option}"));
         Assert.Contains(expected, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("c64_6581")]
+    [InlineData("c64_8580")]
+    [InlineData("genesis")]
+    [InlineData("pce")]
+    [InlineData("atari2600")]
+    [InlineData("pokey")]
+    [InlineData("pcspeaker")]
+    [InlineData("zx_spectrum")]
+    public void Extended_hardware_profiles_parse_and_allocate(string chip)
+    {
+        var spec = ChiptuneParser.Parse($"generate=song chip={chip} bars=1 format=wav");
+        var hardware = VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec);
+        Assert.NotEmpty(hardware.Notes);
+        Assert.Equal(chip, hardware.Chip);
+    }
+
+    [Fact]
+    public void Song_generator_accepts_progression_and_extended_sources()
+    {
+        var spec = ChiptuneParser.Parse("generate=song key=D scale=minor progression=\"i VI III VII\" bars=2 wave=saw format=wav");
+        var song = ChiptuneParser.Compose(spec);
+        Assert.Contains(song.Notes, note => note.Role == TrackRole.Bass);
+        Assert.Equal("saw", spec.Wave);
     }
 
     [Fact]

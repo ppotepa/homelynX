@@ -12,7 +12,9 @@ internal static class ChiptuneGenerators
         {
             "scale" => Scale(spec, scale, root, range),
             "arp" => Arp(spec, scale, root, range),
-            "riff" => Riff(spec, scale, root, range, random),
+            "riff" or "song" => Riff(spec, scale, root, range, random),
+            "bassline" => Bassline(spec, scale, root, range),
+            "drums" => Drums(spec),
             _ => throw new FormatException("generate must be scale, arp or riff.")
         };
         return new Song(notes, TempoMap.Fixed(spec.Bpm));
@@ -52,9 +54,11 @@ internal static class ChiptuneGenerators
         }
 
         var low = all.Where(x => x <= range.Low + 12).DefaultIfEmpty(all[0]).ToArray();
+        var progression = ParseProgression(spec.Progression, all, root);
         for (var beat = 0; beat < spec.Bars * 4; beat++)
         {
-            var bass = low[(beat / 4) % low.Length] - 12 + spec.Transpose;
+            var barRoot = progression[(beat / 4) % progression.Length];
+            var bass = (barRoot >= range.Low ? barRoot : low[(beat / 4) % low.Length]) - 12 + spec.Transpose;
             while (bass < 24) bass += 12;
             notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq * 3 / 4, ClampPitch(bass), 106, TrackRole.Bass));
             notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, beat % 4 == 0 ? 36 : 42, beat % 4 == 0 ? 118 : 78, TrackRole.Drums));
@@ -68,6 +72,47 @@ internal static class ChiptuneGenerators
                 notes.Add(new NoteEvent(step * TempoMap.Ppq / 4, TempoMap.Ppq / 4, ClampPitch(chord[step % chord.Length] + spec.Transpose), 70, TrackRole.Arp));
         }
         return notes.OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
+    }
+
+    private static int[] ParseProgression(string? text, int[] scalePitches, int root)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return [scalePitches.FirstOrDefault(x => x % 12 == root, scalePitches[0])];
+        var result = new List<int>();
+        foreach (var token in text.Split([' ', ',', '|'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (MusicTheory.TryParsePitch(token, out var absolute)) { result.Add(absolute); continue; }
+            var roman = token.TrimStart('b', '#').ToLowerInvariant();
+            var degree = roman switch { "i" => 1, "ii" => 2, "iii" => 3, "iv" => 4, "v" => 5, "vi" => 6, "vii" => 7, _ => 0 };
+            if (degree == 0) throw new FormatException($"Invalid progression chord '{token}'. Use i VI III VII or C4.");
+            var accidental = token.StartsWith("b", StringComparison.OrdinalIgnoreCase) ? -1 : token.StartsWith("#") ? 1 : 0;
+            var index = Math.Min(scalePitches.Length - 1, degree - 1);
+            result.Add(scalePitches[index] + accidental);
+        }
+        return result.Count == 0 ? [scalePitches[0]] : result.ToArray();
+    }
+
+    private static IReadOnlyList<NoteEvent> Bassline(ChiptuneSpec spec, int[] scale, int root, (int Low, int High) range)
+    {
+        var all = ScalePitches(scale, root, range).Where(x => x <= range.Low + 12).ToArray();
+        if (all.Length == 0) all = [range.Low];
+        var notes = new List<NoteEvent>();
+        for (var beat = 0; beat < spec.Bars * 4; beat++)
+        {
+            var pitch = Math.Clamp(all[(beat + (beat / 4)) % all.Length] + spec.Transpose - 12, 0, 127);
+            notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq * 3 / 4, pitch, 112, TrackRole.Bass));
+        }
+        return notes;
+    }
+
+    private static IReadOnlyList<NoteEvent> Drums(ChiptuneSpec spec)
+    {
+        var notes = new List<NoteEvent>();
+        for (var beat = 0; beat < spec.Bars * 4; beat++)
+        {
+            notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, beat % 4 == 0 ? 36 : 42, beat % 4 == 0 ? 120 : 78, TrackRole.Drums));
+            if (beat % 4 is 1 or 3) notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, 38, 105, TrackRole.Drums));
+        }
+        return notes;
     }
 
     private static IEnumerable<int> ScalePitches(int[] scale, int root, (int Low, int High) range)

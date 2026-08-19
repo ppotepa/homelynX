@@ -34,6 +34,14 @@ static DivSystem systemFor(const std::string& chip) {
   if (chip == "nes") return DIV_SYSTEM_NES;
   if (chip == "snes") return DIV_SYSTEM_SNES;
   if (chip == "sms") return DIV_SYSTEM_SMS;
+  if (chip == "c64_6581") return DIV_SYSTEM_C64_6581;
+  if (chip == "c64_8580") return DIV_SYSTEM_C64_8580;
+  if (chip == "genesis") return DIV_SYSTEM_YM2612;
+  if (chip == "pce") return DIV_SYSTEM_PCE;
+  if (chip == "atari2600") return DIV_SYSTEM_TIA;
+  if (chip == "pokey") return DIV_SYSTEM_POKEY;
+  if (chip == "pcspeaker") return DIV_SYSTEM_PCSPKR;
+  if (chip == "zx_spectrum") return DIV_SYSTEM_SFX_BEEPER;
   throw std::runtime_error("unsupported chip: " + chip);
 }
 
@@ -63,8 +71,14 @@ static DivSample* makeSample(int voice) {
   return sample;
 }
 
-static void configureInstruments(DivEngine& engine, const std::string& chip) {
-  int voices = chip == "snes" ? 8 : 4;
+static void configureInstruments(DivEngine& engine, const std::string& chip, const json& request) {
+  std::string wave = request.value("wave", "square");
+  int duty = bounded(request.value("duty", 25), 1, 99);
+  int attack = bounded(request.value("attack", 0), 0, 31);
+  int decay = bounded(request.value("decay", 8), 0, 31);
+  int sustain = bounded(request.value("sustain", 12), 0, 31);
+  int release = bounded(request.value("release", 8), 0, 31);
+  int voices = chip == "snes" ? 8 : chip == "genesis" ? 6 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
   for (int voice = 0; voice < voices; ++voice) {
     int sampleIndex = -1;
     if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice));
@@ -72,15 +86,36 @@ static void configureInstruments(DivEngine& engine, const std::string& chip) {
     if (instrumentIndex < 0) throw std::runtime_error("could not create instrument");
     DivInstrument* instrument = engine.song.ins[instrumentIndex];
     instrument->name = "Homelynx voice " + std::to_string(voice + 1);
-    if (chip == "snes") {
+    if (chip == "genesis") {
+      instrument->type = DIV_INS_FM;
+      instrument->fm.alg = wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
+      instrument->fm.fb = 4;
+      instrument->fm.op[0].ar = 31; instrument->fm.op[0].dr = 8; instrument->fm.op[0].rr = 5; instrument->fm.op[0].tl = 18; instrument->fm.op[0].mult = 1;
+      instrument->fm.op[1].ar = 31; instrument->fm.op[1].dr = 12; instrument->fm.op[1].rr = 6; instrument->fm.op[1].tl = 32; instrument->fm.op[1].mult = 2;
+      instrument->fm.op[2].ar = 31; instrument->fm.op[2].dr = 10; instrument->fm.op[2].rr = 5; instrument->fm.op[2].tl = 42; instrument->fm.op[2].mult = 1;
+      instrument->fm.op[3].ar = 31; instrument->fm.op[3].dr = 8; instrument->fm.op[3].rr = 5; instrument->fm.op[3].tl = 8; instrument->fm.op[3].mult = 1;
+    } else if (chip == "c64_6581" || chip == "c64_8580") {
+      instrument->type = DIV_INS_C64;
+      instrument->c64.triOn = wave == "triangle" || (wave == "square" && voice % 3 == 1); instrument->c64.sawOn = wave == "saw" || (wave == "square" && voice % 3 != 1); instrument->c64.pulseOn = wave == "square" || wave == "fm";
+      instrument->c64.a = (unsigned char)attack; instrument->c64.d = (unsigned char)decay; instrument->c64.s = (unsigned char)sustain; instrument->c64.r = (unsigned char)release; instrument->c64.duty = (unsigned short)(duty * 4095 / 100);
+      instrument->c64.toFilter = voice == 1; instrument->c64.lp = voice == 1; instrument->c64.cut = 900; instrument->c64.res = 5;
+    } else if (chip == "snes") {
       instrument->type = DIV_INS_SNES;
       instrument->amiga.useSample = true;
       instrument->amiga.initSample = sampleIndex;
       instrument->snes.useEnv = true;
-      instrument->snes.a = 12;
-      instrument->snes.d = 5;
-      instrument->snes.s = 6;
-      instrument->snes.r = 12;
+      instrument->snes.a = (unsigned char)attack;
+      instrument->snes.d = (unsigned char)decay;
+      instrument->snes.s = (unsigned char)sustain;
+      instrument->snes.r = (unsigned char)release;
+    } else if (chip == "pce") {
+      instrument->type = DIV_INS_PCE;
+    } else if (chip == "pokey") {
+      instrument->type = DIV_INS_POKEY;
+    } else if (chip == "pcspeaker" || chip == "zx_spectrum") {
+      instrument->type = DIV_INS_BEEPER;
+    } else if (chip == "atari2600") {
+      instrument->type = DIV_INS_TIA;
     }
   }
   if (chip == "snes") engine.renderSamples();
@@ -139,7 +174,7 @@ int main(int argc, char** argv) {
     engine.setAudio(DIV_AUDIO_DUMMY);
     if (!engine.init()) throw std::runtime_error("could not initialize Furnace engine");
     if (!engine.changeSystem(0, systemFor(chip), false)) throw std::runtime_error("could not select Furnace system");
-    configureInstruments(engine, chip);
+    configureInstruments(engine, chip, request);
     fillSong(engine, request);
     DivAudioExportOptions options;
     options.sampleRate = request.value("sampleRate", 44100);

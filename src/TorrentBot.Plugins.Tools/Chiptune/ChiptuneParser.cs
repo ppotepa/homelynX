@@ -5,9 +5,9 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 
 internal static partial class ChiptuneParser
 {
-    private static readonly string[] Chips = ["gameboy", "nes", "snes", "sms"];
-    private static readonly string[] Instruments = ["lead", "soft_lead", "bass", "pluck", "arp", "bell"];
-    private static readonly string[] Styles = ["arcade", "jrpg", "boss", "minimal"];
+    private static readonly string[] Chips = ["gameboy", "nes", "snes", "sms", "c64_6581", "c64_8580", "genesis", "pce", "atari2600", "pokey", "pcspeaker", "zx_spectrum"];
+    private static readonly string[] Instruments = ["lead", "soft_lead", "bass", "pluck", "arp", "bell", "brass", "organ", "epiano", "strings", "drums", "kick", "snare", "hat"];
+    private static readonly string[] Styles = ["arcade", "jrpg", "boss", "dungeon", "menu", "racing", "space", "dark", "happy", "chipbreak", "minimal"];
     private static readonly string[] Formats = ["wav", "mp3", "ogg", "flac"];
 
     public static ChiptuneSpec Parse(string input)
@@ -19,7 +19,11 @@ internal static partial class ChiptuneParser
 
         var chip = Get(o, "chip", Get(o, "preset", "gameboy")).ToLowerInvariant();
         if (chip == "sega") chip = "sms";
-        if (chip == "c64") throw new FormatException("C64/SID hardware rendering is not part of this release. Available: gameboy, nes, snes, sms.");
+        if (chip is "c64" or "sid") chip = "c64_6581";
+        if (chip is "genesis_fm" or "megadrive") chip = "genesis";
+        if (chip is "pc_engine" or "turbografx") chip = "pce";
+        if (chip is "atari" or "tia") chip = "atari2600";
+        if (chip is "spectrum" or "zx") chip = "zx_spectrum";
         Ensure(chip, Chips, "chip");
         var instrument = Get(o, "instrument", "lead").ToLowerInvariant(); Ensure(instrument, Instruments, "instrument");
         var style = Get(o, "style", "arcade").ToLowerInvariant(); Ensure(style, Styles, "style");
@@ -27,10 +31,11 @@ internal static partial class ChiptuneParser
         var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
         var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
         var quantize = Get(o, "quantize", "1/16"); Ensure(quantize, ["1/4", "1/8", "1/16"], "quantize");
+        var wave = Get(o, "wave", "square").ToLowerInvariant(); Ensure(wave, ["square", "triangle", "saw", "noise", "sine", "fm"], "wave");
         var sampleRate = Int(o, "sample_rate", 44_100, 44_100, 48_000);
         if (sampleRate is not (44_100 or 48_000)) throw new FormatException("sample_rate must be 44100 or 48000.");
         var generate = o.GetValueOrDefault("generate")?.ToLowerInvariant();
-        if (generate is not null) Ensure(generate, ["scale", "arp", "riff"], "generate");
+        if (generate is not null) Ensure(generate, ["scale", "arp", "riff", "song", "bassline", "drums"], "generate");
         _ = MusicTheory.ParseKey(Get(o, "key", "C"));
         _ = MusicTheory.GetScale(Get(o, "scale", "major"));
 
@@ -42,7 +47,10 @@ internal static partial class ChiptuneParser
             Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode,
             Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
             Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",4,1,16), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),
+            Progression=o.GetValueOrDefault("progression"),
             Quantize=quantize, Format=format, SampleRate=sampleRate, Repeat=Int(o,"repeat",1,1,8)
+            ,Wave=wave, Duty=Int(o,"duty",25,1,99), Attack=Int(o,"attack",0,0,31), Decay=Int(o,"decay",8,0,31),
+            Sustain=Int(o,"sustain",12,0,31), Release=Int(o,"release",8,0,31), Vibrato=Int(o,"vibrato",0,0,31), Filter=Int(o,"filter",0,0,2047)
         };
     }
 
@@ -57,14 +65,20 @@ internal static partial class ChiptuneParser
             _ => throw new InvalidOperationException("Unsupported chiptune mode.")
         };
         if (song.Notes.Count == 0) throw new FormatException("The composition contains no valid notes.");
-        if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
-        if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
-        if (spec.Repeat <= 1) return song;
+        if (spec.Repeat <= 1)
+        {
+            if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
+            if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
+            return song;
+        }
         var sourceEnd = song.EndTick;
         var notes = new List<NoteEvent>(song.Notes.Count * spec.Repeat);
         for (var i = 0; i < spec.Repeat; i++)
             notes.AddRange(song.Notes.Select(n => n with { StartTick = n.StartTick + i * sourceEnd }));
-        return new Song(notes, song.TempoMap);
+        song = new Song(notes, song.TempoMap);
+        if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
+        if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
+        return song;
     }
 
     private static Song ParseTimedTokens(string text, ChiptuneSpec spec, bool degrees)
