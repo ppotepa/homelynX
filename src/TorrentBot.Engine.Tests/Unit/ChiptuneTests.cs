@@ -42,7 +42,7 @@ public sealed class ChiptuneTests
         var spec = ChiptuneParser.Parse("generate=riff chip=nes bars=1 format=wav");
         var hardware = VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec);
         Assert.All(hardware.Notes.Where(x=>x.Role==TrackRole.Bass), x=>Assert.Equal(2,x.Voice));
-        Assert.All(hardware.Notes.Where(x=>x.Role==TrackRole.Drums), x=>Assert.Equal(3,x.Voice));
+        Assert.All(hardware.Notes.Where(x=>x.Role==TrackRole.Drums), x=>Assert.Contains(x.Voice, new[] { 3, 4 }));
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public sealed class ChiptuneTests
         var midi = new byte[]
         {
             (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
-            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,23,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
             0,0x90,60,100, 30,0x80,60,0,
             15,0x90,62,100, 45,0x80,62,0,
             0,0xFF,0x2F,0
@@ -181,7 +181,7 @@ public sealed class ChiptuneTests
         var midi = new byte[]
         {
             (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
-            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,23,
             0,0xC0,32, 0,0xB0,64,127, 0,0x90,60,100,
             30,0x80,60,0, 30,0xB0,64,0, 0,0xFF,0x2F,0
         };
@@ -239,5 +239,37 @@ public sealed class ChiptuneTests
         Assert.Equal(2, BitConverter.ToInt16(bytes,22));
         Assert.Equal(44_100, BitConverter.ToInt32(bytes,24));
         Assert.True(bytes.Length > 44);
+    }
+
+    [Fact]
+    public void Managed_renderer_produces_non_silent_audio_without_full_scale_clipping()
+    {
+        var spec = ChiptuneParser.Parse("notes=\"C4/8 E4/8 G4/4\" chip=gbc format=wav");
+        var bytes = ManagedChipRenderer.Render(VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec));
+        var samples = Enumerable.Range(0, (bytes.Length - 44) / 2)
+            .Select(i => BitConverter.ToInt16(bytes, 44 + i * 2))
+            .ToArray();
+        var peak = samples.Select(Math.Abs).Max();
+        var rms = Math.Sqrt(samples.Select(x => (double)x * x).Average());
+
+        Assert.True(rms > 100, "Rendered signal is effectively silent.");
+        Assert.True(peak < short.MaxValue, "Renderer is producing hard full-scale clipping.");
+    }
+
+    [Fact]
+    public void Nes_drum_allocator_prefers_DPCM_for_kick_and_noise_for_hat()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 120, 36, 110, TrackRole.Drums),
+            new NoteEvent(120, 120, 42, 90, TrackRole.Drums)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes format=wav");
+        var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal(4, notes[0].Voice);
+        Assert.Equal("kick", notes[0].Instrument);
+        Assert.Equal(3, notes[1].Voice);
+        Assert.Equal("hat", notes[1].Instrument);
     }
 }
