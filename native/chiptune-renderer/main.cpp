@@ -93,6 +93,24 @@ static int makeWave(DivEngine& engine, int voice, const std::string& patch) {
   return engine.addWavePtr(wave);
 }
 
+static DivSample* makeDpcmSample(const std::string& patch) {
+  const int count = patch == "kick" ? 768 : 512;
+  auto* sample = new DivSample();
+  sample->name = "Homelynx NES DPCM " + patch;
+  sample->depth = DIV_SAMPLE_DEPTH_1BIT_DPCM;
+  sample->centerRate = patch == "kick" ? 4181 : 8363;
+  sample->loop = false;
+  if (!sample->init(count)) throw std::runtime_error("could not allocate NES DPCM sample");
+  for (int i = 0; i < count; ++i) {
+    double envelope = 1.0 - (double)i / count;
+    bool bit = patch == "kick"
+      ? std::sin((double)i / 24.0) * envelope > 0
+      : (((i * 13) ^ (i >> 3)) & 1) != 0;
+    if (bit) sample->dataDPCM[i >> 3] |= (unsigned char)(1U << (i & 7));
+  }
+  return sample;
+}
+
 static void configureInstruments(DivEngine& engine, const std::string& chip, const json& request) {
   std::string wave = request.value("wave", "square");
   int duty = bounded(request.value("duty", 25), 1, 99);
@@ -100,7 +118,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   int decay = bounded(request.value("decay", 8), 0, 31);
   int sustain = bounded(request.value("sustain", 12), 0, 31);
   int release = bounded(request.value("release", 8), 0, 31);
-  int voices = chip == "snes" ? 8 : chip == "genesis" ? 10 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
+  int voices = chip == "snes" ? 8 : chip == "genesis" ? 10 : chip == "pce" ? 6 : chip == "nes" ? 5 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
   int instruments = voices;
   std::map<int, std::string> patches;
   for (const auto& item : request.at("notes")) patches[item.value("instrumentId", 0)] = item.value("instrument", "lead");
@@ -109,6 +127,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
     const auto patch = patches.count(voice) ? patches[voice] : (voice == 2 ? "bass" : voice == 3 ? "drums" : "lead");
     int sampleIndex = -1;
     if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice, patch));
+    if (chip == "nes" && (patch == "kick" || patch == "snare")) sampleIndex = engine.addSamplePtr(makeDpcmSample(patch));
     int instrumentIndex = engine.addInstrument(voice);
     if (instrumentIndex < 0) throw std::runtime_error("could not create instrument");
     DivInstrument* instrument = engine.song.ins[instrumentIndex];
@@ -140,6 +159,10 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->c64.toFilter = voice == 1; instrument->c64.lp = voice == 1; instrument->c64.cut = 900; instrument->c64.res = 5;
     } else if (chip == "nes") {
       instrument->type = DIV_INS_NES;
+      if (sampleIndex >= 0) {
+        instrument->amiga.useSample = true;
+        instrument->amiga.initSample = sampleIndex;
+      }
     } else if (chip == "snes") {
       instrument->type = DIV_INS_SNES;
       instrument->amiga.useSample = true;
