@@ -9,6 +9,7 @@
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <string>
 #include "pch.h"
 #include "ta-log.h"
@@ -45,7 +46,7 @@ static DivSystem systemFor(const std::string& chip) {
   throw std::runtime_error("unsupported chip: " + chip);
 }
 
-static DivSample* makeSample(int voice) {
+static DivSample* makeSample(int voice, const std::string& patch) {
   const int count = 512;
   DivSample* sample = new DivSample();
   sample->name = "Homelynx generated sample";
@@ -59,11 +60,13 @@ static DivSample* makeSample(int voice) {
   for (int i = 0; i < count; ++i) {
     double phase = (double)i / count;
     double value;
-    if (voice >= 3 && voice <= 5) {
+    if (patch == "drums" || patch == "kick" || patch == "snare" || patch == "hat") {
       uint32_t bit = ((noise >> 0) ^ (noise >> 1)) & 1U;
       noise = (noise >> 1) | (bit << 14);
       value = (noise & 1U) ? .65 : -.65;
-    } else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
+    } else if (patch == "bass") value = 1.0 - 2.0 * phase;
+    else if (patch == "bell" || patch == "strings" || patch == "epiano") value = std::sin(phase * 2.0 * M_PI);
+    else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
     else if (voice == 7) value = 1.0 - 2.0 * phase;
     else value = phase < .5 ? .72 : -.72;
     sample->data16[i] = (short)(value * 30000.0);
@@ -80,10 +83,13 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   int release = bounded(request.value("release", 8), 0, 31);
   int voices = chip == "snes" ? 8 : chip == "genesis" ? 6 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
   int instruments = voices;
+  std::map<int, std::string> patches;
+  for (const auto& item : request.at("notes")) patches[item.value("instrumentId", 0)] = item.value("instrument", "lead");
   for (const auto& item : request.at("notes")) instruments = std::max(instruments, item.value("instrumentId", 0) + 1);
   for (int voice = 0; voice < instruments; ++voice) {
+    const auto patch = patches.count(voice) ? patches[voice] : (voice == 2 ? "bass" : voice == 3 ? "drums" : "lead");
     int sampleIndex = -1;
-    if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice));
+    if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice, patch));
     int instrumentIndex = engine.addInstrument(voice);
     if (instrumentIndex < 0) throw std::runtime_error("could not create instrument");
     DivInstrument* instrument = engine.song.ins[instrumentIndex];
@@ -92,13 +98,13 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->type = DIV_INS_GB;
       instrument->gb.envVol = 15;
       instrument->gb.envDir = 0;
-      instrument->gb.envLen = chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
+      instrument->gb.envLen = patch == "pluck" || patch == "kick" ? 1 : chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
       instrument->gb.soundLen = 64;
-      instrument->gb.softEnv = chip == "gbc";
+      instrument->gb.softEnv = chip == "gbc" || patch == "soft_lead" || patch == "strings";
       instrument->gb.alwaysInit = true;
     } else if (chip == "genesis") {
       instrument->type = DIV_INS_FM;
-      instrument->fm.alg = wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
+      instrument->fm.alg = patch == "epiano" || patch == "bell" ? 4 : patch == "brass" ? 1 : wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
       instrument->fm.fb = 4;
       instrument->fm.op[0].ar = 31; instrument->fm.op[0].dr = 8; instrument->fm.op[0].rr = 5; instrument->fm.op[0].tl = 18; instrument->fm.op[0].mult = 1;
       instrument->fm.op[1].ar = 31; instrument->fm.op[1].dr = 12; instrument->fm.op[1].rr = 6; instrument->fm.op[1].tl = 32; instrument->fm.op[1].mult = 2;
@@ -106,7 +112,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->fm.op[3].ar = 31; instrument->fm.op[3].dr = 8; instrument->fm.op[3].rr = 5; instrument->fm.op[3].tl = 8; instrument->fm.op[3].mult = 1;
     } else if (chip == "c64_6581" || chip == "c64_8580") {
       instrument->type = DIV_INS_C64;
-      instrument->c64.triOn = wave == "triangle" || (wave == "square" && voice % 3 == 1); instrument->c64.sawOn = wave == "saw" || (wave == "square" && voice % 3 != 1); instrument->c64.pulseOn = wave == "square" || wave == "fm";
+      instrument->c64.triOn = patch == "bell" || patch == "strings" || wave == "triangle" || (wave == "square" && voice % 3 == 1); instrument->c64.sawOn = patch == "bass" || patch == "brass" || wave == "saw" || (wave == "square" && voice % 3 != 1); instrument->c64.pulseOn = patch == "lead" || patch == "pluck" || wave == "square" || wave == "fm";
       instrument->c64.a = (unsigned char)attack; instrument->c64.d = (unsigned char)decay; instrument->c64.s = (unsigned char)sustain; instrument->c64.r = (unsigned char)release; instrument->c64.duty = (unsigned short)(duty * 4095 / 100);
       instrument->c64.toFilter = voice == 1; instrument->c64.lp = voice == 1; instrument->c64.cut = 900; instrument->c64.res = 5;
     } else if (chip == "snes") {
