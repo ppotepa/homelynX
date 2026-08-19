@@ -1,0 +1,81 @@
+using System.Text.Json.Serialization;
+
+namespace TorrentBot.Plugins.Tools.Chiptune;
+
+internal enum ChiptuneMode { Notes, Degrees, Generate, Midi }
+internal enum TrackRole { Lead, Bass, Harmony, Arp, Drums }
+
+internal sealed record TempoPoint(long Tick, int MicrosecondsPerQuarter);
+
+internal sealed class TempoMap
+{
+    public const int Ppq = 960;
+    private readonly TempoPoint[] _points;
+
+    public TempoMap(IEnumerable<TempoPoint>? points = null)
+    {
+        _points = new[] { new TempoPoint(0, 500_000) }.Concat(points ?? [])
+            .GroupBy(x => x.Tick).Select(x => x.Last()).OrderBy(x => x.Tick).ToArray();
+    }
+
+    public double TickToSeconds(long tick)
+    {
+        if (tick <= 0) return 0;
+        double seconds = 0;
+        long cursor = 0;
+        var tempo = _points[0].MicrosecondsPerQuarter;
+        foreach (var point in _points.Skip(1))
+        {
+            if (point.Tick >= tick) break;
+            seconds += (point.Tick - cursor) * tempo / 1_000_000d / Ppq;
+            cursor = point.Tick;
+            tempo = point.MicrosecondsPerQuarter;
+        }
+        return seconds + (tick - cursor) * tempo / 1_000_000d / Ppq;
+    }
+
+    public IReadOnlyList<TempoPoint> Points => _points;
+    public static TempoMap Fixed(int bpm) => new([new TempoPoint(0, 60_000_000 / bpm)]);
+}
+
+internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, int Velocity, TrackRole Role)
+{
+    public long EndTick => StartTick + DurationTick;
+}
+
+internal sealed record Song(IReadOnlyList<NoteEvent> Notes, TempoMap TempoMap)
+{
+    public long EndTick => Notes.Count == 0 ? 0 : Notes.Max(x => x.EndTick);
+    public double DurationSeconds => TempoMap.TickToSeconds(EndTick);
+}
+
+internal sealed record ChiptuneSpec
+{
+    public ChiptuneMode Mode { get; init; }
+    public string? Notes { get; init; }
+    public string? Degrees { get; init; }
+    public string? Generate { get; init; }
+    [JsonIgnore] public byte[]? Midi { get; init; }
+    public string? MidiBase64 { get; init; }
+    public string Chip { get; init; } = "gameboy";
+    public string Instrument { get; init; } = "lead";
+    public string Style { get; init; } = "arcade";
+    public string Key { get; init; } = "C";
+    public string Scale { get; init; } = "major";
+    public int Bpm { get; init; } = 140;
+    public string TempoMode { get; init; } = "file";
+    public int Transpose { get; init; }
+    public int Octave { get; init; } = 4;
+    public int Octaves { get; init; } = 2;
+    public string? Range { get; init; }
+    public string Direction { get; init; } = "updown";
+    public int Bars { get; init; } = 4;
+    public int Seed { get; init; }
+    public string Quantize { get; init; } = "1/16";
+    public string Format { get; init; } = "mp3";
+    public int SampleRate { get; init; } = 44_100;
+    public int Repeat { get; init; } = 1;
+}
+
+internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role);
+internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick);

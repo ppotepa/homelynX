@@ -1,0 +1,112 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+
+namespace TorrentBot.Plugins.Tools.Chiptune;
+
+internal static partial class ChiptuneParser
+{
+    private static readonly string[] Chips = ["gameboy", "nes", "snes", "sms"];
+    private static readonly string[] Instruments = ["lead", "soft_lead", "bass", "pluck", "arp", "bell"];
+    private static readonly string[] Styles = ["arcade", "jrpg", "boss", "minimal"];
+    private static readonly string[] Formats = ["wav", "mp3", "ogg", "flac"];
+
+    public static ChiptuneSpec Parse(string input)
+    {
+        var o = OptionRegex().Matches(input).Cast<Match>().ToDictionary(x => x.Groups["key"].Value, x => x.Groups["value"].Value.Trim('"', '\''), StringComparer.OrdinalIgnoreCase);
+        var hasNotes = o.ContainsKey("notes"); var hasDegrees = o.ContainsKey("degrees"); var hasGenerate = o.ContainsKey("generate"); var hasMidi = o.ContainsKey("midi_base64");
+        if (new[] { hasNotes, hasDegrees, hasGenerate, hasMidi }.Count(x => x) != 1)
+            throw new FormatException("Choose exactly one source: notes=..., degrees=..., generate=scale|arp|riff, or attach one MIDI file.");
+
+        var chip = Get(o, "chip", Get(o, "preset", "gameboy")).ToLowerInvariant();
+        if (chip == "sega") chip = "sms";
+        if (chip == "c64") throw new FormatException("C64/SID hardware rendering is not part of this release. Available: gameboy, nes, snes, sms.");
+        Ensure(chip, Chips, "chip");
+        var instrument = Get(o, "instrument", "lead").ToLowerInvariant(); Ensure(instrument, Instruments, "instrument");
+        var style = Get(o, "style", "arcade").ToLowerInvariant(); Ensure(style, Styles, "style");
+        var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
+        var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
+        var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
+        var quantize = Get(o, "quantize", "1/16"); Ensure(quantize, ["1/4", "1/8", "1/16"], "quantize");
+        var sampleRate = Int(o, "sample_rate", 44_100, 44_100, 48_000);
+        if (sampleRate is not (44_100 or 48_000)) throw new FormatException("sample_rate must be 44100 or 48000.");
+        var generate = o.GetValueOrDefault("generate")?.ToLowerInvariant();
+        if (generate is not null) Ensure(generate, ["scale", "arp", "riff"], "generate");
+        _ = MusicTheory.ParseKey(Get(o, "key", "C"));
+        _ = MusicTheory.GetScale(Get(o, "scale", "major"));
+
+        return new ChiptuneSpec
+        {
+            Mode = hasNotes ? ChiptuneMode.Notes : hasDegrees ? ChiptuneMode.Degrees : hasGenerate ? ChiptuneMode.Generate : ChiptuneMode.Midi,
+            Notes=o.GetValueOrDefault("notes"), Degrees=o.GetValueOrDefault("degrees"), Generate=generate,
+            MidiBase64=o.GetValueOrDefault("midi_base64"), Chip=chip, Instrument=instrument, Style=style,
+            Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode,
+            Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
+            Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",4,1,16), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),
+            Quantize=quantize, Format=format, SampleRate=sampleRate, Repeat=Int(o,"repeat",1,1,8)
+        };
+    }
+
+    public static Song Compose(ChiptuneSpec spec)
+    {
+        var song = spec.Mode switch
+        {
+            ChiptuneMode.Notes => ParseTimedTokens(spec.Notes!, spec, false),
+            ChiptuneMode.Degrees => ParseTimedTokens(spec.Degrees!, spec, true),
+            ChiptuneMode.Generate => ChiptuneGenerators.Generate(spec),
+            ChiptuneMode.Midi => MidiImporter.Import(Convert.FromBase64String(spec.MidiBase64!), spec),
+            _ => throw new InvalidOperationException("Unsupported chiptune mode.")
+        };
+        if (song.Notes.Count == 0) throw new FormatException("The composition contains no valid notes.");
+        if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
+        if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
+        if (spec.Repeat <= 1) return song;
+        var sourceEnd = song.EndTick;
+        var notes = new List<NoteEvent>(song.Notes.Count * spec.Repeat);
+        for (var i = 0; i < spec.Repeat; i++)
+            notes.AddRange(song.Notes.Select(n => n with { StartTick = n.StartTick + i * sourceEnd }));
+        return new Song(notes, song.TempoMap);
+    }
+
+    private static Song ParseTimedTokens(string text, ChiptuneSpec spec, bool degrees)
+    {
+        var notes = new List<NoteEvent>(); long cursor = 0;
+        var scale = MusicTheory.GetScale(spec.Scale); var root = MusicTheory.ParseKey(spec.Key);
+        foreach (var token in text.Split([' ', '|'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var p = token.Split('/', 2);
+            if (p.Length != 2 || !int.TryParse(p[1], out var denominator) || denominator is not (1 or 2 or 4 or 8 or 16 or 32))
+                throw new FormatException($"Invalid note token '{token}'. Expected C4/8, [C4,E4]/4 or R/8.");
+            var duration = 4L * TempoMap.Ppq / denominator;
+            if (!p[0].Equals("R", StringComparison.OrdinalIgnoreCase))
+            {
+                var names = p[0].Trim('[', ']').Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                foreach (var name in names)
+                {
+                    int pitch;
+                    if (degrees) pitch = MusicTheory.DegreeToPitch(name, root, scale, spec.Octave);
+                    else if (!MusicTheory.TryParsePitch(name, out pitch)) throw new FormatException($"Invalid note '{name}'.");
+                    pitch += spec.Transpose;
+                    if (pitch is < 0 or > 127) throw new FormatException($"Note '{name}' is outside MIDI range after transposition.");
+                    notes.Add(new NoteEvent(cursor, duration, pitch, 108, TrackRole.Lead));
+                }
+            }
+            cursor += duration;
+        }
+        return new Song(notes, TempoMap.Fixed(spec.Bpm));
+    }
+
+    private static string Get(IReadOnlyDictionary<string,string> o, string key, string fallback) => o.GetValueOrDefault(key) ?? fallback;
+    private static int Int(IReadOnlyDictionary<string,string> o, string key, int fallback, int min, int max)
+    {
+        if (!o.TryGetValue(key, out var raw)) return fallback;
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) || value < min || value > max)
+            throw new FormatException($"{key} must be between {min} and {max}.");
+        return value;
+    }
+    private static void Ensure(string value, IEnumerable<string> allowed, string name)
+    {
+        var values = allowed.ToArray();
+        if (!values.Contains(value, StringComparer.OrdinalIgnoreCase)) throw new FormatException($"Unknown {name} '{value}'. Available: {string.Join(", ", values)}.");
+    }
+    [GeneratedRegex("(?<key>[a-zA-Z][a-zA-Z0-9_]*)=(?<value>\"[^\"]*\"|'[^']*'|[^ ]+)")] private static partial Regex OptionRegex();
+}
