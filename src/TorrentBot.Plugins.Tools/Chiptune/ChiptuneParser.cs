@@ -59,6 +59,8 @@ internal static partial class ChiptuneParser
             Quantize=quantize, Format=format, SampleRate=sampleRate, Repeat=Int(o,"repeat",1,1,8)
             ,Wave=wave, Duty=Int(o,"duty",25,1,99), Attack=Int(o,"attack",0,0,31), Decay=Int(o,"decay",8,0,31),
             Sustain=Int(o,"sustain",12,0,31), Release=Int(o,"release",8,0,31), Vibrato=Int(o,"vibrato",0,0,31), Filter=Int(o,"filter",0,0,2047)
+            ,NoteCut=Int(o,"note_cut",-1,-1,255), NoteDelay=Int(o,"note_delay",0,0,255), Retrigger=Int(o,"retrigger",0,0,255)
+            ,PitchSlide=Int(o,"pitch_slide",0,-127,127), VolumeSlide=Int(o,"volume_slide",0,-127,127)
         };
     }
 
@@ -73,13 +75,29 @@ internal static partial class ChiptuneParser
             _ => throw new InvalidOperationException("Unsupported chiptune mode.")
         };
         if (song.Notes.Count == 0) throw new FormatException("The composition contains no valid notes.");
+        song = ApplyArticulation(song, spec);
         if (spec.Repeat <= 1) return song;
         var sourceEnd = song.EndTick;
         var notes = new List<NoteEvent>(song.Notes.Count * spec.Repeat);
         for (var i = 0; i < spec.Repeat; i++)
             notes.AddRange(song.Notes.Select(n => n with { StartTick = n.StartTick + i * sourceEnd }));
-        song = new Song(notes, song.TempoMap);
+        song = new Song(notes, song.TempoMap, song.MidiMetadata);
         return song;
+    }
+
+    private static Song ApplyArticulation(Song song, ChiptuneSpec spec)
+    {
+        if (spec.NoteCut < 0 && spec.NoteDelay == 0 && spec.Retrigger == 0 && spec.PitchSlide == 0 && spec.VolumeSlide == 0)
+            return song;
+        var notes = song.Notes.Select(note => note with
+        {
+            NoteCutTicks = spec.NoteCut >= 0 ? Math.Min(spec.NoteCut, Math.Max(0, (int)note.DurationTick - 1)) : note.NoteCutTicks,
+            NoteDelayTicks = spec.NoteDelay,
+            Retrigger = spec.Retrigger,
+            PitchSlide = spec.PitchSlide,
+            VolumeSlide = spec.VolumeSlide
+        }).ToArray();
+        return song with { Notes = notes };
     }
 
     private static Song ParseTimedTokens(string text, ChiptuneSpec spec, bool degrees)

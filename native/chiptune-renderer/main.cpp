@@ -308,6 +308,44 @@ static void fillSong(DivEngine& engine, const json& request) {
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)vibrato;
       nextEffect++;
     }
+    int pitchSlide = bounded(item.value("pitchSlide", 0), -127, 127);
+    if (pitchSlide != 0 && nextEffect < DIV_MAX_EFFECTS) {
+      // 01/02 are Furnace tracker pitch-slide effects.  The C# side uses
+      // the signed value as direction and speed, keeping the public command
+      // compact while preserving the articulation in the native renderer.
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = pitchSlide > 0 ? 0x01 : 0x02;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded(std::abs(pitchSlide), 1, 255);
+      nextEffect++;
+    }
+    int volumeSlide = bounded(item.value("volumeSlide", 0), -127, 127);
+    if (volumeSlide != 0 && nextEffect < DIV_MAX_EFFECTS) {
+      // 0Axy: x fades in, y fades out.  Clamp to a tracker nibble.
+      int amount = bounded(std::abs(volumeSlide), 1, 15);
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0x0A;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)(volumeSlide > 0 ? amount << 4 : amount);
+      nextEffect++;
+    }
+    int retrigger = bounded(item.value("retrigger", 0), 0, 255);
+    if (retrigger > 0 && nextEffect < DIV_MAX_EFFECTS) {
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0x0C;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)retrigger;
+      nextEffect++;
+    }
+    auto ticksToRows = [ticksPerRow](long ticks) {
+      return bounded((int)std::llround(ticks / (double)ticksPerRow), 1, 255);
+    };
+    int noteDelay = bounded(item.value("noteDelayTicks", 0), 0, 255 * ticksPerRow);
+    if (noteDelay > 0 && nextEffect < DIV_MAX_EFFECTS) {
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xED;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)ticksToRows(noteDelay);
+      nextEffect++;
+    }
+    int noteCut = item.value("noteCutTicks", -1);
+    if (noteCut >= 0 && nextEffect < DIV_MAX_EFFECTS) {
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xEC;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)ticksToRows(noteCut);
+      nextEffect++;
+    }
     double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
     double residual = bendSemitones - std::round(bendSemitones);
     if (std::abs(residual) >= 0.01) {
@@ -317,6 +355,7 @@ static void fillSong(DivEngine& engine, const json& request) {
       if (nextEffect < DIV_MAX_EFFECTS) {
         pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE5;
         pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+        nextEffect++;
       }
     }
     if (endNoteRow < sub->ordersLen * sub->patLen) {

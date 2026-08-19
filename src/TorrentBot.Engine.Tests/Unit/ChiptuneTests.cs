@@ -12,6 +12,19 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Tracker_articulation_options_reach_hardware_notes()
+    {
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes note_cut=120 note_delay=15 retrigger=3 pitch_slide=4 volume_slide=-2");
+        var note = Assert.Single(VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec).Notes);
+
+        Assert.Equal(120, note.NoteCutTicks);
+        Assert.Equal(15, note.NoteDelayTicks);
+        Assert.Equal(3, note.Retrigger);
+        Assert.Equal(4, note.PitchSlide);
+        Assert.Equal(-2, note.VolumeSlide);
+    }
+
+    [Fact]
     public void Degrees_respect_key_scale_and_octave()
     {
         var spec = ChiptuneParser.Parse("degrees=\"1/8 2/8 3/8 8/4\" key=D scale=minor octave=4 format=wav");
