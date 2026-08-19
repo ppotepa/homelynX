@@ -5,6 +5,7 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 
 internal static partial class ChiptuneParser
 {
+    private const int MaxCompositionNotes = 32_768;
     private static readonly string[] Chips = ["gameboy", "nes", "snes", "sms", "c64_6581", "c64_8580", "genesis", "pce", "atari2600", "pokey", "pcspeaker", "zx_spectrum"];
     private static readonly string[] Instruments = ["lead", "soft_lead", "bass", "pluck", "arp", "bell", "brass", "organ", "epiano", "strings", "drums", "kick", "snare", "hat"];
     private static readonly string[] Styles = ["arcade", "jrpg", "boss", "dungeon", "menu", "racing", "space", "dark", "happy", "chipbreak", "minimal"];
@@ -67,7 +68,7 @@ internal static partial class ChiptuneParser
         if (song.Notes.Count == 0) throw new FormatException("The composition contains no valid notes.");
         if (spec.Repeat <= 1)
         {
-            if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
+            if (song.Notes.Count > MaxCompositionNotes) throw new FormatException($"The composition exceeds the {MaxCompositionNotes:N0}-note limit.");
             if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
             return song;
         }
@@ -76,7 +77,7 @@ internal static partial class ChiptuneParser
         for (var i = 0; i < spec.Repeat; i++)
             notes.AddRange(song.Notes.Select(n => n with { StartTick = n.StartTick + i * sourceEnd }));
         song = new Song(notes, song.TempoMap);
-        if (song.Notes.Count > 4096) throw new FormatException("The composition exceeds the 4096-note limit.");
+        if (song.Notes.Count > MaxCompositionNotes) throw new FormatException($"The composition exceeds the {MaxCompositionNotes:N0}-note limit.");
         if (song.DurationSeconds > 120) throw new FormatException("The composition exceeds the 120-second limit.");
         return song;
     }

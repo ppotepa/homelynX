@@ -32,7 +32,7 @@ After sending audio, Telegram offers octave, semitone, BPM, variation, instrumen
 ## Runtime limits
 
 - 5 MB MIDI input
-- 4096 notes
+- 32,768 notes
 - 120 seconds of audio
 - one render at a time per bot process
 - 60-second renderer timeout by default (`TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS`)
