@@ -38,19 +38,22 @@ internal static class ChiptuneGenerators
 
     private static IReadOnlyList<NoteEvent> Riff(ChiptuneSpec spec, int[] scale, int root, (int Low, int High) range, Random random)
     {
+        var profile = ProfileForStyle(spec.Style);
         var all = ScalePitches(scale, root, range).ToArray();
         var notes = new List<NoteEvent>();
         var steps = spec.Bars * 16;
-        var current = Math.Clamp(Array.FindIndex(all, x => x % 12 == root), 0, all.Length - 1);
+        var tonicIndex = Math.Clamp(Array.FindIndex(all, x => x % 12 == root), 0, all.Length - 1);
+        var current = Math.Clamp(tonicIndex + profile.StartOffset, 0, all.Length - 1);
         var direction = spec.Direction == "down" ? -1 : 1;
         for (var step = 0; step < steps; step++)
         {
-            if (step % 4 == 0 || random.NextDouble() < Density(spec.Style))
+            if (step % profile.AccentEvery == 0 || random.NextDouble() < profile.Density)
             {
                 var pitch = all[current] + spec.Transpose;
-                notes.Add(new NoteEvent(step * TempoMap.Ppq / 4, TempoMap.Ppq / (step % 4 == 0 ? 2 : 4), ClampPitch(pitch), step % 4 == 0 ? 120 : 96, TrackRole.Lead));
+                var duration = step % profile.AccentEvery == 0 ? profile.AccentLength : profile.StepLength;
+                notes.Add(new NoteEvent(step * TempoMap.Ppq / 4, duration, ClampPitch(pitch), step % profile.AccentEvery == 0 ? 120 : 96, TrackRole.Lead));
             }
-            current = NextIndex(current, all.Length, spec.Direction, ref direction, random);
+            current = NextIndex(current, all.Length, spec.Direction, ref direction, random, profile.LeapChance);
         }
 
         var low = all.Where(x => x <= range.Low + 12).DefaultIfEmpty(all[0]).ToArray();
@@ -60,12 +63,16 @@ internal static class ChiptuneGenerators
             var barRoot = progression[(beat / 4) % progression.Length];
             var bass = (barRoot >= range.Low ? barRoot : low[(beat / 4) % low.Length]) - 12 + spec.Transpose;
             while (bass < 24) bass += 12;
-            notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq * 3 / 4, ClampPitch(bass), 106, TrackRole.Bass));
-            notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, beat % 4 == 0 ? 36 : 42, beat % 4 == 0 ? 118 : 78, TrackRole.Drums));
-            if (beat % 4 is 1 or 3) notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, 38, 105, TrackRole.Drums));
+            notes.Add(new NoteEvent(beat * TempoMap.Ppq, profile.BassLength, ClampPitch(bass), 106, TrackRole.Bass));
+            if (profile.Drums)
+            {
+                if (beat % profile.KickEvery == 0) notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, 36, 118, TrackRole.Drums));
+                else if (profile.Hats) notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, 42, 78, TrackRole.Drums));
+                if (profile.Snare && beat % 4 is 1 or 3) notes.Add(new NoteEvent(beat * TempoMap.Ppq, TempoMap.Ppq / 8, 38, 105, TrackRole.Drums));
+            }
         }
 
-        if (spec.Style != "minimal")
+        if (profile.Harmony)
         {
             var chord = all.Take(Math.Min(3, all.Length)).ToArray();
             for (var step = 0; step < steps; step++)
@@ -140,9 +147,11 @@ internal static class ChiptuneGenerators
         }
     }
 
-    private static int NextIndex(int current, int count, string mode, ref int direction, Random random)
+    private static int NextIndex(int current, int count, string mode, ref int direction, Random random, double leapChance)
     {
-        var step = random.NextDouble() switch { < .15 => -2, < .4 => -1, < .55 => 0, < .85 => 1, _ => 2 };
+        var step = random.NextDouble() < leapChance
+            ? (random.Next(2) == 0 ? -3 : 3)
+            : random.NextDouble() switch { < .15 => -2, < .4 => -1, < .55 => 0, < .85 => 1, _ => 2 };
         if (mode == "up") step = Math.Abs(step); else if (mode == "down") step = -Math.Abs(step); else if (mode == "updown") step = Math.Abs(step) * direction;
         var next = current + step;
         if (next < 0 || next >= count) { direction *= -1; next = Math.Clamp(current - step, 0, count - 1); }
@@ -154,6 +163,22 @@ internal static class ChiptuneGenerators
         var index = Array.IndexOf(all, tonic);
         return all[Math.Min(all.Length - 1, index + degreeOffset)];
     }
-    private static double Density(string style) => style switch { "boss" => .78, "jrpg" => .58, "minimal" => .3, _ => .48 };
+    private sealed record StyleProfile(double Density, double LeapChance, int StartOffset, int AccentEvery,
+        long AccentLength, long StepLength, long BassLength, bool Drums, bool Hats, bool Snare, int KickEvery, bool Harmony);
+
+    private static StyleProfile ProfileForStyle(string style) => style switch
+    {
+        "boss" => new(.82, .30, 2, 2, TempoMap.Ppq / 2, TempoMap.Ppq / 4, TempoMap.Ppq / 2, true, true, true, 2, true),
+        "jrpg" => new(.62, .12, 0, 4, TempoMap.Ppq / 2, TempoMap.Ppq / 2, TempoMap.Ppq * 3 / 4, true, true, true, 4, true),
+        "dungeon" => new(.45, .08, -2, 4, TempoMap.Ppq * 3 / 4, TempoMap.Ppq / 4, TempoMap.Ppq, true, true, false, 4, true),
+        "menu" => new(.32, .05, 3, 8, TempoMap.Ppq, TempoMap.Ppq / 2, TempoMap.Ppq, false, false, false, 4, true),
+        "racing" => new(.76, .18, 1, 2, TempoMap.Ppq / 4, TempoMap.Ppq / 4, TempoMap.Ppq / 2, true, true, true, 2, true),
+        "space" => new(.36, .20, 4, 8, TempoMap.Ppq, TempoMap.Ppq / 2, TempoMap.Ppq * 3 / 4, false, false, false, 4, true),
+        "dark" => new(.48, .25, -3, 4, TempoMap.Ppq * 3 / 4, TempoMap.Ppq / 4, TempoMap.Ppq, true, false, true, 4, false),
+        "happy" => new(.70, .10, 1, 4, TempoMap.Ppq / 2, TempoMap.Ppq / 4, TempoMap.Ppq / 2, true, true, true, 4, true),
+        "chipbreak" => new(.90, .38, 0, 2, TempoMap.Ppq / 4, TempoMap.Ppq / 8, TempoMap.Ppq / 4, true, true, true, 2, true),
+        "minimal" => new(.25, .03, 0, 8, TempoMap.Ppq, TempoMap.Ppq / 2, TempoMap.Ppq, false, false, false, 4, false),
+        _ => new(.50, .15, 0, 4, TempoMap.Ppq / 2, TempoMap.Ppq / 4, TempoMap.Ppq * 3 / 4, true, true, true, 4, true)
+    };
     private static int ClampPitch(int pitch) => Math.Clamp(pitch, 0, 127);
 }

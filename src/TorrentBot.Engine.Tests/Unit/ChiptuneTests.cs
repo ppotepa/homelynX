@@ -43,6 +43,20 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Riff_styles_change_density_rhythm_and_arrangement()
+    {
+        var styles = new[] { "arcade", "boss", "menu", "racing", "space", "dark", "happy", "chipbreak", "minimal" };
+        var signatures = styles.Select(style =>
+        {
+            var spec = ChiptuneParser.Parse($"generate=riff style={style} key=D scale=minor seed=7 bars=2 format=wav");
+            var notes = ChiptuneParser.Compose(spec).Notes;
+            return string.Join(';', notes.Select(x => $"{x.StartTick}:{x.DurationTick}:{x.Pitch}:{x.Role}"));
+        }).ToArray();
+
+        Assert.True(signatures.Distinct().Count() >= styles.Length - 1, "Most style profiles should produce distinct arrangements.");
+    }
+
+    [Fact]
     public void Tempo_map_integrates_each_segment()
     {
         var map = new TempoMap([new TempoPoint(0, 500_000), new TempoPoint(960, 1_000_000)]);
