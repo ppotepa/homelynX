@@ -33,6 +33,7 @@ internal static class ChiptuneTools
         var song = ChiptuneParser.Compose(spec);
         progress?.Report("chiptune:composed", $"{song.Notes.Count} notes, {song.DurationSeconds:F1}s");
         var hardware = VoiceAllocator.Allocate(song, spec);
+        progress?.Report("chiptune:arranged", $"{hardware.Notes.Count}/{song.Notes.Count} notes, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}");
         progress?.Report("chiptune:rendering", $"backend={(Environment.GetEnvironmentVariable("CHIPTUNE_RENDERER_PATH") is null ? "managed" : "furnace")}");
         var waitSeconds = ReadInt("TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS", 600, 5, 3600);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);

@@ -67,7 +67,7 @@ internal static class MidiImporter
         // A single melodic stream is a lead, never a bass. Treat the lowest
         // stream as bass only when the file actually contains another voice.
         var bass = melodic.Length > 1
-            ? melodic.OrderBy(x => x.Median).ThenByDescending(x => x.Count).First().Key
+            ? melodic.OrderByDescending(x => IsBassProgram(x.Program)).ThenBy(x => x.Median).ThenByDescending(x => x.Count).First().Key
             : ((int Track, int Channel)?)null;
         var notes = completed.Select(x =>
         {
@@ -192,6 +192,7 @@ internal static class MidiImporter
     }
 
     private static bool IsLeadProgram(int program) => program is >= 80 and <= 87 or >= 56 and <= 63 or >= 64 and <= 71;
+    private static bool IsBassProgram(int program) => program is >= 32 and <= 39;
 
     private sealed class Reader(byte[] bytes)
     {

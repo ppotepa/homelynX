@@ -52,6 +52,7 @@ public sealed class ProgressMessageFormatter
                     break;
                 case "chiptune:parsed":
                 case "chiptune:composed":
+                case "chiptune:arranged":
                 case "chiptune:rendering":
                 case "chiptune:encoded":
                     _entries.Add($"Chiptune [{stage[9..]}]: {detail}");
