@@ -48,11 +48,18 @@ internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, i
 
 internal sealed record PitchBendPoint(long Tick, int Value);
 
-internal sealed record Song(IReadOnlyList<NoteEvent> Notes, TempoMap TempoMap)
+internal sealed record Song(IReadOnlyList<NoteEvent> Notes, TempoMap TempoMap, MidiMetadata? MidiMetadata = null)
 {
     public long EndTick => Notes.Count == 0 ? 0 : Notes.Max(x => x.EndTick);
     public double DurationSeconds => TempoMap.TickToSeconds(EndTick);
 }
+
+internal sealed record TimeSignaturePoint(long Tick, int Numerator, int Denominator);
+internal sealed record KeySignaturePoint(long Tick, int SharpsFlats, bool Minor);
+internal sealed record MidiMetadata(
+    IReadOnlyDictionary<int, string> TrackNames,
+    IReadOnlyList<TimeSignaturePoint> TimeSignatures,
+    IReadOnlyList<KeySignaturePoint> KeySignatures);
 
 internal sealed record ChiptuneSpec
 {

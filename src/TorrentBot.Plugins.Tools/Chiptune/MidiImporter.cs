@@ -90,7 +90,7 @@ internal static class MidiImporter
             }
             return result;
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
-        return new Song(notes, tempo);
+        return new Song(notes, tempo) with { MidiMetadata = new MidiMetadata(file.TrackNames, file.TimeSignatures, file.KeySignatures) };
     }
 
     private static ParsedMidi Parse(byte[] bytes)
@@ -102,7 +102,9 @@ internal static class MidiImporter
         _ = r.UInt16(); var tracks = r.UInt16(); var division = r.UInt16();
         if ((division & 0x8000) != 0) throw new InvalidDataException("SMPTE MIDI timing is not supported.");
         r.Skip(headerLength - 6);
-        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var bends = new List<RawBend>(); var order = 0; var channelState = new MidiStateTable();
+        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var bends = new List<RawBend>();
+        var trackNames = new Dictionary<int, string>(); var timeSignatures = new List<TimeSignaturePoint>(); var keySignatures = new List<KeySignaturePoint>();
+        var order = 0; var channelState = new MidiStateTable();
         for (var track = 0; track < tracks; track++)
         {
             if (r.Offset + 8 > bytes.Length || r.Text(4) != "MTrk") throw new InvalidDataException($"Invalid MIDI track {track + 1}/{tracks} at byte {r.Offset - 4}.");
@@ -119,6 +121,19 @@ internal static class MidiImporter
                 {
                     var meta = r.Byte(); var length = checked((int)r.Var());
                     if (meta == 0x51 && length == 3) tempos.Add(new RawTempo(tick, (r.Byte() << 16) | (r.Byte() << 8) | r.Byte()));
+                    else if (meta is 0x03 or 0x04 && length > 0) trackNames.TryAdd(track, r.Text(length).Trim('\0', ' '));
+                    else if (meta == 0x58 && length >= 2)
+                    {
+                        var numerator = r.Byte(); var denominatorExponent = r.Byte();
+                        if (length > 2) r.Skip(length - 2);
+                        timeSignatures.Add(new TimeSignaturePoint(ScaleTick(tick, division), numerator, 1 << Math.Clamp(denominatorExponent, 0, 6)));
+                    }
+                    else if (meta == 0x59 && length >= 2)
+                    {
+                        var sharpsFlats = (sbyte)r.Byte(); var minor = r.Byte() != 0;
+                        if (length > 2) r.Skip(length - 2);
+                        keySignatures.Add(new KeySignaturePoint(ScaleTick(tick, division), sharpsFlats, minor));
+                    }
                     else r.Skip(length);
                     continue;
                 }
@@ -143,7 +158,7 @@ internal static class MidiImporter
             }
             r.Offset = end;
         }
-        return new ParsedMidi(division, events, tempos, bends);
+        return new ParsedMidi(division, events, tempos, bends, trackNames, timeSignatures, keySignatures);
     }
 
     private static byte[] UnwrapRmid(byte[] bytes)
@@ -173,7 +188,8 @@ internal static class MidiImporter
     private static long Quantize(long tick, long grid) => grid <= 0
         ? Math.Max(0, tick)
         : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
-    private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos, IReadOnlyList<RawBend> Bends);
+    private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos, IReadOnlyList<RawBend> Bends,
+        IReadOnlyDictionary<int, string> TrackNames, IReadOnlyList<TimeSignaturePoint> TimeSignatures, IReadOnlyList<KeySignaturePoint> KeySignatures);
     private sealed record RawEvent(int Track, int Type, int Channel, int Note, int Value, long Tick, int Order, MidiState State)
     {
         public int Program => State.Program;

@@ -67,12 +67,22 @@ internal static class ChiptuneTools
             .OrderByDescending(x => x.Count())
             .Select(x => $"  track {x.Key.SourceTrack + 1}/ch {x.Key.SourceChannel + 1}: {x.Count()} notes, programs={string.Join(',', x.Select(n => n.Program).Distinct())}");
         var peakPolyphony = song.Notes.GroupBy(x => x.StartTick).Select(x => x.Count()).DefaultIfEmpty().Max();
+        var metadata = song.MidiMetadata;
+        var names = metadata is null || metadata.TrackNames.Count == 0
+            ? "  (none)"
+            : string.Join('\n', metadata.TrackNames.OrderBy(x => x.Key).Select(x => $"  track {x.Key + 1}: {x.Value}"));
+        var meters = metadata is null || metadata.TimeSignatures.Count == 0
+            ? "  (default 4/4)"
+            : string.Join(", ", metadata.TimeSignatures.Select(x => $"{x.Numerator}/{x.Denominator}@{x.Tick}"));
         var message = string.Join('\n', new[]
         {
             $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, peak onset polyphony={peakPolyphony}",
             $"Target={spec.Chip}, fidelity={spec.Fidelity}, arranged={hardware.Notes.Count}, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}, revoiced={hardware.RevoicedNotes}, arpeggiated={hardware.ArpeggiatedNotes}, dropped={hardware.DroppedNotes}",
             "Source parts:",
-            string.Join('\n', channels)
+            string.Join('\n', channels),
+            "Track names:", names,
+            $"Time signatures: {meters}",
+            $"Key signatures: {metadata?.KeySignatures.Count ?? 0}"
         });
         return new(true, null, message);
     }
