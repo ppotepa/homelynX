@@ -74,10 +74,16 @@ internal static class ChiptuneTools
         var meters = metadata is null || metadata.TimeSignatures.Count == 0
             ? "  (default 4/4)"
             : string.Join(", ", metadata.TimeSignatures.Select(x => $"{x.Numerator}/{x.Denominator}@{x.Tick}"));
+        var bendSegments = song.Notes.Count(x => x.PitchBends is { Count: > 0 });
+        var volumeSegments = song.Notes.Count(x => x.Volume != 127);
+        var modulationSegments = song.Notes.Count(x => x.Modulation != 0);
+        var aftertouchSegments = song.Notes.Count(x => x.Aftertouch != 0);
+        var releaseVelocityNotes = song.Notes.Count(x => x.ReleaseVelocity != 0);
         var message = string.Join('\n', new[]
         {
             $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, peak onset polyphony={peakPolyphony}",
             $"Target={spec.Chip}, fidelity={spec.Fidelity}, arranged={hardware.Notes.Count}, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}, revoiced={hardware.RevoicedNotes}, arpeggiated={hardware.ArpeggiatedNotes}, dropped={hardware.DroppedNotes}",
+            $"Performance data: pitch-bend segments={bendSegments}, CC7 volume segments={volumeSegments}, modulation segments={modulationSegments}, aftertouch segments={aftertouchSegments}, release velocity notes={releaseVelocityNotes}",
             "Source parts:",
             string.Join('\n', channels),
             "Track names:", names,
