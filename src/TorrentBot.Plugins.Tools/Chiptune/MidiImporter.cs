@@ -18,6 +18,8 @@ internal static class MidiImporter
             _ => TempoMap.Ppq / 4
         };
         var active = new Dictionary<(int Track,int Channel,int Note), Stack<RawEvent>>();
+        var sustained = new Dictionary<(int Track,int Channel), List<RawEvent>>();
+        var sustain = new Dictionary<(int Track,int Channel), bool>();
         var completed = new List<(RawEvent Start, long End)>();
         foreach (var e in file.Events.OrderBy(x => x.Tick).ThenBy(x => x.Order))
         {
@@ -28,11 +30,40 @@ internal static class MidiImporter
                 stack.Push(e);
             }
             else if ((e.Type == 0x80 || e.Type == 0x90) && active.TryGetValue(key, out var stack) && stack.Count > 0)
-                completed.Add((stack.Pop(), e.Tick));
+            {
+                var start = stack.Pop();
+                var channelKey = (e.Track, e.Channel);
+                if (sustain.GetValueOrDefault(channelKey))
+                {
+                    if (!sustained.TryGetValue(channelKey, out var held)) sustained[channelKey] = held = [];
+                    held.Add(start);
+                }
+                else completed.Add((start, e.Tick));
+            }
+            else if (e.Type == 0xB0 && e.Note == 64)
+            {
+                var channelKey = (e.Track, e.Channel);
+                var down = e.Value >= 64;
+                if (!down && sustain.GetValueOrDefault(channelKey) && sustained.TryGetValue(channelKey, out var held))
+                {
+                    foreach (var start in held) completed.Add((start, e.Tick));
+                    held.Clear();
+                }
+                sustain[channelKey] = down;
+            }
         }
-        var stats = completed.GroupBy(x => (x.Start.Track, x.Start.Channel)).Select(x => new { x.Key, Median=x.Select(n => n.Start.Note).Order().ElementAt(x.Count()/2), Count=x.Count() }).ToArray();
+        foreach (var (channel, held) in sustained)
+            foreach (var start in held)
+                completed.Add((start, start.Tick + TempoMap.Ppq / 4));
+        var stats = completed.GroupBy(x => (x.Start.Track, x.Start.Channel)).Select(x => new
+        {
+            x.Key,
+            Median=x.Select(n => n.Start.Note).Order().ElementAt(x.Count()/2),
+            Count=x.Count(),
+            Program=x.Select(n => n.Start.Program).GroupBy(p => p).OrderByDescending(g => g.Count()).First().Key
+        }).ToArray();
         var melodic = stats.Where(x => x.Key.Channel != 9).ToArray();
-        var lead = melodic.OrderByDescending(x => x.Median).ThenByDescending(x => x.Count).FirstOrDefault()?.Key;
+        var lead = melodic.OrderByDescending(x => IsLeadProgram(x.Program)).ThenByDescending(x => x.Median).ThenByDescending(x => x.Count).FirstOrDefault()?.Key;
         // A single melodic stream is a lead, never a bass. Treat the lowest
         // stream as bass only when the file actually contains another voice.
         var bass = melodic.Length > 1
@@ -43,7 +74,8 @@ internal static class MidiImporter
             var start = Quantize(ScaleTick(x.Start.Tick, file.Division), grid);
             var end = Math.Max(start + Math.Max(1, grid), Quantize(ScaleTick(x.End, file.Division), grid));
             var role = x.Start.Channel == 9 ? TrackRole.Drums : (x.Start.Track, x.Start.Channel) == bass ? TrackRole.Bass : (x.Start.Track, x.Start.Channel) == lead ? TrackRole.Lead : TrackRole.Harmony;
-            return new NoteEvent(start, end - start, Math.Clamp(x.Start.Note + spec.Transpose, 0, 127), x.Start.Value, role);
+            return new NoteEvent(start, end - start, Math.Clamp(x.Start.Note + spec.Transpose, 0, 127), x.Start.Value, role,
+                x.Start.Track, x.Start.Channel, x.Start.Program, x.Start.Bank, x.Start.Pan, x.Start.Expression, x.Start.PitchBend);
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
         return new Song(notes, tempo);
     }
@@ -57,7 +89,7 @@ internal static class MidiImporter
         _ = r.UInt16(); var tracks = r.UInt16(); var division = r.UInt16();
         if ((division & 0x8000) != 0) throw new InvalidDataException("SMPTE MIDI timing is not supported.");
         r.Skip(headerLength - 6);
-        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var order = 0;
+        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var order = 0; var channelState = new MidiStateTable();
         for (var track = 0; track < tracks; track++)
         {
             if (r.Offset + 8 > bytes.Length || r.Text(4) != "MTrk") throw new InvalidDataException($"Invalid MIDI track {track + 1}/{tracks} at byte {r.Offset - 4}.");
@@ -79,7 +111,21 @@ internal static class MidiImporter
                 }
                 if (status is 0xF0 or 0xF7) { r.Skip(checked((int)r.Var())); continue; }
                 var type = status & 0xF0; var channel = status & 0x0F; var first = r.Byte(); var second = type is 0xC0 or 0xD0 ? 0 : r.Byte();
-                if (type is 0x80 or 0x90) events.Add(new RawEvent(track, type, channel, first, second, tick, order++));
+                if (type is 0x80 or 0x90)
+                    events.Add(new RawEvent(track, type, channel, first, second, tick, order++, channelState[track, channel].Snapshot()));
+                else if (type == 0xB0)
+                {
+                    channelState.Apply(track, channel, first, second);
+                    events.Add(new RawEvent(track, type, channel, first, second, tick, order++, channelState[track, channel].Snapshot()));
+                }
+                else if (type == 0xC0)
+                {
+                    channelState[track, channel].Program = first;
+                }
+                else if (type == 0xE0)
+                {
+                    channelState[track, channel].PitchBend = first | (second << 7);
+                }
             }
             r.Offset = end;
         }
@@ -114,8 +160,38 @@ internal static class MidiImporter
         ? Math.Max(0, tick)
         : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
     private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos);
-    private sealed record RawEvent(int Track, int Type, int Channel, int Note, int Value, long Tick, int Order);
+    private sealed record RawEvent(int Track, int Type, int Channel, int Note, int Value, long Tick, int Order, MidiState State)
+    {
+        public int Program => State.Program;
+        public int Bank => State.Bank;
+        public int Pan => State.Pan;
+        public int Expression => State.Expression;
+        public int PitchBend => State.PitchBend;
+    }
     private sealed record RawTempo(long Tick, int Value);
+
+    private sealed class MidiState
+    {
+        public int Program;
+        public int Bank;
+        public int Pan = 64;
+        public int Expression = 127;
+        public int PitchBend = 8192;
+        public MidiState Snapshot() => new() { Program = Program, Bank = Bank, Pan = Pan, Expression = Expression, PitchBend = PitchBend };
+    }
+
+    private sealed class MidiStateTable
+    {
+        private readonly Dictionary<(int Track, int Channel), MidiState> _states = [];
+        public MidiState this[int track, int channel] => _states.TryGetValue((track, channel), out var state) ? state : (_states[(track, channel)] = new MidiState());
+        public void Apply(int track, int channel, int controller, int value)
+        {
+            var state = this[track, channel];
+            switch (controller) { case 0: state.Bank = (value << 7) | (state.Bank & 127); break; case 32: state.Bank = (state.Bank & (127 << 7)) | value; break; case 10: state.Pan = value; break; case 11: state.Expression = value; break; }
+        }
+    }
+
+    private static bool IsLeadProgram(int program) => program is >= 80 and <= 87 or >= 56 and <= 63 or >= 64 and <= 71;
 
     private sealed class Reader(byte[] bytes)
     {

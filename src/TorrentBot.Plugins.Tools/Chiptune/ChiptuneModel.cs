@@ -38,7 +38,9 @@ internal sealed class TempoMap
     public static TempoMap Fixed(int bpm) => new([new TempoPoint(0, 60_000_000 / bpm)]);
 }
 
-internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, int Velocity, TrackRole Role)
+internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, int Velocity, TrackRole Role,
+    int SourceTrack = -1, int SourceChannel = -1, int Program = 0, int Bank = 0,
+    int Pan = 64, int Expression = 127, int PitchBend = 8192)
 {
     public long EndTick => StartTick + DurationTick;
 }
@@ -86,6 +88,7 @@ internal sealed record ChiptuneSpec
     public int Filter { get; init; }
 }
 
-internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role);
+internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role,
+    int InstrumentId = 0, int Pan = 64, int Expression = 127, int PitchBend = 8192, int Program = 0);
 internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick,
     string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0);

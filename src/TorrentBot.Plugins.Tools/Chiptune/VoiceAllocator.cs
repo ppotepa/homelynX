@@ -28,48 +28,55 @@ internal static class VoiceAllocator
     {
         var map = Maps[spec.Chip];
         var allocated = new List<HardwareNote>();
+        var voiceUntil = new Dictionary<int, long>();
+        var lastOnVoice = new Dictionary<int, int>();
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
-            var occupied = new HashSet<int>();
             foreach (var note in group.OrderByDescending(x => Priority[x.Role]).ThenByDescending(x => x.Velocity).ThenByDescending(x => x.Pitch))
             {
                 var voices = map.TryGetValue(note.Role, out var mapped) ? mapped : map[TrackRole.Lead];
-                var voice = voices.FirstOrDefault(x => !occupied.Contains(x), -1);
-                if (voice < 0 && note.Role is TrackRole.Lead or TrackRole.Harmony && voices.Length == 1)
+                var voice = voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
+                if (voice < 0 && note.Role is TrackRole.Lead or TrackRole.Harmony && voices.Length == 1 && group.Count() > 1)
                 {
-                    // Monophonic chips express simultaneous harmony as a fast deterministic arpeggio.
+                    // A monophonic target expresses a simultaneous chord as a
+                    // short deterministic arpeggio instead of silently losing it.
                     var slice = Math.Max(60, note.DurationTick / Math.Max(1, group.Count()));
-                    allocated.Add(new HardwareNote(voices[0], note.StartTick + allocated.Count(x => x.StartTick == note.StartTick && x.Voice == voices[0]) * slice, Math.Min(slice, note.DurationTick), note.Pitch, note.Velocity, spec.Instrument, note.Role));
+                    var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == voices[0]) * slice;
+                    var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note.Role));
+                    allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
                     continue;
                 }
-                if (voice < 0) continue;
-                occupied.Add(voice);
-                allocated.Add(new HardwareNote(voice, note.StartTick, note.DurationTick, note.Pitch, note.Velocity, InstrumentFor(note.Role, spec.Instrument), note.Role));
+                if (voice < 0)
+                {
+                    // Stateful voice stealing: shorten only the note that is
+                    // actually being replaced, never a later note by accident.
+                    voice = voices.OrderBy(x => voiceUntil.GetValueOrDefault(x)).First();
+                    if (lastOnVoice.TryGetValue(voice, out var previousIndex))
+                    {
+                        var previous = allocated[previousIndex];
+                        if (previous.StartTick < note.StartTick)
+                            allocated[previousIndex] = previous with { DurationTick = Math.Max(1, note.StartTick - previous.StartTick) };
+                    }
+                }
+                var hardware = ToHardware(note, voice, spec, InstrumentIdFor(note.Role));
+                lastOnVoice[voice] = allocated.Count;
+                allocated.Add(hardware);
+                voiceUntil[voice] = note.EndTick;
             }
         }
-        var normalized = NormalizeMonophonicVoices(allocated);
-        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, normalized, song.EndTick,
+        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, allocated.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray(), song.EndTick,
             spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter);
     }
 
-    private static IReadOnlyList<HardwareNote> NormalizeMonophonicVoices(IEnumerable<HardwareNote> source)
+    private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec, int instrumentId)
+        => new(voice, note.StartTick, note.DurationTick, note.Pitch, note.Velocity,
+            InstrumentFor(note.Role, spec.Instrument), note.Role, instrumentId,
+            note.Pan, note.Expression, note.PitchBend, note.Program);
+
+    private static int InstrumentIdFor(TrackRole role) => role switch
     {
-        var result = new List<HardwareNote>();
-        foreach (var voice in source.GroupBy(x => x.Voice))
-        {
-            var notes = voice.OrderBy(x => x.StartTick).ThenByDescending(x => x.Velocity).ToArray();
-            for (var i = 0; i < notes.Length; i++)
-            {
-                var note = notes[i];
-                if (i + 1 < notes.Length && notes[i + 1].StartTick > note.StartTick)
-                {
-                    note = note with { DurationTick = Math.Min(note.DurationTick, notes[i + 1].StartTick - note.StartTick) };
-                }
-                result.Add(note);
-            }
-        }
-        return result.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray();
-    }
+        TrackRole.Lead => 0, TrackRole.Harmony => 1, TrackRole.Bass => 2, TrackRole.Drums => 3, _ => 0
+    };
 
     private static string InstrumentFor(TrackRole role, string requested) => role switch
     { TrackRole.Bass => "bass", TrackRole.Drums => "drums", TrackRole.Arp => "arp", _ => requested };

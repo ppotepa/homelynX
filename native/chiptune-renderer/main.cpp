@@ -79,7 +79,9 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   int sustain = bounded(request.value("sustain", 12), 0, 31);
   int release = bounded(request.value("release", 8), 0, 31);
   int voices = chip == "snes" ? 8 : chip == "genesis" ? 6 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
-  for (int voice = 0; voice < voices; ++voice) {
+  int instruments = voices;
+  for (const auto& item : request.at("notes")) instruments = std::max(instruments, item.value("instrumentId", 0) + 1);
+  for (int voice = 0; voice < instruments; ++voice) {
     int sampleIndex = -1;
     if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice));
     int instrumentIndex = engine.addInstrument(voice);
@@ -162,7 +164,7 @@ static void fillSong(DivEngine& engine, const json& request) {
     int order = startRow / sub->patLen, row = startRow % sub->patLen;
     DivPattern* pattern = sub->pat[voice].getPattern(order, true);
     pattern->newData[row][DIV_PAT_NOTE] = (short)bounded(item.value("pitch", 60) + 48, 0, 179);
-    pattern->newData[row][DIV_PAT_INS] = (short)voice;
+    pattern->newData[row][DIV_PAT_INS] = (short)bounded(item.value("instrumentId", voice), 0, 179);
     int maxVolume = engine.getMaxVolumeChan(voice);
     int velocity = bounded(item.value("velocity", 100), 1, 127);
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((velocity * maxVolume + 63) / 127, 1, maxVolume);
