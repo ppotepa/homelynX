@@ -27,9 +27,6 @@ ensure_local_files() {
     "$PROJECT_DIR/cookies" \
     "$PROJECT_DIR/plugins/hot" \
     "$PROJECT_DIR/logs" \
-    "$PROJECT_DIR/tts-data/models" \
-    "$PROJECT_DIR/tts-data/output" \
-    "$PROJECT_DIR/portal-data" \
     "$media_library_path/movies" \
     "$media_library_path/shows" \
     "$media_library_path/music" \
@@ -40,7 +37,6 @@ ensure_local_files() {
     "$media_library_path/other" \
     "$media_library_path/_organizer/plans" \
     "$media_library_path/_organizer/logs" \
-    "$PROJECT_DIR/services/portal" \
     "$host_download_path" \
     "$host_download_path/completed" \
     "$host_download_path/completed/movies" \
@@ -56,12 +52,13 @@ ensure_local_files() {
     "$jackett_config_path" \
     "$jellyfin_config_path"
 
+  # Container-managed Jellyfin files may live on a filesystem that rejects
+  # host-side ownership changes. Directory creation is enough for Compose;
+  # ownership failures must not abort installation.
   chown -R "$owner_uid:$owner_gid" \
-    "$PROJECT_DIR/tts-data" \
-    "$PROJECT_DIR/portal-data" \
-    "$jellyfin_config_path" \
     "$media_library_path" \
-    "$host_download_path"
+    "$host_download_path" 2>/dev/null \
+    || warn "Could not change ownership of media/download directories; continuing."
 
   if [ ! -f "$ALLOWED_USERS_FILE" ]; then
     cat > "$ALLOWED_USERS_FILE" <<'CFG_EOF'
@@ -72,7 +69,6 @@ ensure_local_files() {
 #
 # Supported permissions:
 #   ALL - all bot commands
-#   SAY - speech/TTS commands only
 #
 # A bare numeric ID is treated as "ID ALL" for backward compatibility.
 #

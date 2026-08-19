@@ -57,7 +57,8 @@ public sealed class DownloadJobMonitor : IDisposable
                         _jobTracker.Update(job.Id, current => current with
                         {
                             Status = JobStatus.Succeeded,
-                            Progress = 1.0
+                            Progress = 1.0,
+                            Metadata = MergeArtifactMetadata(current.Metadata, row)
                         });
                     }
                 }
@@ -65,6 +66,25 @@ public sealed class DownloadJobMonitor : IDisposable
 
             await Task.Delay(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
         }
+    }
+
+    private static Dictionary<string, string>? MergeArtifactMetadata(
+        Dictionary<string, string>? metadata,
+        IReadOnlyDictionary<string, object?> row)
+    {
+        if (!row.TryGetValue("outputPath", out var path) || string.IsNullOrWhiteSpace(path?.ToString()))
+        {
+            return metadata;
+        }
+
+        var result = metadata is null ? new Dictionary<string, string>() : new Dictionary<string, string>(metadata);
+        result["ArtifactPath"] = path.ToString()!;
+        if (row.TryGetValue("category", out var format) && !string.IsNullOrWhiteSpace(format?.ToString()))
+        {
+            result["MediaFormat"] = format.ToString()!;
+        }
+
+        return result;
     }
 
     public void Dispose() => Stop();

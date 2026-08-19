@@ -76,9 +76,9 @@ public sealed class DownloadProcessManager : IDownloadProcessManager
 
         foreach (var downloader in _registry.GetAll())
         {
-            if (downloader is Downloaders.UrlDownloader urlDownloader)
+            if (downloader is Downloaders.MediaDownloader mediaDownloader)
             {
-                rows.AddRange(urlDownloader.GetSnapshotRows());
+                rows.AddRange(mediaDownloader.GetSnapshotRows());
                 continue;
             }
 
@@ -149,6 +149,11 @@ public sealed class DownloadProcessManager : IDownloadProcessManager
                 ["name"] = p.Name,
                 ["provider"] = p.Provider,
                 ["downloadId"] = p.DownloadId,
+                ["outputPath"] = p.Provider.Equals("media", StringComparison.OrdinalIgnoreCase)
+                    ? _registry.Get("media") is Downloaders.MediaDownloader media
+                        ? media.GetSnapshotRows().FirstOrDefault(row => string.Equals(row["id"]?.ToString(), p.DownloadId, StringComparison.Ordinal))?.GetValueOrDefault("outputPath")
+                        : null
+                    : null,
                 ["ownerUserId"] = p.OwnerUserId,
                 ["traceId"] = p.TraceId,
                 ["createdAtUtc"] = p.CreatedAtUtc
@@ -173,7 +178,12 @@ public sealed class DownloadProcessManager : IDownloadProcessManager
             Query: GetString(dict, "query"),
             SearchIndex: GetInt(dict, "index") ?? GetInt(dict, "searchIndex"),
             Category: GetString(dict, "category"),
-            SavePath: GetString(dict, "savePath")),
+            SavePath: GetString(dict, "savePath"),
+            MediaFormat: GetString(dict, "format") ?? GetString(dict, "mediaFormat"),
+            MediaQuality: GetString(dict, "quality") ?? GetString(dict, "mediaQuality"),
+            MediaClipStart: GetString(dict, "clipStart") ?? GetString(dict, "mediaClipStart"),
+            MediaClipEnd: GetString(dict, "clipEnd") ?? GetString(dict, "mediaClipEnd"),
+            MediaSubtitles: GetString(dict, "subtitles") ?? GetString(dict, "mediaSubtitles")),
         _ => throw new ArgumentException("Unsupported download start payload.", nameof(startPayload))
     };
 

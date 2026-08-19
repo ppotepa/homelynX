@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using TorrentBot.Acl;
 using TorrentBot.Bootstrap;
 using TorrentBot.Contracts.Pipeline;
@@ -17,6 +18,7 @@ public sealed class TelegramProductionAdapter
     private readonly ITelegramMessenger _messenger;
     private readonly AclService _acl;
     private readonly VerbositySettingsStore _verbositySettings;
+    private readonly ConcurrentDictionary<long, MediaSelection> _mediaSelections = new();
 
     public TelegramProductionAdapter(
         IEngine engine,
@@ -66,6 +68,11 @@ public sealed class TelegramProductionAdapter
 
     public async Task<string> HandleMappedUpdateAsync(ITelegramUpdate mapped, long progressMessageId, CancellationToken ct = default)
     {
+        if (await TryHandleMediaInteractionAsync(mapped, progressMessageId, ct).ConfigureAwait(false))
+        {
+            return "Media selection handled";
+        }
+
         if (VerbositySettingsStore.TryParse(mapped.Text, out var level))
         {
             _verbositySettings.Set(mapped.ChatId, level);
@@ -173,6 +180,119 @@ public sealed class TelegramProductionAdapter
 
         return finalText;
     }
+
+    private async Task<bool> TryHandleMediaInteractionAsync(ITelegramUpdate mapped, long progressMessageId, CancellationToken ct)
+    {
+        if (mapped.IsCallback && mapped.CallbackData is { } callback)
+        {
+            if (callback.StartsWith("media-format:", StringComparison.OrdinalIgnoreCase)
+                && _mediaSelections.TryGetValue(mapped.ChatId, out var pending))
+            {
+                var selectedFormat = callback["media-format:".Length..].ToLowerInvariant();
+                if (selectedFormat is not ("mp3" or "mp4"))
+                {
+                    return true;
+                }
+
+                _mediaSelections[mapped.ChatId] = pending with { Format = selectedFormat };
+                var qualities = selectedFormat == "mp3"
+                    ? new[] { ("128 kbps", "128"), ("192 kbps", "192"), ("320 kbps", "320") }
+                    : new[] { ("360p", "360"), ("480p", "480"), ("720p", "720"), ("1080p", "1080") };
+                var buttons = qualities
+                    .Select(item => new TelegramInlineButton(item.Item1, $"media-quality:{item.Item2}"))
+                    .ToArray();
+                await _messenger.SendTextAsync(mapped.ChatId, $"Wybierz jakość dla {selectedFormat.ToUpperInvariant()}:", buttons, ct).ConfigureAwait(false);
+                return true;
+            }
+
+            if (callback.StartsWith("media-quality:", StringComparison.OrdinalIgnoreCase)
+                && _mediaSelections.TryRemove(mapped.ChatId, out var selected)
+                && selected.Format is not null)
+            {
+                var quality = callback["media-quality:".Length..];
+                var synthetic = new TelegramUpdate(
+                    mapped.ChatId,
+                    mapped.UserId,
+                    $"/download_media {selected.Url} {selected.Format} {quality}{selected.ClipArguments}",
+                    mapped.MessageId);
+                await HandleMappedUpdateAsync(synthetic, progressMessageId, ct).ConfigureAwait(false);
+                return true;
+            }
+        }
+
+        if (!mapped.IsCallback && TryGetMediaSelection(mapped.Text, out var url, out var format, out var clipArguments))
+        {
+            if (format is not null)
+            {
+                return false;
+            }
+
+            _mediaSelections[mapped.ChatId] = new MediaSelection(url, null, clipArguments);
+            var buttons = new[]
+            {
+                new TelegramInlineButton("MP3", "media-format:mp3"),
+                new TelegramInlineButton("MP4", "media-format:mp4")
+            };
+            await _messenger.SendTextAsync(mapped.ChatId, "Co chcesz pobrać?", buttons, ct).ConfigureAwait(false);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetMediaSelection(string? text, out string url, out string? format, out string clipArguments)
+    {
+        url = string.Empty;
+        format = null;
+        clipArguments = string.Empty;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (text.TrimStart().StartsWith('/')
+            && !text.TrimStart().StartsWith("/download_media", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var tokens = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var urlToken = tokens.FirstOrDefault(token => Uri.TryCreate(token, UriKind.Absolute, out _));
+        if (!IsSupportedMediaUrl(urlToken))
+        {
+            return false;
+        }
+
+        url = urlToken!;
+        format = tokens.FirstOrDefault(token => token.Equals("mp3", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("mp4", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("subtitles", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("subs", StringComparison.OrdinalIgnoreCase))?.ToLowerInvariant();
+        if (format is "subtitles" or "subs")
+        {
+            return true;
+        }
+        if (SlashCommandRouting.TryParseClip(text, out var start, out var end))
+        {
+            clipArguments = $" clip {start} {end}";
+        }
+        return true;
+    }
+
+    private static bool IsSupportedMediaUrl(string? value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        var hosts = new[] { "youtube.com", "youtu.be", "facebook.com", "fb.watch", "dailymotion.com", "dai.ly", "vimeo.com", "instagram.com", "tiktok.com" };
+        return hosts.Any(host => uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed record MediaSelection(string Url, string? Format, string ClipArguments = "");
 
     private async Task DeliverTextAsync(long chatId, long messageId, string text, CancellationToken ct)
     {

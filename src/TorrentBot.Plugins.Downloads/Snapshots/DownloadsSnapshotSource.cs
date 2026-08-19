@@ -8,16 +8,16 @@ namespace TorrentBot.Plugins.Downloads.Snapshots;
 public sealed class DownloadsSnapshotSource : ISnapshotSource
 {
     private readonly IQBittorrentClient _qBittorrent;
-    private readonly UrlDownloader _urlDownloader;
+    private readonly MediaDownloader _mediaDownloader;
     private readonly DownloadProcessManager _processManager;
 
     public DownloadsSnapshotSource(
         IQBittorrentClient qBittorrent,
-        UrlDownloader urlDownloader,
-        DownloadProcessManager processManager)
+        DownloadProcessManager processManager,
+        MediaDownloader mediaDownloader)
     {
         _qBittorrent = qBittorrent;
-        _urlDownloader = urlDownloader;
+        _mediaDownloader = mediaDownloader;
         _processManager = processManager;
     }
 
@@ -25,7 +25,7 @@ public sealed class DownloadsSnapshotSource : ISnapshotSource
 
     public QuerySourceMeta GetManifest() => new(
         Name: Name,
-        Description: "Unified download state across torrent and URL providers. Includes rich progress, speeds (bytes/s), ETA (seconds), category.",
+        Description: "Unified torrent and media download state with progress, speeds, ETA, and category.",
         Fields:
         [
             new QueryFieldMeta("id", "string"),
@@ -75,7 +75,7 @@ public sealed class DownloadsSnapshotSource : ISnapshotSource
             };
         }));
 
-        rows.AddRange(_urlDownloader.GetSnapshotRows());
+        rows.AddRange(_mediaDownloader.GetSnapshotRows());
 
         var managedRows = await _processManager.GetDownloadSnapshotRowsAsync(ct).ConfigureAwait(false);
         foreach (var row in managedRows)

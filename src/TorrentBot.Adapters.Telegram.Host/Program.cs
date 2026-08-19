@@ -32,11 +32,11 @@ public static class Program
             cts.Cancel();
         };
 
-        var engine = EngineBootstrap.Create();
-        await engine.StartAsync(cts.Token).ConfigureAwait(false);
-        await CapabilityManifestExporter.ExportIfConfiguredAsync(engine, cts.Token).ConfigureAwait(false);
         var client = new TelegramBotClient(token);
         var messenger = new TelegramBotSdkMessenger(client);
+        var engine = EngineBootstrap.Create(completionNotifier: new TelegramDownloadCompletionNotifier(messenger));
+        await engine.StartAsync(cts.Token).ConfigureAwait(false);
+        await CapabilityManifestExporter.ExportIfConfiguredAsync(engine, cts.Token).ConfigureAwait(false);
         var adapter = new TelegramProductionAdapter(engine, messenger);
 
         _ = await client.GetMe(cts.Token).ConfigureAwait(false);

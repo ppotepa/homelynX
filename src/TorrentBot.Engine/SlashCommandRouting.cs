@@ -52,6 +52,7 @@ public static class SlashCommandRouting
                 ["query"] = remainder.Trim()
             },
             "/download" => ParseKeyValuePairs(remainder),
+            "/download_media" => ParseMediaParameters(remainder),
             "/pause" or "/resume" or "/cancel" => ParseControlParameters(remainder),
             "/torrent_pause" or "/torrent_resume" or "/torrent_delete" =>
                 new Dictionary<string, object?> { ["hash"] = remainder.Trim() },
@@ -80,7 +81,7 @@ public static class SlashCommandRouting
             else if (!result.ContainsKey("url") && Uri.TryCreate(token, UriKind.Absolute, out _))
             {
                 result["url"] = token;
-                result["provider"] = "url";
+                result["provider"] = "torrent";
             }
             else if (!result.ContainsKey("query"))
             {
@@ -90,7 +91,7 @@ public static class SlashCommandRouting
 
         if (!result.ContainsKey("provider"))
         {
-            result["provider"] = result.ContainsKey("url") ? "url" : "torrent";
+            result["provider"] = "torrent";
         }
 
         return result;
@@ -104,5 +105,80 @@ public static class SlashCommandRouting
         }
 
         return new Dictionary<string, object?> { ["id"] = remainder, ["hash"] = remainder };
+    }
+
+    private static Dictionary<string, object?> ParseMediaParameters(string remainder)
+    {
+        var tokens = remainder.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var result = new Dictionary<string, object?>(StringComparer.Ordinal);
+        if (tokens.Length > 0 && Uri.TryCreate(tokens[0], UriKind.Absolute, out _))
+        {
+            result["url"] = tokens[0];
+            result["provider"] = "media";
+        }
+
+        foreach (var token in tokens.Skip(1))
+        {
+            var value = token.Trim().ToLowerInvariant();
+            if (value is "mp3" or "mp4")
+            {
+                result["format"] = value;
+            }
+            else if ((value.EndsWith('k') || value.EndsWith('p'))
+                && int.TryParse(value[..^1], out _))
+            {
+                result["quality"] = value[..^1];
+            }
+            else if (int.TryParse(value, out _))
+            {
+                result["quality"] = value;
+            }
+        }
+
+        if (TryParseClip(remainder, out var clipStart, out var clipEnd))
+        {
+            result["clipStart"] = clipStart;
+            result["clipEnd"] = clipEnd;
+        }
+
+        var subtitlesAt = Array.FindIndex(tokens, token => token.Equals("subtitles", StringComparison.OrdinalIgnoreCase)
+            || token.Equals("subs", StringComparison.OrdinalIgnoreCase));
+        if (subtitlesAt >= 0)
+        {
+            var languages = tokens[(subtitlesAt + 1)..]
+                .Where(token => System.Text.RegularExpressions.Regex.IsMatch(token, "^(?:[a-z]{2,3}(?:-[a-z]+)?|all|auto)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                .Select(token => token.ToLowerInvariant())
+                .ToArray();
+            result["subtitles"] = string.Join(',', languages.DefaultIfEmpty("all"));
+            if (!result.ContainsKey("format"))
+            {
+                result["format"] = "subtitles";
+            }
+        }
+
+        return result;
+    }
+
+    public static bool TryParseClip(string text, out string start, out string end)
+    {
+        start = string.Empty;
+        end = string.Empty;
+        var patterns = new[]
+        {
+            @"\bclip\s*\(\s*(?<start>\d{1,2}(?::\d{2}){0,2})\s*,\s*(?<end>\d{1,2}(?::\d{2}){0,2})\s*\)",
+            @"\bclip\s+(?<start>\d{1,2}(?::\d{2}){0,2})\s+(?<end>\d{1,2}(?::\d{2}){0,2})",
+            @"(?<start>\d{1,2}(?::\d{2}){0,2})\s*-\s*(?<end>\d{1,2}(?::\d{2}){0,2})"
+        };
+        var match = patterns
+            .Select(pattern => System.Text.RegularExpressions.Regex.Match(text, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            .FirstOrDefault(candidate => candidate.Success);
+        if (match is null)
+        {
+            return false;
+        }
+
+        start = match.Groups["start"].Value;
+        end = match.Groups["end"].Value;
+        return true;
     }
 }

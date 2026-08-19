@@ -61,13 +61,13 @@ internal static class DownloadCapabilities
         LlmUsage: "Use when the user wants to cancel a download",
         IntentHints: ["cancel", "stop", "anuluj"]);
 
-    public static readonly CapabilityMetadata StartUrlMetadata = new(
-        Name: "download.start_url",
-        Command: "/download_url",
-        Description: "Start a direct URL download",
+    public static readonly CapabilityMetadata StartMediaMetadata = new(
+        Name: "download.start_media",
+        Command: "/download_media",
+        Description: "Download and convert a public media URL",
         Permission: "USER",
-        Risk: RiskLevel.ConfirmationRequired,
-        LlmUsage: "Use when the user provides an HTTP/HTTPS download link",
-        IntentHints: ["url", "link", "http", "download"],
+        Risk: RiskLevel.Safe,
+        LlmUsage: "Use when the user provides a YouTube, Facebook, Dailymotion, Vimeo, Instagram or TikTok URL",
+        IntentHints: ["youtube", "facebook", "tiktok", "video", "mp3", "mp4"],
         IsLongRunning: true);
 }

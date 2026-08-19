@@ -22,14 +22,19 @@ public sealed class DownloadStartHandler : ICapabilityHandler
             Query: GetString(parameters, "query"),
             SearchIndex: GetInt(parameters, "index") ?? GetInt(parameters, "searchIndex"),
             Category: GetString(parameters, "category"),
-            SavePath: GetString(parameters, "savePath"));
+            SavePath: GetString(parameters, "savePath"),
+            MediaFormat: GetString(parameters, "format") ?? GetString(parameters, "mediaFormat"),
+            MediaQuality: GetString(parameters, "quality") ?? GetString(parameters, "mediaQuality"),
+            MediaClipStart: GetString(parameters, "clipStart") ?? GetString(parameters, "mediaClipStart"),
+            MediaClipEnd: GetString(parameters, "clipEnd") ?? GetString(parameters, "mediaClipEnd"),
+            MediaSubtitles: GetString(parameters, "subtitles") ?? GetString(parameters, "mediaSubtitles"));
 
         if (context.IsDryRun)
         {
             var dryRunJobId = context.Engine.CreateJob(
                 $"download.{provider}",
                 startRequest,
-                new JobOptions(SupportsPause: true, SupportsCancellation: true, Kind: JobKind.LongLived));
+                new JobOptions(SupportsPause: provider.Equals("torrent", StringComparison.OrdinalIgnoreCase), SupportsCancellation: true, Kind: JobKind.LongLived));
 
             return new CapabilityResult(
                 Success: true,
@@ -55,7 +60,7 @@ public sealed class DownloadStartHandler : ICapabilityHandler
         var engineJobId = context.Engine.CreateJob(
             $"download.{provider}",
             startRequest,
-            new JobOptions(SupportsPause: true, SupportsCancellation: true, Kind: JobKind.LongLived));
+            new JobOptions(SupportsPause: provider.Equals("torrent", StringComparison.OrdinalIgnoreCase), SupportsCancellation: true, Kind: JobKind.LongLived));
 
         context.Engine.UpdateJob(engineJobId, job => job with
         {
@@ -105,6 +110,6 @@ public sealed class DownloadStartHandler : ICapabilityHandler
         }
 
         // Domyślnie URL
-        return "url";
+        return "torrent";
     }
 }

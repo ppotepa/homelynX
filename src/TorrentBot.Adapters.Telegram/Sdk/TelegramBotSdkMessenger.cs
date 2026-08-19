@@ -40,4 +40,13 @@ public sealed class TelegramBotSdkMessenger : ITelegramMessenger
         using var stream = new MemoryStream(content);
         return _client.SendDocument(chatId, InputFile.FromStream(stream, fileName), cancellationToken: ct);
     }
+
+    public async Task SendAudioAsync(long chatId, Stream content, string fileName, CancellationToken ct = default) =>
+        await _client.SendAudio(chatId, InputFile.FromStream(content, fileName), cancellationToken: ct).ConfigureAwait(false);
+
+    public async Task SendVideoAsync(long chatId, Stream content, string fileName, CancellationToken ct = default) =>
+        await _client.SendVideo(chatId, InputFile.FromStream(content, fileName), cancellationToken: ct).ConfigureAwait(false);
+
+    public async Task SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken ct = default) =>
+        await _client.SendDocument(chatId, InputFile.FromStream(content, fileName), cancellationToken: ct).ConfigureAwait(false);
 }

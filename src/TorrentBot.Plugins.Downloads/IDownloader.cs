@@ -33,7 +33,12 @@ public sealed record DownloadStartRequest(
     string? Query = null,
     int? SearchIndex = null,
     string? Category = null,
-    string? SavePath = null);
+    string? SavePath = null,
+    string? MediaFormat = null,
+    string? MediaQuality = null,
+    string? MediaClipStart = null,
+    string? MediaClipEnd = null,
+    string? MediaSubtitles = null);
 
 public sealed record DownloadTicket(string DownloadId, string Provider, string Name);
 

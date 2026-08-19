@@ -5,7 +5,7 @@ internal static class DownloaderProviderNormalizer
     private static readonly HashSet<string> KnownProviders = new(StringComparer.OrdinalIgnoreCase)
     {
         "torrent",
-        "url"
+        "media"
     };
 
     /// <summary>
@@ -22,7 +22,7 @@ internal static class DownloaderProviderNormalizer
         var trimmed = provider.Trim();
         if (KnownProviders.Contains(trimmed))
         {
-            return trimmed.Equals("url", StringComparison.OrdinalIgnoreCase) ? "url" : "torrent";
+            return trimmed.Equals("media", StringComparison.OrdinalIgnoreCase) ? "media" : "torrent";
         }
 
         return "torrent";

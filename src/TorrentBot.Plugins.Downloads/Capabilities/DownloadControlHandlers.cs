@@ -75,7 +75,7 @@ public sealed class DownloadPauseHandler : ICapabilityHandler
             }
 
             var registry = context.Engine.GetService<DownloaderRegistry>();
-            var provider = GetString(parameters, "provider") ?? "url";
+            var provider = GetString(parameters, "provider") ?? "media";
             if (registry?.Get(provider) is { } downloader)
             {
                 switch (command)

@@ -11,7 +11,7 @@ public sealed class DownloaderProviderNormalizerTests
     [InlineData("Jackett", "torrent")]
     [InlineData("all", "torrent")]
     [InlineData("torrent", "torrent")]
-    [InlineData("url", "url")]
+    [InlineData("media", "media")]
     public void Normalize_maps_to_registered_providers(string? input, string expected) =>
         Assert.Equal(expected, DownloaderProviderNormalizer.Normalize(input));
 }

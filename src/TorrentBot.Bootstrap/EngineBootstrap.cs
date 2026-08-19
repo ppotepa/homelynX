@@ -11,11 +11,7 @@ using TorrentBot.Integrations.Clients;
 using TorrentBot.Integrations.Fakes;
 using TorrentBot.Integrations.Interfaces;
 using TorrentBot.Integrations.Models;
-using TorrentBot.Plugins.BotControl;
 using TorrentBot.Plugins.Downloads;
-using TorrentBot.Plugins.Jobs;
-using TorrentBot.Plugins.Media;
-using TorrentBot.Plugins.Query;
 using TorrentBot.Plugins.System;
 using TorrentBot.Plugins.Torrent;
 
@@ -29,9 +25,9 @@ public static class EngineBootstrap
         DownloadsPlugin? downloadsPlugin = null,
         IConfirmationStore? confirmationStore = null,
         IAuditSink? auditSink = null,
-        BotControlPlugin? botControlPlugin = null,
-        MediaPlugin? mediaPlugin = null,
-        JobsPlugin? jobsPlugin = null,
+        object? botControlPlugin = null,
+        object? mediaPlugin = null,
+        object? jobsPlugin = null,
         ILegacyPythonDelegator? legacyDelegator = null,
         IDownloadCompletionNotifier? completionNotifier = null)
     {
@@ -48,12 +44,8 @@ public static class EngineBootstrap
         });
 
         engine.RegisterPlugin(new SystemPlugin());
-        engine.RegisterPlugin(new QueryPlugin());
         engine.RegisterPlugin(downloadsPlugin ?? CreateDefaultDownloadsPlugin());
         engine.RegisterPlugin(new TorrentPlugin());
-        engine.RegisterPlugin(mediaPlugin ?? CreateDefaultMediaPlugin());
-        engine.RegisterPlugin(botControlPlugin ?? new BotControlPlugin());
-        engine.RegisterPlugin(jobsPlugin ?? new JobsPlugin());
         
         configure?.Invoke(engine);
         return engine;
@@ -119,15 +111,6 @@ public static class EngineBootstrap
         return !string.IsNullOrWhiteSpace(url)
             ? new HttpLegacyPythonDelegator(new HttpClient(), url)
             : new NoOpLegacyPythonDelegator();
-    }
-
-    private static MediaPlugin CreateDefaultMediaPlugin()
-    {
-        var ttsUrl = HomelynxEnv.FirstNonEmpty(
-            Environment.GetEnvironmentVariable("TORRENTBOT_TTS_URL"),
-            HomelynxEnv.GetServiceUrl(null, "TTS_HOST", "TTS_PORT", "TTS_HTTPS"));
-        ITtsClient? tts = !string.IsNullOrWhiteSpace(ttsUrl) ? new HttpTtsClient(new HttpClient(), ttsUrl) : null;
-        return new MediaPlugin(tts);
     }
 
     private static DownloadsPlugin CreateDefaultDownloadsPlugin()

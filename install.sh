@@ -10,7 +10,7 @@ REINSTALL=false
 cd "$PROJECT_DIR"
 
 SETUP_LIB_DIR="$PROJECT_DIR/scripts/setup/lib"
-for module in common.sh env.sh services.sh zerotier.sh media.sh portal.sh files.sh tts.sh jackett.sh qbittorrent.sh summary.sh main.sh; do
+for module in common.sh env.sh services.sh zerotier.sh media.sh files.sh jackett.sh qbittorrent.sh summary.sh main.sh; do
   # shellcheck source=/dev/null
   source "$SETUP_LIB_DIR/$module"
 done

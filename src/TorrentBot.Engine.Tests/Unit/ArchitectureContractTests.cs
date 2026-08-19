@@ -14,7 +14,7 @@ public sealed class ArchitectureContractTests
         var contracts = scope.Engine.GetCapabilityContracts();
         Assert.Contains(contracts, c => c.Name == "torrent.search");
         Assert.Contains(contracts, c => c.Name == "download.start");
-        Assert.Contains(contracts, c => c.Name == "query.execute");
+        Assert.Contains(contracts, c => c.Name == "download.start_media");
         Assert.Contains(contracts, c => c.Name == "system.health");
         Assert.All(contracts, c => Assert.False(string.IsNullOrWhiteSpace(c.ExactSemantics)));
     }

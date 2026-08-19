@@ -44,36 +44,23 @@ recreate_containers_for_reinstall() {
 start_backend_services() {
   local jellyfin_enabled
   local jellyfin_port
-  local portal_enabled
-  local portal_port
   local services
 
   jellyfin_enabled="$(get_env_value JELLYFIN_ENABLED)"
   jellyfin_port="$(get_env_value JELLYFIN_PORT)"
   jellyfin_port="${jellyfin_port:-8096}"
-  portal_enabled="$(get_env_value PORTAL_ENABLED)"
-  portal_port="$(get_env_value PORTAL_PORT)"
-  portal_port="${portal_port:-80}"
-
-  log "Starting Homelynx portal, qBittorrent, Jackett, FlareSolverr, TTS and media library services."
-  services=(qbittorrent jackett flaresolverr tts)
-  if is_truthy "$portal_enabled"; then
-    services+=(portal)
-  fi
+  log "Starting qBittorrent, Jackett, FlareSolverr, Jellyfin and Homelynx bot services."
+  services=(qbittorrent jackett flaresolverr)
   if is_truthy "$jellyfin_enabled"; then
     services+=(jellyfin)
   fi
   compose up -d --build "${services[@]}"
 
-  if is_truthy "$portal_enabled"; then
-    wait_for_http "Homelynx Portal" "http://127.0.0.1:${portal_port}" 60
-  fi
   wait_for_http "qBittorrent" "http://127.0.0.1:8080" 90
   wait_for_http "Jackett" "http://127.0.0.1:9117" 90
   if is_truthy "$jellyfin_enabled"; then
     wait_for_http "Jellyfin" "http://127.0.0.1:${jellyfin_port}" 180
   fi
-  wait_for_http "TTS" "http://127.0.0.1:5055/health" 120
 }
 start_bot() {
   local services=(homelynx-bot)

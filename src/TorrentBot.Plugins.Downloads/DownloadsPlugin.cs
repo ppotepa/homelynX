@@ -28,8 +28,8 @@ public sealed class DownloadsPlugin : IPlugin
         var jackett = _jackett;
         var qBittorrent = _qBittorrent;
         var torrentDownloader = new TorrentDownloader(jackett, qBittorrent);
-        var urlDownloader = new UrlDownloader();
-        var registry = new DownloaderRegistry([torrentDownloader, urlDownloader]);
+        var mediaDownloader = new MediaDownloader();
+        var registry = new DownloaderRegistry([torrentDownloader, mediaDownloader]);
         var processManager = new DownloadProcessManager(registry);
 
         context.RegisterService<IJackettClient>(jackett);
@@ -37,7 +37,7 @@ public sealed class DownloadsPlugin : IPlugin
         context.RegisterService<DownloaderRegistry>(registry);
         context.RegisterService<IDownloadProcessManager>(processManager);
         context.RegisterService(torrentDownloader);
-        context.RegisterService(urlDownloader);
+        context.RegisterService(mediaDownloader);
 
         context.RegisterCapability(DownloadContracts.List, new DownloadListHandler(), "/downloads");
         context.RegisterCapability(DownloadContracts.Search, new DownloadSearchHandler(), "/download_search");
@@ -45,9 +45,9 @@ public sealed class DownloadsPlugin : IPlugin
         context.RegisterCapability(DownloadContracts.Pause, new DownloadPauseHandler(), "/pause");
         context.RegisterCapability(DownloadContracts.Resume, new DownloadResumeHandler(), "/resume");
         context.RegisterCapability(DownloadContracts.Cancel, new DownloadCancelHandler(), "/cancel");
-        context.RegisterCapability(DownloadContracts.StartUrl, new DownloadStartUrlHandler(), "/download_url");
+        context.RegisterCapability(DownloadContracts.StartMedia, new DownloadStartHandler(), "/download_media");
 
-        context.RegisterSnapshotSource(new DownloadsSnapshotSource(qBittorrent, urlDownloader, processManager));
+        context.RegisterSnapshotSource(new DownloadsSnapshotSource(qBittorrent, processManager, mediaDownloader));
         context.RegisterSnapshotSource(new JobsSnapshotSource(processManager));
     }
 }

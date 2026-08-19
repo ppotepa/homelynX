@@ -81,6 +81,19 @@ public sealed class TelegramInvocationAdapter
             };
         }
 
+        if (TryParseMediaCommand(text, out var mediaParameters))
+        {
+            return new Invocation
+            {
+                IsExplicit = true,
+                CapabilityName = "download.start_media",
+                Command = "/download_media",
+                Parameters = mediaParameters,
+                RequestContext = requestContext,
+                User = user
+            };
+        }
+
         return new Invocation
         {
             IsExplicit = false,
@@ -128,6 +141,32 @@ public sealed class TelegramInvocationAdapter
         }
 
         return false;
+    }
+
+    private static bool TryParseMediaCommand(string text, out IReadOnlyDictionary<string, object?> parameters)
+    {
+        parameters = new Dictionary<string, object?>();
+        var url = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        var hosts = new[] { "youtube.com", "youtu.be", "facebook.com", "fb.watch", "dailymotion.com", "dai.ly", "vimeo.com", "instagram.com", "tiktok.com" };
+        if (!hosts.Any(host => uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        parameters = SlashCommandRouting.ParseParameters("/download_media", text)
+            ?? new Dictionary<string, object?>
+            {
+                ["url"] = uri.ToString(),
+                ["provider"] = "media"
+            };
+        return true;
     }
 
     private static IReadOnlyDictionary<string, object?>? ParseCallbackParameters(string? callbackData)

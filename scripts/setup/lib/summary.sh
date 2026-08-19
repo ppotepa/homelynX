@@ -1,17 +1,6 @@
 # shellcheck shell=bash
 
 print_summary() {
-  local portal_port
-  local portal_url
-
-  portal_port="$(get_env_value PORTAL_PORT)"
-  portal_port="${portal_port:-80}"
-  if [ "$portal_port" = "80" ]; then
-    portal_url="http://localhost"
-  else
-    portal_url="http://localhost:$portal_port"
-  fi
-
   cat <<'SUMMARY_EOF'
 
 [install] Setup finished.
@@ -20,10 +9,6 @@ Services:
   Media root:  MEDIA_LIBRARY_PATH from .env
 SUMMARY_EOF
   cat <<SUMMARY_EOF
-  Portal:      $portal_url
-  Admin:       $portal_url/admin
-SUMMARY_EOF
-  cat <<'SUMMARY_EOF'
   Telegram bot: Docker service homelynx-bot (C#)
   qBittorrent:  http://localhost:8080
   Jellyfin:     http://localhost:8096
@@ -46,8 +31,6 @@ ZeroTier remote access:
     ZEROTIER_DNS_ENABLED=true
     ZEROTIER_DNS_DOMAIN=homelynx.zt
   Then set the ZeroTier Central DNS server to this host ZeroTier IP and search domain to homelynx.zt.
-  Portal URL: http://homelynx.zt
-  Example URLs: http://jellyfin.homelynx.zt:8096, http://qbit.homelynx.zt:8080
 
 Media organizer:
   Dry run: ./scripts/media_organize.sh --dry-run

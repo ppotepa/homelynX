@@ -18,8 +18,6 @@ main() {
   write_default_env
   ensure_telegram_tokens
   recreate_containers_for_reinstall
-  configure_portal_auth
-  configure_portal_port
   configure_media_library
   configure_zerotier
   ensure_local_files

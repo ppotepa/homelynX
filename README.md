@@ -1,11 +1,11 @@
 # Homelynx
 
-Private-homelab **media automation** control plane (.NET 8 / C#), replacing the legacy Python Telegram bot.
+Private-homelab **media automation** bot (.NET 8 / C#), replacing the legacy Python Telegram bot.
 
-Homelynx is the intelligent center for torrent search (Jackett) → download (qBittorrent) → media library (Jellyfin), with plugin-backed text commands and optional TTS. Interfaces:
+Homelynx handles torrent downloads (Jackett/qBittorrent) and public media URLs (yt-dlp/FFmpeg) → Jellyfin, with explicit plugin-backed text commands. Interfaces:
 
 - **Telegram** — production bot (`homelynx-bot` container)
-- **CLI** — diagnostics, dry-run, automation (`TorrentBot.Adapters.Cli`)
+- **CLI** — diagnostics and automation (`TorrentBot.Adapters.Cli`)
 
 ## Install (full homelab stack)
 
@@ -15,7 +15,7 @@ Homelynx is the intelligent center for torrent search (Jackett) → download (qB
 
 Requires **sudo** (or root) for system steps (ZeroTier DNS, systemd). Docker must be running and accessible to your user.
 
-The installer configures `.env`, starts satellite services (qBittorrent, Jackett, portal, TTS, Jellyfin), then builds and starts the **C# `homelynx-bot`** service.
+The installer configures `.env`, starts qBittorrent, Jackett, FlareSolverr and Jellyfin, then builds and starts the **C# `homelynx-bot`** service.
 
 Reinstall without wiping data:
 
@@ -38,6 +38,19 @@ docker compose up -d --build homelynx-bot
 docker compose logs -f homelynx-bot
 ```
 
+## Media URLs
+
+Paste a public YouTube, Facebook, Dailymotion, Vimeo, Instagram or TikTok URL, or use:
+
+```text
+/download_media <url> mp3 192
+/download_media <url> mp4 720
+/download_media <url> subtitles en pl
+```
+
+Media downloads are converted with yt-dlp and FFmpeg and stored in the Jellyfin music or movie library.
+Subtitles are downloaded as SRT files without downloading the video and stored under the media root's `subtitles/Online` directory. Add `auto` to allow auto-generated captions.
+
 ## Reinstall
 
 ```bash
@@ -56,7 +69,7 @@ homelynx/
 ├── docker-compose.yaml     # Homelynx stack (project name: homelynx)
 ├── Dockerfile              # C# Telegram host image
 ├── acl/                    # ACL presets
-├── services/               # Portal, TTS
+├── services/               # Supporting service assets
 ├── src/                    # .NET solution (assemblies still named TorrentBot.*)
 └── docs/
 ```

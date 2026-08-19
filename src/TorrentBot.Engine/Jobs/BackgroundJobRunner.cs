@@ -3,7 +3,14 @@ using TorrentBot.Engine.Bus;
 
 namespace TorrentBot.Engine.Jobs;
 
-public sealed record DownloadCompletedEvent(string JobId, string Name, string Provider, string OwnerUserId, string? ChatId);
+public sealed record DownloadCompletedEvent(
+    string JobId,
+    string Name,
+    string Provider,
+    string OwnerUserId,
+    string? ChatId,
+    string? ArtifactPath = null,
+    string? MediaFormat = null);
 
 public interface IJobRunner
 {
@@ -56,8 +63,10 @@ public sealed class BackgroundJobRunner : IJobRunner, IDisposable
 
                 var chatId = job.Metadata?.GetValueOrDefault("ChatId");
                 var owner = job.OwnerUserId ?? job.Metadata?.GetValueOrDefault("UserId") ?? "unknown";
+                var artifactPath = job.Metadata?.GetValueOrDefault("ArtifactPath");
+                var mediaFormat = job.Metadata?.GetValueOrDefault("MediaFormat");
                 bus.Publish(
-                    new DownloadCompletedEvent(job.Id, job.Type, job.ExternalSystem ?? "download", owner, chatId),
+                    new DownloadCompletedEvent(job.Id, job.Type, job.ExternalSystem ?? "download", owner, chatId, artifactPath, mediaFormat),
                     new TorrentBot.Contracts.Context.RequestContext(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToString("N"), owner, source: "job-runner", chatId: chatId));
             }
 

@@ -10,23 +10,3 @@ services:
           path: ./docker-compose.yaml
         - action: rebuild
           path: ./docker-compose.dev.yaml
-
-  portal:
-    develop:
-      watch:
-        - action: rebuild
-          path: ./services/portal
-        - action: rebuild
-          path: ./docker-compose.yaml
-        - action: rebuild
-          path: ./docker-compose.dev.yaml
-
-  tts:
-    develop:
-      watch:
-        - action: rebuild
-          path: ./services/tts
-        - action: rebuild
-          path: ./docker-compose.yaml
-        - action: rebuild
-          path: ./docker-compose.dev.yaml
