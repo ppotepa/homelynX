@@ -38,6 +38,7 @@ internal static class MidiImporter
 
     private static ParsedMidi Parse(byte[] bytes)
     {
+        bytes = UnwrapRmid(bytes);
         var r = new Reader(bytes);
         if (r.Text(4) != "MThd") throw new InvalidDataException("Missing MIDI header.");
         var headerLength = r.Int32(); if (headerLength < 6) throw new InvalidDataException("Invalid MIDI header.");
@@ -47,8 +48,11 @@ internal static class MidiImporter
         var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var order = 0;
         for (var track = 0; track < tracks; track++)
         {
-            if (r.Text(4) != "MTrk") throw new InvalidDataException("Invalid MIDI track.");
-            var end = checked(r.Offset + r.Int32()); long tick = 0; var running = 0;
+            if (r.Offset + 8 > bytes.Length || r.Text(4) != "MTrk") throw new InvalidDataException($"Invalid MIDI track {track + 1}/{tracks} at byte {r.Offset - 4}.");
+            var trackLength = r.Int32();
+            var end = checked(r.Offset + trackLength);
+            if (trackLength < 0 || end > bytes.Length) throw new InvalidDataException($"MIDI track {track + 1}/{tracks} exceeds the file boundary.");
+            long tick = 0; var running = 0;
             while (r.Offset < end)
             {
                 tick += r.Var(); var status = r.Peek();
@@ -68,6 +72,29 @@ internal static class MidiImporter
             r.Offset = end;
         }
         return new ParsedMidi(division, events, tempos);
+    }
+
+    private static byte[] UnwrapRmid(byte[] bytes)
+    {
+        if (bytes.Length < 12 || Encoding.ASCII.GetString(bytes, 0, 4) != "RIFF" || Encoding.ASCII.GetString(bytes, 8, 4) != "RMID")
+            return bytes;
+
+        var offset = 12;
+        while (offset + 8 <= bytes.Length)
+        {
+            var id = Encoding.ASCII.GetString(bytes, offset, 4);
+            var length = BitConverter.ToInt32(bytes, offset + 4);
+            offset += 8;
+            if (length < 0 || offset > bytes.Length - length) throw new InvalidDataException("Invalid RMID chunk length.");
+            if (id == "data")
+            {
+                var midi = bytes.AsSpan(offset, length).ToArray();
+                if (midi.Length < 4 || Encoding.ASCII.GetString(midi, 0, 4) != "MThd") throw new InvalidDataException("RMID data chunk does not contain a MIDI file.");
+                return midi;
+            }
+            offset += length + (length & 1); // RIFF chunks are word aligned.
+        }
+        throw new InvalidDataException("RMID file has no data chunk.");
     }
 
     private static long ScaleTick(long tick, int division) => checked(tick * TempoMap.Ppq / division);

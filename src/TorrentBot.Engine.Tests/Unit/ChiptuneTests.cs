@@ -74,6 +74,24 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Midi_importer_accepts_rmid_container()
+    {
+        var midi = new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,13,
+            0,0x90,60,100, 0x83,0x60,0x80,60,0, 0,0xFF,0x2F,0
+        };
+        var rmid = new List<byte> { (byte)'R',(byte)'I',(byte)'F',(byte)'F', 0,0,0,0, (byte)'R',(byte)'M',(byte)'I',(byte)'D', (byte)'d',(byte)'a',(byte)'t',(byte)'a' };
+        rmid.AddRange(BitConverter.GetBytes(midi.Length));
+        rmid.AddRange(midi);
+        var riffSize = BitConverter.GetBytes(rmid.Count - 8);
+        for (var i = 0; i < 4; i++) rmid[4 + i] = riffSize[i];
+        var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(rmid.ToArray())} format=wav");
+        Assert.NotEmpty(ChiptuneParser.Compose(spec).Notes);
+    }
+
+    [Fact]
     public void Managed_renderer_returns_stereo_44100_wav()
     {
         var spec = ChiptuneParser.Parse("notes=\"C4/8 E4/8\" chip=gameboy format=wav");
