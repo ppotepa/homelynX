@@ -172,6 +172,26 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Allocator_keeps_program_and_percussion_patch_identity_separate_from_voice()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 240, 60, 100, TrackRole.Lead, Program: 0),
+            new NoteEvent(240, 240, 64, 100, TrackRole.Lead, Program: 32),
+            new NoteEvent(0, 120, 36, 110, TrackRole.Drums),
+            new NoteEvent(120, 120, 42, 90, TrackRole.Drums)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes format=wav");
+
+        var hardware = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray();
+
+        Assert.Contains(hardware, x => x.Instrument == "bass" && x.InstrumentId == 42);
+        Assert.Contains(hardware, x => x.Instrument == "kick" && x.InstrumentId == 200);
+        Assert.Contains(hardware, x => x.Instrument == "hat" && x.InstrumentId == 202);
+        Assert.NotEqual(hardware.Single(x => x.Instrument == "kick").Voice, hardware.Single(x => x.Instrument == "kick").InstrumentId);
+    }
+
+    [Fact]
     public void Managed_renderer_returns_stereo_44100_wav()
     {
         var spec = ChiptuneParser.Parse("notes=\"C4/8 E4/8\" chip=gameboy format=wav");

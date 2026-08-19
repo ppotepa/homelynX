@@ -69,13 +69,26 @@ internal static class MidiImporter
         var bass = melodic.Length > 1
             ? melodic.OrderByDescending(x => IsBassProgram(x.Program)).ThenBy(x => x.Median).ThenByDescending(x => x.Count).First().Key
             : ((int Track, int Channel)?)null;
-        var notes = completed.Select(x =>
+        var notes = completed.SelectMany(x =>
         {
-            var start = Quantize(ScaleTick(x.Start.Tick, file.Division), grid);
-            var end = Math.Max(start + Math.Max(1, grid), Quantize(ScaleTick(x.End, file.Division), grid));
+            var rawBends = file.Bends.Where(b => b.Track == x.Start.Track && b.Channel == x.Start.Channel && b.Tick > x.Start.Tick && b.Tick < x.End).OrderBy(b => b.Tick).ToArray();
+            var boundaries = new[] { x.Start.Tick }.Concat(rawBends.Select(b => b.Tick)).Append(x.End).Distinct().ToArray();
             var role = x.Start.Channel == 9 ? TrackRole.Drums : (x.Start.Track, x.Start.Channel) == bass ? TrackRole.Bass : (x.Start.Track, x.Start.Channel) == lead ? TrackRole.Lead : TrackRole.Harmony;
-            return new NoteEvent(start, end - start, Math.Clamp(x.Start.Note + spec.Transpose, 0, 127), x.Start.Value, role,
-                x.Start.Track, x.Start.Channel, x.Start.Program, x.Start.Bank, x.Start.Pan, x.Start.Expression, x.Start.PitchBend, x.Start.PitchBendRange);
+            var currentBend = x.Start.PitchBend;
+            var result = new List<NoteEvent>(boundaries.Length - 1);
+            for (var i = 0; i < boundaries.Length - 1; i++)
+            {
+                var rawStart = boundaries[i];
+                if (i > 0) currentBend = rawBends[i - 1].Value;
+                var start = Quantize(ScaleTick(rawStart, file.Division), grid);
+                var end = Math.Max(start + Math.Max(1, grid), Quantize(ScaleTick(boundaries[i + 1], file.Division), grid));
+                var bendSemitones = (currentBend - 8192) / 8192d * x.Start.PitchBendRange;
+                var pitch = Math.Clamp(x.Start.Note + (x.Start.Channel == 9 ? 0 : spec.Transpose) + (int)Math.Round(bendSemitones, MidpointRounding.AwayFromZero), 0, 127);
+                result.Add(new NoteEvent(start, end - start, pitch, x.Start.Value, role,
+                    x.Start.Track, x.Start.Channel, x.Start.Program, x.Start.Bank, x.Start.Pan, x.Start.Expression, currentBend, x.Start.PitchBendRange,
+                    rawBends.Length == 0 ? null : rawBends.Select(b => new PitchBendPoint(ScaleTick(b.Tick, file.Division), b.Value)).ToArray()));
+            }
+            return result;
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
         return new Song(notes, tempo);
     }
@@ -89,7 +102,7 @@ internal static class MidiImporter
         _ = r.UInt16(); var tracks = r.UInt16(); var division = r.UInt16();
         if ((division & 0x8000) != 0) throw new InvalidDataException("SMPTE MIDI timing is not supported.");
         r.Skip(headerLength - 6);
-        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var order = 0; var channelState = new MidiStateTable();
+        var events = new List<RawEvent>(); var tempos = new List<RawTempo>(); var bends = new List<RawBend>(); var order = 0; var channelState = new MidiStateTable();
         for (var track = 0; track < tracks; track++)
         {
             if (r.Offset + 8 > bytes.Length || r.Text(4) != "MTrk") throw new InvalidDataException($"Invalid MIDI track {track + 1}/{tracks} at byte {r.Offset - 4}.");
@@ -125,11 +138,12 @@ internal static class MidiImporter
                 else if (type == 0xE0)
                 {
                     channelState[track, channel].PitchBend = first | (second << 7);
+                    bends.Add(new RawBend(track, channel, tick, channelState[track, channel].PitchBend));
                 }
             }
             r.Offset = end;
         }
-        return new ParsedMidi(division, events, tempos);
+        return new ParsedMidi(division, events, tempos, bends);
     }
 
     private static byte[] UnwrapRmid(byte[] bytes)
@@ -159,7 +173,7 @@ internal static class MidiImporter
     private static long Quantize(long tick, long grid) => grid <= 0
         ? Math.Max(0, tick)
         : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
-    private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos);
+    private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos, IReadOnlyList<RawBend> Bends);
     private sealed record RawEvent(int Track, int Type, int Channel, int Note, int Value, long Tick, int Order, MidiState State)
     {
         public int Program => State.Program;
@@ -170,6 +184,7 @@ internal static class MidiImporter
         public int PitchBendRange => State.PitchBendRange;
     }
     private sealed record RawTempo(long Tick, int Value);
+    private sealed record RawBend(int Track, int Channel, long Tick, int Value);
 
     private sealed class MidiState
     {

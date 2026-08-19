@@ -46,7 +46,7 @@ internal static class VoiceAllocator
                     // short deterministic arpeggio instead of silently losing it.
                     var slice = Math.Max(60, note.DurationTick / Math.Max(1, group.Count()));
                     var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == voices[0]) * slice;
-                    var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note.Role));
+                    var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note));
                     allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
                     voiceUntil[voices[0]] = Math.Max(voiceUntil.GetValueOrDefault(voices[0]), arpStart + Math.Min(slice, note.DurationTick));
                     lastOnVoice[voices[0]] = allocated.Count - 1;
@@ -67,7 +67,7 @@ internal static class VoiceAllocator
                     }
                     revoiced++;
                 }
-                var hardware = ToHardware(note, voice, spec, InstrumentIdFor(note.Role));
+                var hardware = ToHardware(note, voice, spec, InstrumentIdFor(note));
                 lastOnVoice[voice] = allocated.Count;
                 allocated.Add(hardware);
                 voiceUntil[voice] = note.EndTick;
@@ -80,21 +80,41 @@ internal static class VoiceAllocator
 
     private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec, int instrumentId)
     {
-        var bendSemitones = (note.PitchBend - 8192) / 8192d * note.PitchBendRange;
-        var pitch = Math.Clamp(note.Pitch + (int)Math.Round(bendSemitones, MidpointRounding.AwayFromZero), 0, 127);
-        return new(voice, note.StartTick, note.DurationTick, pitch, note.Velocity,
+        // MIDI importer expands bend automation into short note segments. Do
+        // not apply the same bend twice here; the value remains on the event
+        // for diagnostics and future native tracker automation.
+        return new(voice, note.StartTick, note.DurationTick, Math.Clamp(note.Pitch, 0, 127), note.Velocity,
             InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
             note.Pan, note.Expression, note.PitchBend, note.Program);
     }
 
-    private static int InstrumentIdFor(TrackRole role) => role switch
+    private static int InstrumentIdFor(NoteEvent note)
     {
-        TrackRole.Lead => 0, TrackRole.Harmony => 1, TrackRole.Bass => 2, TrackRole.Drums => 3, _ => 0
+        // Keep IDs deterministic and independent of hardware voice. Program
+        // changes therefore select a different patch while a part moves
+        // between voices. Drum IDs are semantic GM percussion families.
+        return note.Role switch
+        {
+            TrackRole.Drums => 200 + PercussionFamily(note.Pitch),
+            _ => 10 + Math.Clamp(note.Program, 0, 127)
+        };
+    }
+
+    private static int PercussionFamily(int pitch) => pitch switch
+    {
+        35 or 36 => 0, // kick
+        38 or 40 or 37 or 39 => 1, // snare/clap
+        42 or 44 => 2, // closed hat/pedal hat
+        46 => 3, // open hat
+        49 or 55 or 57 => 5, // crash/splash
+        51 or 53 or 59 => 6, // ride/bell
+        >= 41 and <= 50 => 4, // toms
+        _ => 7
     };
 
     private static string InstrumentFor(NoteEvent note, string requested)
     {
-        if (note.Role == TrackRole.Drums) return "drums";
+        if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass) return "bass";
         return note.Program switch
         {
@@ -109,4 +129,16 @@ internal static class VoiceAllocator
             _ => requested
         };
     }
+
+    private static string PercussionName(int pitch) => pitch switch
+    {
+        35 or 36 => "kick",
+        37 or 38 or 39 or 40 => "snare",
+        42 or 44 => "hat",
+        46 => "open_hat",
+        49 or 55 or 57 => "crash",
+        51 or 53 or 59 => "ride",
+        >= 41 and <= 50 => "tom",
+        _ => "drums"
+    };
 }

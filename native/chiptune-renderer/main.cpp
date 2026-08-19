@@ -102,7 +102,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->type = DIV_INS_GB;
       instrument->gb.envVol = 15;
       instrument->gb.envDir = 0;
-      instrument->gb.envLen = patch == "pluck" || patch == "kick" ? 1 : chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
+      instrument->gb.envLen = patch == "pluck" || patch == "kick" || patch == "hat" || patch == "open_hat" ? 1 : patch == "snare" ? 2 : chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
       instrument->gb.soundLen = 64;
       instrument->gb.softEnv = chip == "gbc" || patch == "soft_lead" || patch == "strings";
       instrument->gb.alwaysInit = true;
@@ -123,6 +123,8 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->c64.triOn = patch == "bell" || patch == "strings" || wave == "triangle" || (wave == "square" && voice % 3 == 1); instrument->c64.sawOn = patch == "bass" || patch == "brass" || wave == "saw" || (wave == "square" && voice % 3 != 1); instrument->c64.pulseOn = patch == "lead" || patch == "pluck" || wave == "square" || wave == "fm";
       instrument->c64.a = (unsigned char)attack; instrument->c64.d = (unsigned char)decay; instrument->c64.s = (unsigned char)sustain; instrument->c64.r = (unsigned char)release; instrument->c64.duty = (unsigned short)(duty * 4095 / 100);
       instrument->c64.toFilter = voice == 1; instrument->c64.lp = voice == 1; instrument->c64.cut = 900; instrument->c64.res = 5;
+    } else if (chip == "nes") {
+      instrument->type = DIV_INS_NES;
     } else if (chip == "snes") {
       instrument->type = DIV_INS_SNES;
       instrument->amiga.useSample = true;
