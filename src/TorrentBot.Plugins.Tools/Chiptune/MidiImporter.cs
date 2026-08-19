@@ -75,7 +75,7 @@ internal static class MidiImporter
             var end = Math.Max(start + Math.Max(1, grid), Quantize(ScaleTick(x.End, file.Division), grid));
             var role = x.Start.Channel == 9 ? TrackRole.Drums : (x.Start.Track, x.Start.Channel) == bass ? TrackRole.Bass : (x.Start.Track, x.Start.Channel) == lead ? TrackRole.Lead : TrackRole.Harmony;
             return new NoteEvent(start, end - start, Math.Clamp(x.Start.Note + spec.Transpose, 0, 127), x.Start.Value, role,
-                x.Start.Track, x.Start.Channel, x.Start.Program, x.Start.Bank, x.Start.Pan, x.Start.Expression, x.Start.PitchBend);
+                x.Start.Track, x.Start.Channel, x.Start.Program, x.Start.Bank, x.Start.Pan, x.Start.Expression, x.Start.PitchBend, x.Start.PitchBendRange);
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
         return new Song(notes, tempo);
     }
@@ -167,6 +167,7 @@ internal static class MidiImporter
         public int Pan => State.Pan;
         public int Expression => State.Expression;
         public int PitchBend => State.PitchBend;
+        public int PitchBendRange => State.PitchBendRange;
     }
     private sealed record RawTempo(long Tick, int Value);
 
@@ -177,7 +178,10 @@ internal static class MidiImporter
         public int Pan = 64;
         public int Expression = 127;
         public int PitchBend = 8192;
-        public MidiState Snapshot() => new() { Program = Program, Bank = Bank, Pan = Pan, Expression = Expression, PitchBend = PitchBend };
+        public int PitchBendRange = 2;
+        public int RpnMsb = 127;
+        public int RpnLsb = 127;
+        public MidiState Snapshot() => new() { Program = Program, Bank = Bank, Pan = Pan, Expression = Expression, PitchBend = PitchBend, PitchBendRange = PitchBendRange, RpnMsb = RpnMsb, RpnLsb = RpnLsb };
     }
 
     private sealed class MidiStateTable
@@ -187,7 +191,16 @@ internal static class MidiImporter
         public void Apply(int track, int channel, int controller, int value)
         {
             var state = this[track, channel];
-            switch (controller) { case 0: state.Bank = (value << 7) | (state.Bank & 127); break; case 32: state.Bank = (state.Bank & (127 << 7)) | value; break; case 10: state.Pan = value; break; case 11: state.Expression = value; break; }
+            switch (controller)
+            {
+                case 0: state.Bank = (value << 7) | (state.Bank & 127); break;
+                case 32: state.Bank = (state.Bank & (127 << 7)) | value; break;
+                case 10: state.Pan = value; break;
+                case 11: state.Expression = value; break;
+                case 101: state.RpnMsb = value; break;
+                case 100: state.RpnLsb = value; break;
+                case 6 when state.RpnMsb == 0 && state.RpnLsb == 0: state.PitchBendRange = Math.Clamp(value, 0, 24); break;
+            }
         }
     }
 

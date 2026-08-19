@@ -74,15 +74,34 @@ internal static class VoiceAllocator
     }
 
     private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec, int instrumentId)
-        => new(voice, note.StartTick, note.DurationTick, note.Pitch, note.Velocity,
-            InstrumentFor(note.Role, spec.Instrument), note.Role, instrumentId,
+    {
+        var bendSemitones = (note.PitchBend - 8192) / 8192d * note.PitchBendRange;
+        var pitch = Math.Clamp(note.Pitch + (int)Math.Round(bendSemitones, MidpointRounding.AwayFromZero), 0, 127);
+        return new(voice, note.StartTick, note.DurationTick, pitch, note.Velocity,
+            InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
             note.Pan, note.Expression, note.PitchBend, note.Program);
+    }
 
     private static int InstrumentIdFor(TrackRole role) => role switch
     {
         TrackRole.Lead => 0, TrackRole.Harmony => 1, TrackRole.Bass => 2, TrackRole.Drums => 3, _ => 0
     };
 
-    private static string InstrumentFor(TrackRole role, string requested) => role switch
-    { TrackRole.Bass => "bass", TrackRole.Drums => "drums", TrackRole.Arp => "arp", _ => requested };
+    private static string InstrumentFor(NoteEvent note, string requested)
+    {
+        if (note.Role == TrackRole.Drums) return "drums";
+        if (note.Role == TrackRole.Bass) return "bass";
+        return note.Program switch
+        {
+            >= 32 and <= 39 => "bass",
+            >= 40 and <= 55 => "strings",
+            >= 56 and <= 63 => "brass",
+            >= 64 and <= 79 => "reed",
+            >= 80 and <= 87 => "lead",
+            >= 88 and <= 103 => "pad",
+            >= 104 and <= 111 => "lead",
+            >= 112 and <= 119 => "pad",
+            _ => requested
+        };
+    }
 }

@@ -40,7 +40,7 @@ internal sealed class TempoMap
 
 internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, int Velocity, TrackRole Role,
     int SourceTrack = -1, int SourceChannel = -1, int Program = 0, int Bank = 0,
-    int Pan = 64, int Expression = 127, int PitchBend = 8192)
+    int Pan = 64, int Expression = 127, int PitchBend = 8192, int PitchBendRange = 2)
 {
     public long EndTick => StartTick + DurationTick;
 }
