@@ -106,6 +106,32 @@ static int makeWave(DivEngine& engine, int voice, const std::string& patch) {
   return engine.addWavePtr(wave);
 }
 
+static void configureStandardMacros(DivInstrument* instrument, const std::string& chip, const std::string& patch) {
+  instrument->std.volMacro.open = true;
+  instrument->std.volMacro.len = 1;
+  instrument->std.volMacro.val[0] = patch == "hat" || patch == "kick" ? 11 : 15;
+  instrument->std.waveMacro.open = true;
+  instrument->std.waveMacro.len = 1;
+  if (chip == "sms") {
+    // SN76489 duty 0/1 means tone; 3 selects the noise generator.
+    instrument->std.dutyMacro.open = true;
+    instrument->std.dutyMacro.len = 1;
+    instrument->std.dutyMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 3 : 0;
+    instrument->std.waveMacro.val[0] = 0;
+  } else if (chip == "pokey") {
+    // AUDCTL and distortion are exposed as the standard duty/wave macros.
+    instrument->std.dutyMacro.open = true;
+    instrument->std.dutyMacro.len = 1;
+    instrument->std.dutyMacro.val[0] = patch == "bass" ? 0x04 : 0x00;
+    instrument->std.waveMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 0x08 : patch == "bass" ? 0x0A : 0x00;
+  } else if (chip == "atari2600") {
+    // TIA distortion shapes are the standard wave macro.
+    instrument->std.waveMacro.val[0] = patch == "bass" ? 0x08 : patch == "drums" ? 0x06 : patch == "snare" ? 0x04 : 0x00;
+  } else {
+    instrument->std.waveMacro.val[0] = patch == "bass" ? 1 : patch == "drums" ? 2 : 0;
+  }
+}
+
 static DivSample* makeDpcmSample(const std::string& patch) {
   const int count = patch == "kick" ? 768 : 512;
   auto* sample = new DivSample();
@@ -198,10 +224,16 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->std.waveMacro.open = true;
     } else if (chip == "pokey") {
       instrument->type = DIV_INS_POKEY;
+      configureStandardMacros(instrument, chip, patch);
     } else if (chip == "pcspeaker" || chip == "zx_spectrum") {
       instrument->type = DIV_INS_BEEPER;
+      configureStandardMacros(instrument, chip, patch);
     } else if (chip == "atari2600") {
       instrument->type = DIV_INS_TIA;
+      configureStandardMacros(instrument, chip, patch);
+    } else if (chip == "sms") {
+      instrument->type = DIV_INS_STD;
+      configureStandardMacros(instrument, chip, patch);
     }
   }
   if (chip == "snes") engine.renderSamples();
