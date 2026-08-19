@@ -10,7 +10,6 @@ internal static class JobsCapabilities
         Description: "List tracked engine jobs",
         Permission: "USER",
         Risk: RiskLevel.Safe,
-        LlmUsage: "Use when the user asks about background jobs",
         IsReadOnly: true);
 
     public static readonly CapabilityMetadata CancelMetadata = new(
@@ -18,6 +17,5 @@ internal static class JobsCapabilities
         Command: "/job_cancel",
         Description: "Cancel a tracked engine job",
         Permission: "USER",
-        Risk: RiskLevel.Destructive,
-        LlmUsage: "Use to cancel a running or queued job by id");
+        Risk: RiskLevel.Destructive);
 }

@@ -5,13 +5,16 @@ using TorrentBot.Engine.Audit;
 using TorrentBot.Engine.Confirmations;
 using TorrentBot.Engine.Context;
 using TorrentBot.Engine.Jobs;
-using TorrentBot.Engine.Migration;
 using TorrentBot.Engine.Notifications;
 using TorrentBot.Integrations.Clients;
 using TorrentBot.Integrations.Fakes;
 using TorrentBot.Integrations.Interfaces;
 using TorrentBot.Integrations.Models;
+using TorrentBot.Plugins.BotControl;
 using TorrentBot.Plugins.Downloads;
+using TorrentBot.Plugins.Jobs;
+using TorrentBot.Plugins.Media;
+using TorrentBot.Plugins.Query;
 using TorrentBot.Plugins.System;
 using TorrentBot.Plugins.Torrent;
 using TorrentBot.Plugins.Tools;
@@ -26,10 +29,9 @@ public static class EngineBootstrap
         DownloadsPlugin? downloadsPlugin = null,
         IConfirmationStore? confirmationStore = null,
         IAuditSink? auditSink = null,
-        object? botControlPlugin = null,
-        object? mediaPlugin = null,
-        object? jobsPlugin = null,
-        ILegacyPythonDelegator? legacyDelegator = null,
+        BotControlPlugin? botControlPlugin = null,
+        MediaPlugin? mediaPlugin = null,
+        JobsPlugin? jobsPlugin = null,
         IDownloadCompletionNotifier? completionNotifier = null)
     {
         var audit = auditSink ?? CreateAuditSink();
@@ -38,22 +40,22 @@ public static class EngineBootstrap
             AclService = aclService ?? AclService.FromEnvironment(),
             AuditSink = audit,
             ConfirmationStore = confirmationStore ?? new ConfirmationStore(),
-            FeatureFlags = FeatureFlags.FromEnvironment(),
-            LegacyDelegator = legacyDelegator ?? CreateLegacyDelegator(),
             JobRunner = new BackgroundJobRunner(),
             CompletionNotifier = completionNotifier
         });
 
         engine.RegisterPlugin(new SystemPlugin());
+        engine.RegisterPlugin(new QueryPlugin());
         engine.RegisterPlugin(downloadsPlugin ?? CreateDefaultDownloadsPlugin());
         engine.RegisterPlugin(new TorrentPlugin());
+        engine.RegisterPlugin(mediaPlugin ?? CreateDefaultMediaPlugin());
+        engine.RegisterPlugin(botControlPlugin ?? new BotControlPlugin());
+        engine.RegisterPlugin(jobsPlugin ?? new JobsPlugin());
         engine.RegisterPlugin(new ToolsPlugin());
         
         configure?.Invoke(engine);
         return engine;
     }
-
-    public static LegacyPythonCoexistence CreateCoexistenceRouter() => new();
 
     public static (IJackettClient Jackett, IQBittorrentClient QBittorrent) CreateTorrentClients()
     {
@@ -107,12 +109,13 @@ public static class EngineBootstrap
         return new PortalAuditSink($"Data Source={sqlitePath}");
     }
 
-    private static ILegacyPythonDelegator CreateLegacyDelegator()
+    private static MediaPlugin CreateDefaultMediaPlugin()
     {
-        var url = Environment.GetEnvironmentVariable("TORRENTBOT_LEGACY_PYTHON_URL");
-        return !string.IsNullOrWhiteSpace(url)
-            ? new HttpLegacyPythonDelegator(new HttpClient(), url)
-            : new NoOpLegacyPythonDelegator();
+        var ttsUrl = HomelynxEnv.FirstNonEmpty(
+            Environment.GetEnvironmentVariable("TORRENTBOT_TTS_URL"),
+            HomelynxEnv.GetServiceUrl(null, "TTS_HOST", "TTS_PORT", "TTS_HTTPS"));
+        ITtsClient? tts = !string.IsNullOrWhiteSpace(ttsUrl) ? new HttpTtsClient(new HttpClient(), ttsUrl) : null;
+        return new MediaPlugin(tts);
     }
 
     private static DownloadsPlugin CreateDefaultDownloadsPlugin()

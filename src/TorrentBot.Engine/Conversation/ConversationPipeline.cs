@@ -82,7 +82,6 @@ public sealed class ConversationPipeline : IConversationPipeline
             return new PipelineResult(
                 false,
                 ArtifactAccumulator.FromMessage("Action cancelled."),
-                new ExecutionPlan(PlanSource.Deterministic, []),
                 "Action cancelled.");
         }
 

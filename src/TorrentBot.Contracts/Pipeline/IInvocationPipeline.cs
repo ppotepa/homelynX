@@ -8,5 +8,4 @@ public interface IInvocationPipeline
 public sealed record PipelineResult(
     bool Success,
     ExecutionArtifacts Artifacts,
-    ExecutionPlan Plan,
     string? Error = null);

@@ -10,8 +10,6 @@ internal static class SystemContracts
         Parameters: [],
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("text"),
-        LlmUsage: "Use when user asks if the bot is alive.",
-        IntentHints: ["health", "ping", "alive"],
         IsReadOnly: true,
         Scope: "all");
 
@@ -30,8 +28,6 @@ internal static class SystemContracts
         Parameters: [new ParameterSpec("filter", "string", "Narrow by domain e.g. download, torrent")],
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("list"),
-        LlmUsage: "Use when user asks what commands exist. Pass filter for scoped lists.",
-        IntentHints: ["capabilities", "commands", "komendy"],
         IsReadOnly: true,
         Scope: "all");
 
@@ -41,8 +37,6 @@ internal static class SystemContracts
         Parameters: [new ParameterSpec("filter", "string", "Narrow by domain e.g. download, torrent")],
         Risk: RiskLevel.Safe,
         ResponseSpec: new ResponseConstructionSpec("list"),
-        LlmUsage: "Use when user asks what commands exist or how to use the bot.",
-        IntentHints: ["help", "commands", "jakie komendy"],
         IsReadOnly: true,
         Scope: "all");
 
@@ -67,5 +61,4 @@ internal static class SystemContracts
         Parameters: [],
         Risk: RiskLevel.Safe,
         IsReadOnly: true);
-
 }

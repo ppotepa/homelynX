@@ -32,8 +32,6 @@ public static class PluginLoader
                 Description: attribute.Description,
                 Permission: attribute.Permission,
                 Risk: attribute.Risk,
-                LlmUsage: attribute.LlmUsage,
-                IntentHints: attribute.IntentHints,
                 Preconditions: attribute.Preconditions,
                 IsLongRunning: attribute.IsLongRunning,
                 IsReadOnly: attribute.IsReadOnly);

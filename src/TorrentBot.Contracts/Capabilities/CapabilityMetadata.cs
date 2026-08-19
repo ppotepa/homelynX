@@ -6,8 +6,6 @@ public sealed record CapabilityMetadata(
     string Description,
     string Permission,
     RiskLevel Risk,
-    string? LlmUsage = null,
-    IReadOnlyList<string>? IntentHints = null,
     IReadOnlyList<string>? Preconditions = null,
     bool IsLongRunning = false,
     bool IsReadOnly = false,

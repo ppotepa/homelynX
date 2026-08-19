@@ -8,13 +8,13 @@ namespace TorrentBot.Engine.Tests.Unit;
 public sealed class ArchitectureContractTests
 {
     [Fact]
-    public async Task Engine_exposes_registered_capability_contracts_for_planning()
+    public async Task Engine_exposes_registered_capability_contracts_for_routing_and_help()
     {
         await using var scope = await StartEngineAsync();
         var contracts = scope.Engine.GetCapabilityContracts();
         Assert.Contains(contracts, c => c.Name == "torrent.search");
         Assert.Contains(contracts, c => c.Name == "download.start");
-        Assert.Contains(contracts, c => c.Name == "download.start_media");
+        Assert.Contains(contracts, c => c.Name == "query.execute");
         Assert.Contains(contracts, c => c.Name == "system.health");
         Assert.All(contracts, c => Assert.False(string.IsNullOrWhiteSpace(c.ExactSemantics)));
     }
@@ -37,7 +37,7 @@ public sealed class ArchitectureContractTests
             ]);
 
         var context = new ConversationContext("s1", "u1");
-        var token = "tok-search";
+        const string token = "tok-search";
         context.AddPendingAction(new PendingUserAction(
             token,
             "torrent.select_result",
@@ -54,9 +54,6 @@ public sealed class ArchitectureContractTests
         Assert.Equal("ubuntu", resolution.Parameters!["query"]);
         Assert.Empty(context.PendingActions);
     }
-
-    private static CapabilityContract DownloadContract() =>
-        new("download.start", "start download", [], RiskLevel.ConfirmationRequired);
 
     private static async Task<EngineScope> StartEngineAsync()
     {

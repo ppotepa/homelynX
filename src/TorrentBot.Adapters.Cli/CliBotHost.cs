@@ -78,7 +78,7 @@ public sealed class CliBotHost : IAsyncDisposable
             rendered.Text,
             pipelineResult.Artifacts.RawResult,
             rendered,
-            pipelineResult.Plan,
+            null,
             _requestTimer.Elapsed,
             requestNumber);
     }

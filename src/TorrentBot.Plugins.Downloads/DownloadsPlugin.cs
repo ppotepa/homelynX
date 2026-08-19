@@ -45,8 +45,6 @@ public sealed class DownloadsPlugin : IPlugin
         context.RegisterCapability(DownloadContracts.Pause, new DownloadPauseHandler(), "/pause");
         context.RegisterCapability(DownloadContracts.Resume, new DownloadResumeHandler(), "/resume");
         context.RegisterCapability(DownloadContracts.Cancel, new DownloadCancelHandler(), "/cancel");
-        context.RegisterCapability(DownloadContracts.StartMedia, new DownloadStartHandler(), "/download_media");
-
         context.RegisterSnapshotSource(new DownloadsSnapshotSource(qBittorrent, processManager, mediaDownloader));
         context.RegisterSnapshotSource(new JobsSnapshotSource(processManager));
     }

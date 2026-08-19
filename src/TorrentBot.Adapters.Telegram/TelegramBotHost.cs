@@ -125,7 +125,7 @@ public sealed class TelegramBotHost : IDisposable
             rendered.Text,
             pipelineResult.Artifacts.RawResult,
             Rendered: rendered,
-            Plan: pipelineResult.Plan);
+            Plan: null);
     }
 
     private async Task<TelegramBotResponse> ExecuteUserResponseAsync(
@@ -168,7 +168,7 @@ public sealed class TelegramBotHost : IDisposable
             rendered.Text,
             pipelineResult?.Artifacts.RawResult,
             Rendered: rendered,
-            Plan: pipelineResult?.Plan);
+            Plan: null);
     }
 
     private static Invocation CreateInvocation(Invocation invocation, bool isDryRun) =>

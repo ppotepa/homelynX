@@ -228,7 +228,7 @@ public sealed class CliApplication
     private static int WriteExecutionResult(ExecutionResult result, bool json)
     {
         var artifacts = Engine.Pipeline.ArtifactAccumulator.FromExecutionResult(result);
-        return WritePipelineResult(new PipelineResult(result.Success, artifacts, new ExecutionPlan(PlanSource.Deterministic, []), result.Error), json);
+        return WritePipelineResult(new PipelineResult(result.Success, artifacts, result.Error), json);
     }
 
     private static async Task<IReadOnlyList<TorrentBot.Contracts.Capabilities.CapabilityMetadata>> LoadCapabilitiesAsync(

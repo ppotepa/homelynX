@@ -30,8 +30,7 @@ public sealed class VerboseDownloadReproTests
             Assert.Contains("ubuntu", response, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("Wyniki:", response, StringComparison.Ordinal);
             Assert.Contains(messenger.Edited, edit =>
-                edit.Text.Contains("VERBOSE", StringComparison.OrdinalIgnoreCase)
-                && !edit.Text.Contains("No planning stages recorded", StringComparison.Ordinal));
+                edit.Text.Contains("torrent.search", StringComparison.OrdinalIgnoreCase));
             Assert.Contains(messenger.Edited, edit =>
                 edit.Text.Contains("torrent.search", StringComparison.OrdinalIgnoreCase)
                 || edit.Text.Contains("Planowanie", StringComparison.OrdinalIgnoreCase)

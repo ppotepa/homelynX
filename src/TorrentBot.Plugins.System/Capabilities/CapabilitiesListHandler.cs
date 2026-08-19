@@ -23,12 +23,11 @@ public sealed class CapabilitiesListHandler : ICapabilityHandler
             var f = filter.ToLowerInvariant();
             source = source.Where(c =>
             {
-                var name = c.Name?.ToLowerInvariant() ?? "";
-                var cmd = c.Command?.ToLowerInvariant() ?? "";
-                var desc = c.Description?.ToLowerInvariant() ?? "";
+                var name = c.Name?.ToLowerInvariant() ?? string.Empty;
+                var cmd = c.Command?.ToLowerInvariant() ?? string.Empty;
+                var desc = c.Description?.ToLowerInvariant() ?? string.Empty;
                 var module = name.Contains('.') ? name.Split('.')[0] : name;
-                var hints = (c.IntentHints != null) ? string.Join(" ", c.IntentHints).ToLowerInvariant() : "";
-                return name.Contains(f) || cmd.Contains(f) || desc.Contains(f) || module.Contains(f) || hints.Contains(f);
+                return name.Contains(f) || cmd.Contains(f) || desc.Contains(f) || module.Contains(f);
             });
         }
 
@@ -43,10 +42,15 @@ public sealed class CapabilitiesListHandler : ICapabilityHandler
             })
             .ToList();
 
-        var msgFilter = string.IsNullOrWhiteSpace(filter) ? "" : $" (filtered by '{filter}')";
+        var msgFilter = string.IsNullOrWhiteSpace(filter) ? string.Empty : $" (filtered by '{filter}')";
         return Task.FromResult(new CapabilityResult(
             Success: true,
-            Data: new Dictionary<string, object?> { ["capabilities"] = capabilities, ["count"] = capabilities.Count, ["filter"] = filter },
+            Data: new Dictionary<string, object?>
+            {
+                ["capabilities"] = capabilities,
+                ["count"] = capabilities.Count,
+                ["filter"] = filter
+            },
             Message: $"{capabilities.Count} capability(ies) available{msgFilter}",
             IsDryRun: context.IsDryRun));
     }
