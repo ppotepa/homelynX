@@ -70,6 +70,15 @@ public sealed class ChiptuneTests
         Assert.Contains(expected, ex.Message);
     }
 
+    [Fact]
+    public void Fidelity_policy_is_parsed_and_strict_reports_dropped_notes()
+    {
+        var spec = ChiptuneParser.Parse("notes=\"[C4,E4,G4]/4\" chip=pcspeaker fidelity=strict");
+        var hardware = VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec);
+        Assert.Equal("strict", spec.Fidelity);
+        Assert.True(hardware.DroppedNotes >= 1);
+    }
+
     [Theory]
     [InlineData("gb")]
     [InlineData("gbc")]

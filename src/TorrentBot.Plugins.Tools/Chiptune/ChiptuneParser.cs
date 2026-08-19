@@ -32,6 +32,7 @@ internal static partial class ChiptuneParser
         var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
         var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
         var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
+        var fidelity = Get(o, "fidelity", "balanced").ToLowerInvariant(); Ensure(fidelity, ["preserve", "balanced", "strict"], "fidelity");
         // Imported MIDI should preserve its original performance timing unless
         // the user explicitly asks for quantization. Generated music remains
         // aligned to the tracker-friendly sixteenth-note grid.
@@ -51,6 +52,7 @@ internal static partial class ChiptuneParser
             Notes=o.GetValueOrDefault("notes"), Degrees=o.GetValueOrDefault("degrees"), Generate=generate,
             MidiBase64=o.GetValueOrDefault("midi_base64"), Chip=chip, Instrument=instrument, Style=style,
             Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode,
+            Fidelity=fidelity,
             Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
             Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",4,1,16), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),
             Progression=o.GetValueOrDefault("progression"),

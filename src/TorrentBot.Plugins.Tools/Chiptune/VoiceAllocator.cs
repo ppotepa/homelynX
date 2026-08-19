@@ -30,13 +30,14 @@ internal static class VoiceAllocator
         var allocated = new List<HardwareNote>();
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
+        var revoiced = 0; var arpeggiated = 0; var dropped = 0;
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
             foreach (var note in group.OrderByDescending(x => Priority[x.Role]).ThenByDescending(x => x.Velocity).ThenByDescending(x => x.Pitch))
             {
                 var voices = map.TryGetValue(note.Role, out var mapped) ? mapped : map[TrackRole.Lead];
                 var voice = voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
-                if (voice < 0 && note.Role is TrackRole.Lead or TrackRole.Harmony && voices.Length == 1 && group.Count() > 1)
+                if (voice < 0 && spec.Fidelity != "strict" && (note.Role is TrackRole.Lead or TrackRole.Harmony) && voices.Length == 1 && group.Count() > 1)
                 {
                     // A monophonic target expresses a simultaneous chord as a
                     // short deterministic arpeggio instead of silently losing it.
@@ -44,10 +45,12 @@ internal static class VoiceAllocator
                     var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == voices[0]) * slice;
                     var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note.Role));
                     allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
+                    arpeggiated++;
                     continue;
                 }
                 if (voice < 0)
                 {
+                    if (spec.Fidelity == "strict") { dropped++; continue; }
                     // Stateful voice stealing: shorten only the note that is
                     // actually being replaced, never a later note by accident.
                     voice = voices.OrderBy(x => voiceUntil.GetValueOrDefault(x)).First();
@@ -57,6 +60,7 @@ internal static class VoiceAllocator
                         if (previous.StartTick < note.StartTick)
                             allocated[previousIndex] = previous with { DurationTick = Math.Max(1, note.StartTick - previous.StartTick) };
                     }
+                    revoiced++;
                 }
                 var hardware = ToHardware(note, voice, spec, InstrumentIdFor(note.Role));
                 lastOnVoice[voice] = allocated.Count;
@@ -65,7 +69,8 @@ internal static class VoiceAllocator
             }
         }
         return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, allocated.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray(), song.EndTick,
-            spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter);
+            spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter,
+            song.Notes.Count, revoiced, arpeggiated, dropped, spec.Fidelity);
     }
 
     private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec, int instrumentId)

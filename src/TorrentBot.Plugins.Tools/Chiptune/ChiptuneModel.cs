@@ -66,6 +66,7 @@ internal sealed record ChiptuneSpec
     public string Scale { get; init; } = "major";
     public int Bpm { get; init; } = 140;
     public string TempoMode { get; init; } = "file";
+    public string Fidelity { get; init; } = "balanced";
     public int Transpose { get; init; }
     public int Octave { get; init; } = 4;
     public int Octaves { get; init; } = 2;
@@ -91,4 +92,5 @@ internal sealed record ChiptuneSpec
 internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role,
     int InstrumentId = 0, int Pan = 64, int Expression = 127, int PitchBend = 8192, int Program = 0);
 internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick,
-    string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0);
+    string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0,
+    int SourceNoteCount = 0, int RevoicedNotes = 0, int ArpeggiatedNotes = 0, int DroppedNotes = 0, string Fidelity = "balanced");
