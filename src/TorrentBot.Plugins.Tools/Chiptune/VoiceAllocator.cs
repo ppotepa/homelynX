@@ -87,7 +87,7 @@ internal static class VoiceAllocator
         // for diagnostics and future native tracker automation.
         return new(voice, note.StartTick, note.DurationTick, Math.Clamp(note.Pitch, 0, 127), note.Velocity,
             InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
-            note.Pan, note.Expression, note.PitchBend, note.Program);
+            note.Pan, note.Expression, note.PitchBend, note.PitchBendRange, note.Program);
     }
 
     private static int InstrumentIdFor(NoteEvent note)

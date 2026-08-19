@@ -256,6 +256,15 @@ static void fillSong(DivEngine& engine, const json& request) {
       pattern->newData[row][DIV_PAT_FX(0)] = 0x88;
       pattern->newData[row][DIV_PAT_FXVAL(0)] = (short)((left << 4) | right);
     }
+    double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
+    double residual = bendSemitones - std::round(bendSemitones);
+    if (std::abs(residual) >= 0.01) {
+      // E5xx is Furnace's fine pitch effect, with 0x80 as the neutral value.
+      // The C# arranger already encoded the integral semitone in the note;
+      // only emit the residual here to avoid applying the bend twice.
+      pattern->newData[row][DIV_PAT_FX(1)] = 0xE5;
+      pattern->newData[row][DIV_PAT_FXVAL(1)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+    }
     if (endNoteRow < sub->ordersLen * sub->patLen) {
       int offOrder = endNoteRow / sub->patLen, offRow = endNoteRow % sub->patLen;
       DivPattern* offPattern = sub->pat[voice].getPattern(offOrder, true);
