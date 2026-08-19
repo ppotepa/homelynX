@@ -45,8 +45,28 @@ internal static class VoiceAllocator
                 allocated.Add(new HardwareNote(voice, note.StartTick, note.DurationTick, note.Pitch, note.Velocity, InstrumentFor(note.Role, spec.Instrument), note.Role));
             }
         }
-        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, allocated.OrderBy(x=>x.StartTick).ToArray(), song.EndTick,
+        var normalized = NormalizeMonophonicVoices(allocated);
+        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, normalized, song.EndTick,
             spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter);
+    }
+
+    private static IReadOnlyList<HardwareNote> NormalizeMonophonicVoices(IEnumerable<HardwareNote> source)
+    {
+        var result = new List<HardwareNote>();
+        foreach (var voice in source.GroupBy(x => x.Voice))
+        {
+            var notes = voice.OrderBy(x => x.StartTick).ThenByDescending(x => x.Velocity).ToArray();
+            for (var i = 0; i < notes.Length; i++)
+            {
+                var note = notes[i];
+                if (i + 1 < notes.Length && notes[i + 1].StartTick > note.StartTick)
+                {
+                    note = note with { DurationTick = Math.Min(note.DurationTick, notes[i + 1].StartTick - note.StartTick) };
+                }
+                result.Add(note);
+            }
+        }
+        return result.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray();
     }
 
     private static string InstrumentFor(TrackRole role, string requested) => role switch

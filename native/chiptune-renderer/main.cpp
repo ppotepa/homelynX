@@ -124,16 +124,19 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
 static void fillSong(DivEngine& engine, const json& request) {
   DivSubSong* sub = engine.song.subsong.at(0);
   int bpm = bounded(request.value("bpm", 140), 40, 300);
-  sub->hz = (float)bpm / 15.0f; // one tracker row is one sixteenth note
+  long endTick = request.value("endTick", 960L);
+  constexpr int maxRows = 255 * 256;
+  // Use 1/64-note rows for normal songs. For unusually long MIDI files,
+  // reduce resolution only as much as needed to fit Furnace's order table.
+  int ticksPerRow = std::max(60, (int)std::ceil(endTick / (double)maxRows));
+  sub->hz = (float)bpm * 16.0f / ticksPerRow;
   sub->speeds.len = 1;
   sub->speeds.val[0] = 1;
-  long endTick = request.value("endTick", 960L);
-  int endRow = std::max(1, (int)std::ceil(endTick / 240.0));
+  int endRow = std::max(1, (int)std::ceil(endTick / (double)ticksPerRow));
   // Keep the full Furnace capacity for genuinely long compositions, but do
   // not export every short song as a 256-row pattern.  The latter adds a
   // silent tail of roughly 27 seconds at 140 BPM.
   sub->patLen = endRow <= 256 ? bounded(endRow + 1, 2, 256) : 256;
-  const int maxRows = 255 * 256;
   if (endRow > maxRows) throw std::runtime_error("MIDI is larger than Furnace tracker capacity (255 patterns x 256 rows).");
   sub->ordersLen = std::max(1, (endRow + sub->patLen - 1) / sub->patLen);
   for (int channel = 0; channel < engine.song.chans; ++channel)
@@ -144,14 +147,17 @@ static void fillSong(DivEngine& engine, const json& request) {
     int voice = item.value("voice", 0);
     if (voice < 0 || voice >= engine.song.chans) continue;
     long startTick = item.value("startTick", 0L);
-    long durationTick = std::max(60L, item.value("durationTick", 240L));
-    int startRow = std::max(0, (int)std::llround(startTick / 240.0));
-    int endNoteRow = std::max(startRow + 1, (int)std::llround((startTick + durationTick) / 240.0));
+    long durationTick = std::max(1L, item.value("durationTick", 240L));
+    int startRow = std::max(0, (int)std::llround(startTick / (double)ticksPerRow));
+    int endNoteRow = std::max(startRow + 1, (int)std::llround((startTick + durationTick) / (double)ticksPerRow));
     if (startRow >= sub->ordersLen * sub->patLen) continue;
     int order = startRow / sub->patLen, row = startRow % sub->patLen;
     DivPattern* pattern = sub->pat[voice].getPattern(order, true);
     pattern->newData[row][DIV_PAT_NOTE] = (short)bounded(item.value("pitch", 60) + 48, 0, 179);
     pattern->newData[row][DIV_PAT_INS] = (short)voice;
+    int maxVolume = engine.getMaxVolumeChan(voice);
+    int velocity = bounded(item.value("velocity", 100), 1, 127);
+    pattern->newData[row][DIV_PAT_VOL] = (short)bounded((velocity * maxVolume + 63) / 127, 1, maxVolume);
     if (endNoteRow < sub->ordersLen * sub->patLen) {
       int offOrder = endNoteRow / sub->patLen, offRow = endNoteRow % sub->patLen;
       DivPattern* offPattern = sub->pat[voice].getPattern(offOrder, true);

@@ -45,6 +45,22 @@ public sealed class ChiptuneTests
         Assert.All(hardware.Notes.Where(x=>x.Role==TrackRole.Drums), x=>Assert.Equal(3,x.Voice));
     }
 
+    [Fact]
+    public void Voice_allocator_prevents_old_note_off_from_cutting_a_new_note()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 60, 100, TrackRole.Lead),
+            new NoteEvent(240, 960, 64, 100, TrackRole.Lead)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes");
+
+        var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal(240, notes[0].DurationTick);
+        Assert.Equal(960, notes[1].DurationTick);
+    }
+
     [Theory]
     [InlineData("chip=unknown", "Unknown chip")]
     [InlineData("format=xyz", "Unknown format")]
@@ -96,6 +112,26 @@ public sealed class ChiptuneTests
         for (var i = 0; i < 4; i++) rmid[4 + i] = riffSize[i];
         var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(rmid.ToArray())} format=wav");
         Assert.NotEmpty(ChiptuneParser.Compose(spec).Notes);
+    }
+
+    [Fact]
+    public void Midi_import_preserves_fine_rhythm_and_single_track_as_lead()
+    {
+        var midi = new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
+            0,0x90,60,100, 30,0x80,60,0,
+            15,0x90,62,100, 45,0x80,62,0,
+            0,0xFF,0x2F,0
+        };
+        var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
+        var song = ChiptuneParser.Compose(spec);
+
+        Assert.Equal("off", spec.Quantize);
+        Assert.Equal([0L, 90L], song.Notes.Select(x => x.StartTick));
+        Assert.Equal([60L, 90L], song.Notes.Select(x => x.DurationTick));
+        Assert.All(song.Notes, note => Assert.Equal(TrackRole.Lead, note.Role));
     }
 
     [Fact]

@@ -8,7 +8,15 @@ internal static class MidiImporter
     {
         var file = Parse(bytes);
         var tempo = spec.TempoMode == "override" ? TempoMap.Fixed(spec.Bpm) : new TempoMap(file.Tempos.Select(x => new TempoPoint(ScaleTick(x.Tick, file.Division), x.Value)));
-        var grid = spec.Quantize switch { "1/4" => TempoMap.Ppq, "1/8" => TempoMap.Ppq / 2, _ => TempoMap.Ppq / 4 };
+        var grid = spec.Quantize switch
+        {
+            "off" => 0,
+            "1/4" => TempoMap.Ppq,
+            "1/8" => TempoMap.Ppq / 2,
+            "1/32" => TempoMap.Ppq / 8,
+            "1/64" => TempoMap.Ppq / 16,
+            _ => TempoMap.Ppq / 4
+        };
         var active = new Dictionary<(int Track,int Channel,int Note), Stack<RawEvent>>();
         var completed = new List<(RawEvent Start, long End)>();
         foreach (var e in file.Events.OrderBy(x => x.Tick).ThenBy(x => x.Order))
@@ -23,13 +31,17 @@ internal static class MidiImporter
                 completed.Add((stack.Pop(), e.Tick));
         }
         var stats = completed.GroupBy(x => (x.Start.Track, x.Start.Channel)).Select(x => new { x.Key, Median=x.Select(n => n.Start.Note).Order().ElementAt(x.Count()/2), Count=x.Count() }).ToArray();
-        var melodic = stats.Where(x => x.Key.Channel != 9).OrderByDescending(x => x.Count).ThenByDescending(x => x.Median).ToArray();
-        var lead = melodic.FirstOrDefault()?.Key;
-        var bass = melodic.OrderBy(x => x.Median).FirstOrDefault()?.Key;
+        var melodic = stats.Where(x => x.Key.Channel != 9).ToArray();
+        var lead = melodic.OrderByDescending(x => x.Median).ThenByDescending(x => x.Count).FirstOrDefault()?.Key;
+        // A single melodic stream is a lead, never a bass. Treat the lowest
+        // stream as bass only when the file actually contains another voice.
+        var bass = melodic.Length > 1
+            ? melodic.OrderBy(x => x.Median).ThenByDescending(x => x.Count).First().Key
+            : ((int Track, int Channel)?)null;
         var notes = completed.Select(x =>
         {
             var start = Quantize(ScaleTick(x.Start.Tick, file.Division), grid);
-            var end = Math.Max(start + grid, Quantize(ScaleTick(x.End, file.Division), grid));
+            var end = Math.Max(start + Math.Max(1, grid), Quantize(ScaleTick(x.End, file.Division), grid));
             var role = x.Start.Channel == 9 ? TrackRole.Drums : (x.Start.Track, x.Start.Channel) == bass ? TrackRole.Bass : (x.Start.Track, x.Start.Channel) == lead ? TrackRole.Lead : TrackRole.Harmony;
             return new NoteEvent(start, end - start, Math.Clamp(x.Start.Note + spec.Transpose, 0, 127), x.Start.Value, role);
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
@@ -98,7 +110,9 @@ internal static class MidiImporter
     }
 
     private static long ScaleTick(long tick, int division) => checked(tick * TempoMap.Ppq / division);
-    private static long Quantize(long tick, long grid) => Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
+    private static long Quantize(long tick, long grid) => grid <= 0
+        ? Math.Max(0, tick)
+        : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
     private sealed record ParsedMidi(int Division, IReadOnlyList<RawEvent> Events, IReadOnlyList<RawTempo> Tempos);
     private sealed record RawEvent(int Track, int Type, int Channel, int Note, int Value, long Tick, int Order);
     private sealed record RawTempo(long Tick, int Value);

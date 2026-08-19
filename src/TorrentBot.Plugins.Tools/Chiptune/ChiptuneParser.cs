@@ -30,7 +30,11 @@ internal static partial class ChiptuneParser
         var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
         var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
         var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
-        var quantize = Get(o, "quantize", "1/16"); Ensure(quantize, ["1/4", "1/8", "1/16"], "quantize");
+        // Imported MIDI should preserve its original performance timing unless
+        // the user explicitly asks for quantization. Generated music remains
+        // aligned to the tracker-friendly sixteenth-note grid.
+        var quantize = Get(o, "quantize", hasMidi ? "off" : "1/16");
+        Ensure(quantize, ["off", "1/4", "1/8", "1/16", "1/32", "1/64"], "quantize");
         var wave = Get(o, "wave", "square").ToLowerInvariant(); Ensure(wave, ["square", "triangle", "saw", "noise", "sine", "fm"], "wave");
         var sampleRate = Int(o, "sample_rate", 44_100, 44_100, 48_000);
         if (sampleRate is not (44_100 or 48_000)) throw new FormatException("sample_rate must be 44100 or 48000.");
