@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS pastes(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id T
 CREATE TABLE IF NOT EXISTS polls(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,question TEXT NOT NULL,options TEXT NOT NULL,closed INTEGER NOT NULL DEFAULT 0,created TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS poll_votes(poll_id INTEGER NOT NULL,user_id TEXT NOT NULL,option_index INTEGER NOT NULL,created TEXT NOT NULL,PRIMARY KEY(poll_id,user_id));
 CREATE TABLE IF NOT EXISTS webhooks(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,url TEXT NOT NULL,label TEXT NOT NULL,revoked INTEGER NOT NULL DEFAULT 0,created TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS short_links(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,code TEXT NOT NULL UNIQUE,url TEXT NOT NULL,title TEXT NOT NULL DEFAULT '',tags TEXT NOT NULL DEFAULT '',created TEXT NOT NULL,expires TEXT NULL,max_visits INTEGER NULL,visits INTEGER NOT NULL DEFAULT 0,disabled INTEGER NOT NULL DEFAULT 0);"; cmd.ExecuteNonQuery(); }
+CREATE TABLE IF NOT EXISTS short_links(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT NOT NULL,code TEXT NOT NULL UNIQUE,url TEXT NOT NULL,title TEXT NOT NULL DEFAULT '',tags TEXT NOT NULL DEFAULT '',created TEXT NOT NULL,expires TEXT NULL,max_visits INTEGER NULL,visits INTEGER NOT NULL DEFAULT 0,disabled INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS chiptune_sessions(token TEXT PRIMARY KEY,user_id TEXT NOT NULL,chat_id TEXT NOT NULL,spec_json TEXT NOT NULL,created TEXT NOT NULL,updated TEXT NOT NULL,expires TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_chiptune_sessions_owner ON chiptune_sessions(user_id,chat_id,updated DESC);"; cmd.ExecuteNonQuery(); }
     private void MigrateNotes() { using var c = Open(); using var x = c.CreateCommand(); x.CommandText = "ALTER TABLE notes ADD COLUMN tags TEXT NOT NULL DEFAULT ''"; try { x.ExecuteNonQuery(); } catch (SqliteException) { } }
     private SqliteConnection Open() { var c = new SqliteConnection(_connectionString); c.Open(); return c; }
     private static void P(SqliteCommand c, string n, object v) => c.Parameters.AddWithValue(n, v);
@@ -88,6 +90,18 @@ CREATE TABLE IF NOT EXISTS short_links(id INTEGER PRIMARY KEY AUTOINCREMENT,user
     public async Task DisableShortLink(string user,string code)=>await SimpleShortLink("UPDATE short_links SET disabled=1 WHERE user_id=$u AND code=$c",user,code);
     public async Task DeleteShortLink(string user,string code)=>await SimpleShortLink("DELETE FROM short_links WHERE user_id=$u AND code=$c",user,code);
     private async Task SimpleShortLink(string sql,string user,string code){using var c=Open();using var x=c.CreateCommand();x.CommandText=sql;P(x,"$u",user);P(x,"$c",code);await x.ExecuteNonQueryAsync();}
+
+    public async Task SaveChiptuneSession(string token,string user,string chat,string specJson)
+    {
+        using var c=Open();using var tx=c.BeginTransaction();var now=DateTimeOffset.UtcNow;using(var cleanup=c.CreateCommand()){cleanup.Transaction=tx;cleanup.CommandText="DELETE FROM chiptune_sessions WHERE expires<=$now OR token IN (SELECT token FROM chiptune_sessions WHERE user_id=$u AND chat_id=$c ORDER BY updated DESC LIMIT -1 OFFSET 20)";P(cleanup,"$now",now.ToString("O"));P(cleanup,"$u",user);P(cleanup,"$c",chat);await cleanup.ExecuteNonQueryAsync();}
+        using(var x=c.CreateCommand()){x.Transaction=tx;x.CommandText="INSERT INTO chiptune_sessions(token,user_id,chat_id,spec_json,created,updated,expires) VALUES($t,$u,$c,$s,$n,$n,$e) ON CONFLICT(token) DO UPDATE SET spec_json=$s,updated=$n,expires=$e";P(x,"$t",token);P(x,"$u",user);P(x,"$c",chat);P(x,"$s",specJson);P(x,"$n",now.ToString("O"));P(x,"$e",now.AddDays(7).ToString("O"));await x.ExecuteNonQueryAsync();}tx.Commit();
+    }
+
+    public async Task<string?> GetChiptuneSession(string token,string user,string chat)
+    {
+        using var c=Open();using var cleanup=c.CreateCommand();cleanup.CommandText="DELETE FROM chiptune_sessions WHERE expires<=$now";P(cleanup,"$now",DateTimeOffset.UtcNow.ToString("O"));await cleanup.ExecuteNonQueryAsync();
+        using var x=c.CreateCommand();x.CommandText="SELECT spec_json FROM chiptune_sessions WHERE token=$t AND user_id=$u AND chat_id=$c AND expires>$now";P(x,"$t",token);P(x,"$u",user);P(x,"$c",chat);P(x,"$now",DateTimeOffset.UtcNow.ToString("O"));return await x.ExecuteScalarAsync() as string;
+    }
 }
 
 public sealed record ShortLinkRecord(long Id,string UserId,string Code,string Url,string Title,string Tags,DateTimeOffset Created,DateTimeOffset? Expires,int? MaxVisits,int Visits,bool Disabled,bool VisitAccepted=true);

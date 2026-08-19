@@ -1,11 +1,12 @@
 using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Context;
+using TorrentBot.Contracts.Health;
 
 namespace TorrentBot.Plugins.System.Capabilities;
 
 public sealed class HealthCapabilityHandler : ICapabilityHandler
 {
-    public Task<CapabilityResult> ExecuteAsync(
+    public async Task<CapabilityResult> ExecuteAsync(
         CapabilityContext context,
         IReadOnlyDictionary<string, object?> parameters,
         CancellationToken cancellationToken)
@@ -18,11 +19,18 @@ public sealed class HealthCapabilityHandler : ICapabilityHandler
             ["traceId"] = context.Request.TraceId,
             ["timestampUtc"] = DateTimeOffset.UtcNow
         };
+        var contributor=context.Engine.GetService<IHealthContributor>();
+        if(contributor is not null)
+        {
+            var contribution=await contributor.CheckAsync(cancellationToken);
+            data[contributor.Name]=new Dictionary<string,object?>{{"status",contribution.Status},{"detail",contribution.Detail}};
+            if(contribution.Status!="healthy")data["status"]="degraded";
+        }
 
-        return Task.FromResult(new CapabilityResult(
+        return new CapabilityResult(
             Success: true,
             Data: data,
-            Message: "Engine is healthy",
-            IsDryRun: context.IsDryRun));
+            Message: data["status"]?.ToString()=="healthy"?"Engine is healthy":"Engine is degraded",
+            IsDryRun: context.IsDryRun);
     }
 }

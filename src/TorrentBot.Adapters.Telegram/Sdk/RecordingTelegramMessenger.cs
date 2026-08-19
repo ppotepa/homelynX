@@ -11,7 +11,7 @@ public sealed class RecordingTelegramMessenger : ITelegramMessenger
     public Task<long> SendTextAsync(long chatId, string text, IReadOnlyList<TelegramInlineButton>? buttons = null, CancellationToken ct = default)
     {
         var messageId = _nextMessageId++;
-        Sent.Add(new TelegramOutboundMessage(chatId, text, messageId));
+        Sent.Add(new TelegramOutboundMessage(chatId, text, messageId, buttons));
         return Task.FromResult(messageId);
     }
 

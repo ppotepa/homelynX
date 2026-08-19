@@ -168,6 +168,9 @@ public sealed class TelegramProductionAdapter
             else
                 await _messenger.SendDocumentAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
 
+            if(TryReadToolActions(response.ExecutionResult,out var toolActions))
+                await _messenger.SendTextAsync(mapped.ChatId,"Zmień wygenerowany chiptune:",toolActions,ct).ConfigureAwait(false);
+
             return response.Message;
         }
 
@@ -262,6 +265,15 @@ public sealed class TelegramProductionAdapter
 
         text = string.Empty;
         return false;
+    }
+
+    private static bool TryReadToolActions(ExecutionResult? result,out IReadOnlyList<TelegramInlineButton> actions)
+    {
+        var list=new List<TelegramInlineButton>();actions=list;
+        if(result?.CapabilityResult?.Data is not IDictionary<string,object?> data||!data.TryGetValue("toolActions",out var raw)||raw is not System.Collections.IEnumerable values)return false;
+        foreach(var value in values)
+            if(TryGetString(value,"text",out var label)&&TryGetString(value,"callbackData",out var callback)&&callback.Length<=64)list.Add(new TelegramInlineButton(label,callback));
+        return list.Count>0;
     }
 
     private readonly record struct ToolArtifact(string FileName, string ContentType, byte[] Content);

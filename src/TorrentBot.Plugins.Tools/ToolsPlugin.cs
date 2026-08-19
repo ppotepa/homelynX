@@ -16,6 +16,8 @@ using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Plugins;
 using TorrentBot.Engine;
+using TorrentBot.Contracts.Health;
+using TorrentBot.Plugins.Tools.Chiptune;
 
 namespace TorrentBot.Plugins.Tools;
 
@@ -32,6 +34,7 @@ public sealed class ToolsPlugin : IPlugin
         context.RegisterService(featureStore);
         context.RegisterService(new TrackingMonitor(featureStore));
         context.RegisterService(new ShortLinkService(store));
+        context.RegisterService<IHealthContributor>(new ChiptuneRendererHealth());
         foreach (var command in ToolCommands.All)
         {
             context.RegisterCapability(command.Contract, new ToolHandler(command.Command.TrimStart('/'), store, featureStore), command.Command);
@@ -90,7 +93,7 @@ internal sealed class ToolHandler(string name, ToolsStore store, FeatureStore fe
                 "base64" => Base64(text), "slug" => Slug(text), "date" => Date(text), "timestamp" => Timestamp(text),
                 "time" => Date(text), "weather" => await Weather(text, cancellationToken), "rate" => await Rate(text, cancellationToken), "qr" => Qr(text), "barcode" => Barcode(text), "shorten" => await Shorten(text, user), "url" => await UrlTools(text, cancellationToken), "json" => JsonTools(text), "urlencode" => UrlEncode(text), "color" => Color(text), "text_stats" => TextStats(text), "base" => BaseConvert(text),
                 "mediainfo" => await MediaInfo(text, cancellationToken), "thumbnail" => await Thumbnail(text, cancellationToken), "extract_audio" => await ExtractAudio(text, cancellationToken), "gif" => await Gif(text, cancellationToken), "compress" => await Compress(text, cancellationToken),
-                "chiptune" => await ChiptuneTools.ExecuteAsync(text, cancellationToken), "read" => await WebReaderTools.ReadAsync(text, cancellationToken), "screenshot" => await WebReaderTools.ScreenshotAsync(text, cancellationToken), "track" => await TrackingTools.ExecuteAsync(text, user, featureStore, cancellationToken), "home" or "location" => await LocationTools.ExecuteAsync(name == "home" ? $"home {text}" : text, user, featureStore), "distance" or "map" => await LocationTools.ExecuteAsync($"{name} {text}", user, featureStore),
+                "chiptune" => await ChiptuneTools.ExecuteAsync(text, user, context.Request.ChatId ?? "cli", store, cancellationToken), "read" => await WebReaderTools.ReadAsync(text, cancellationToken), "screenshot" => await WebReaderTools.ScreenshotAsync(text, cancellationToken), "track" => await TrackingTools.ExecuteAsync(text, user, featureStore, cancellationToken), "home" or "location" => await LocationTools.ExecuteAsync(name == "home" ? $"home {text}" : text, user, featureStore), "distance" or "map" => await LocationTools.ExecuteAsync($"{name} {text}", user, featureStore),
                 "translate" => await Translate(text, cancellationToken), "summarize" => Summarize(text), "rewrite" => Rewrite(text), "extract_tasks" => ExtractTasks(text),
                 "files" => Files(text), "trash" => Trash(text), "service_logs" => ServiceLogs(text), "network" => await Network(text, cancellationToken), "services" => await Services(text, cancellationToken),
                 "webhook" => await Webhooks(text, user), _ => new(false, Message: "Unknown tool.")

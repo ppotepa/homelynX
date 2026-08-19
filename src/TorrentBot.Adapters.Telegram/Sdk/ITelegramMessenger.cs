@@ -1,6 +1,6 @@
 namespace TorrentBot.Adapters.Telegram.Sdk;
 
-public sealed record TelegramOutboundMessage(long ChatId, string Text, long? MessageId = null);
+public sealed record TelegramOutboundMessage(long ChatId, string Text, long? MessageId = null, IReadOnlyList<TelegramInlineButton>? Buttons = null);
 
 public sealed record TelegramInlineButton(string Text, string CallbackData);
 

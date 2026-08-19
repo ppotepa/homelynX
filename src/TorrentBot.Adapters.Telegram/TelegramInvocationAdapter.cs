@@ -140,6 +140,17 @@ public sealed class TelegramInvocationAdapter
             return true;
         }
 
+        if (callbackData.StartsWith("ct:", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts=callbackData.Split(':',3);
+            if(parts.Length==3 && parts[1].Length is >=8 and <=24)
+            {
+                capabilityName="tools.chiptune";
+                parameters=new Dictionary<string,object?>{{"text",$"callback={parts[1]}:{parts[2]}"}};
+                return true;
+            }
+        }
+
         return false;
     }
 
