@@ -12,6 +12,8 @@ internal static class ChiptuneTools
 
     public static async Task<CapabilityResult> ExecuteAsync(string input, string user, string chat, ToolsStore store, IProgressReporter? progress, CancellationToken ct)
     {
+        if (input.TrimStart().StartsWith("inspect", StringComparison.OrdinalIgnoreCase))
+            return Inspect(input["inspect".Length..].Trim());
         if (string.IsNullOrWhiteSpace(input))
             return new(true, null, "Usage: /chiptune notes=\"C4/8 E4/8 G4/4\" | degrees=\"1/8 3/8 5/4\" key=D scale=minor | generate=song seed=42 chip=genesis");
 
@@ -49,6 +51,30 @@ internal static class ChiptuneTools
         await store.SaveChiptuneSession(token,user,chat,JsonSerializer.Serialize(spec));
         return FeatureArtifacts.Binary($"chiptune.{spec.Format}", type, output,
             $"Chiptune generated: {spec.Chip}, {song.DurationSeconds:F1}s, {song.Notes.Count} notes, seed={spec.Seed}.",Actions(token,spec));
+    }
+
+    private static CapabilityResult Inspect(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return new(true, null, "Usage: attach a MIDI file and send /chiptune inspect");
+        var spec = ChiptuneParser.Parse(input);
+        if (spec.Mode != ChiptuneMode.Midi)
+            return new(false, Message: "Inspection currently requires an attached MIDI file.");
+        var song = ChiptuneParser.Compose(spec);
+        var hardware = VoiceAllocator.Allocate(song, spec);
+        var channels = song.Notes.Where(x => x.SourceChannel >= 0)
+            .GroupBy(x => (x.SourceTrack, x.SourceChannel))
+            .OrderByDescending(x => x.Count())
+            .Select(x => $"  track {x.Key.SourceTrack + 1}/ch {x.Key.SourceChannel + 1}: {x.Count()} notes, programs={string.Join(',', x.Select(n => n.Program).Distinct())}");
+        var peakPolyphony = song.Notes.GroupBy(x => x.StartTick).Select(x => x.Count()).DefaultIfEmpty().Max();
+        var message = string.Join('\n', new[]
+        {
+            $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, peak onset polyphony={peakPolyphony}",
+            $"Target={spec.Chip}, fidelity={spec.Fidelity}, arranged={hardware.Notes.Count}, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}, revoiced={hardware.RevoicedNotes}, arpeggiated={hardware.ArpeggiatedNotes}, dropped={hardware.DroppedNotes}",
+            "Source parts:",
+            string.Join('\n', channels)
+        });
+        return new(true, null, message);
     }
 
     private static ChiptuneSpec ApplyAction(ChiptuneSpec spec,string action)=>action switch

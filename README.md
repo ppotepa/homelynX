@@ -65,6 +65,7 @@ The bot also exposes deterministic utility commands:
 /chiptune generate=song key=D scale=minor progression="i VI III VII" chip=genesis wave=fm
 /chiptune generate=bassline key=E scale=minor chip=c64_8580 wave=saw
 /chiptune format=mp3             # attach a .mid file
+/chiptune inspect                # attach a .mid file and inspect programs, polyphony and arrangement loss
 /read https://example.com/article
 /screenshot https://example.com device=mobile format=png
 /track add RR123456789PL label="Parcel" notify=important
