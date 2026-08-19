@@ -193,9 +193,19 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->fm.op[3].ar = 31; instrument->fm.op[3].dr = 8; instrument->fm.op[3].rr = 5; instrument->fm.op[3].tl = 8; instrument->fm.op[3].mult = 1;
     } else if (chip == "c64_6581" || chip == "c64_8580") {
       instrument->type = DIV_INS_C64;
-      instrument->c64.triOn = patch == "bell" || patch == "strings" || wave == "triangle" || (wave == "square" && voice % 3 == 1); instrument->c64.sawOn = patch == "bass" || patch == "brass" || wave == "saw" || (wave == "square" && voice % 3 != 1); instrument->c64.pulseOn = patch == "lead" || patch == "pluck" || wave == "square" || wave == "fm";
-      instrument->c64.a = (unsigned char)attack; instrument->c64.d = (unsigned char)decay; instrument->c64.s = (unsigned char)sustain; instrument->c64.r = (unsigned char)release; instrument->c64.duty = (unsigned short)(duty * 4095 / 100);
-      instrument->c64.toFilter = voice == 1; instrument->c64.lp = voice == 1; instrument->c64.cut = 900; instrument->c64.res = 5;
+      instrument->c64.triOn = patch == "bell" || patch == "strings" || patch == "flute" || wave == "triangle" || (wave == "square" && voice % 3 == 1);
+      instrument->c64.sawOn = patch == "bass" || patch == "brass" || patch == "organ" || patch == "pad" || wave == "saw" || (wave == "square" && voice % 3 != 1);
+      instrument->c64.pulseOn = patch == "lead" || patch == "soft_lead" || patch == "pluck" || patch == "epiano" || wave == "square" || wave == "fm";
+      instrument->c64.noiseOn = patch == "drums" || patch == "snare" || patch == "hat";
+      instrument->c64.a = (unsigned char)(patch == "pad" || patch == "strings" ? 12 : patch == "brass" ? 3 : attack);
+      instrument->c64.d = (unsigned char)(patch == "bell" || patch == "epiano" ? 18 : decay);
+      instrument->c64.s = (unsigned char)(patch == "drums" || patch == "snare" || patch == "hat" ? 0 : patch == "pad" || patch == "strings" ? 14 : sustain);
+      instrument->c64.r = (unsigned char)(patch == "bell" || patch == "strings" || patch == "pad" ? 15 : release);
+      instrument->c64.duty = (unsigned short)((patch == "soft_lead" ? 12 : duty) * 4095 / 100);
+      instrument->c64.toFilter = patch == "bass" || patch == "pad" || patch == "strings" || voice == 1;
+      instrument->c64.lp = true;
+      instrument->c64.cut = patch == "bass" ? 650 : patch == "pad" ? 1200 : 900;
+      instrument->c64.res = patch == "bell" || patch == "pad" ? 8 : 5;
     } else if (chip == "nes") {
       instrument->type = DIV_INS_NES;
       if (sampleIndex >= 0) {
