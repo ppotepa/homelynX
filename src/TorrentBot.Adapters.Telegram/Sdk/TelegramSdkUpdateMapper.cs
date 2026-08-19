@@ -7,13 +7,22 @@ public static class TelegramSdkUpdateMapper
 {
     public static ITelegramUpdate? Map(Update update)
     {
-        if (update.Message is { Text: not null } message && message.From is not null)
+        if (update.Message is { From: not null } message)
         {
+            var attachment = message.Document is { } document
+                ? new TelegramAttachment(document.FileId, document.FileName ?? "attachment.bin", document.MimeType)
+                : message.Audio is { } audio
+                    ? new TelegramAttachment(audio.FileId, audio.FileName ?? "audio.bin", audio.MimeType)
+                    : null;
+            var text = message.Text ?? message.Caption;
+            if (text is null && attachment is not null && (attachment.FileName.EndsWith(".mid", StringComparison.OrdinalIgnoreCase) || attachment.FileName.EndsWith(".midi", StringComparison.OrdinalIgnoreCase))) text = "/chiptune";
+            if (text is null && attachment is null) return null;
             return new TelegramUpdate(
                 message.Chat.Id,
                 message.From.Id.ToString(),
-                message.Text,
-                message.MessageId);
+                text,
+                message.MessageId,
+                Attachment: attachment);
         }
 
         if (update.CallbackQuery is { Data: not null, From: not null } callback && callback.Message is not null)

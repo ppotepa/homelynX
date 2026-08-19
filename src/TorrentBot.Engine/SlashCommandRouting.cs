@@ -11,6 +11,9 @@ public static class SlashCommandRouting
             ["/download_search"] = "torrent.search",
             ["/list"] = "system.help",
             ["/commands"] = "system.help",
+            ["/disk"] = "system.disk_usage",
+            ["/time"] = "tools.time",
+            ["/service"] = "tools.services",
         };
 
     public static string NormalizeCommand(string raw)
@@ -64,6 +67,12 @@ public static class SlashCommandRouting
             "/find_large_files" => int.TryParse(remainder.Trim(), out var minMb)
                 ? new Dictionary<string, object?> { ["min_mb"] = minMb }
                 : new Dictionary<string, object?> { ["text"] = remainder.Trim() },
+            "/note" or "/todo" or "/remind" or "/reminders" or "/timer" or "/timers"
+                or "/poll" or "/choose" or "/dice" or "/paste" or "/calc" or "/convert"
+                or "/password" or "/passphrase" or "/hash" or "/uuid" or "/base64" or "/slug"
+                or "/date" or "/timestamp" or "/weather" or "/rate" or "/qr" or "/barcode" or "/shorten" or "/url" or "/json" or "/urlencode" or "/color" or "/text_stats" or "/base" or "/mediainfo" or "/thumbnail" or "/extract_audio" or "/gif" or "/compress" or "/chiptune" or "/read" or "/screenshot" or "/track" or "/home" or "/location" or "/distance" or "/map" or "/translate" or "/summarize" or "/rewrite" or "/extract_tasks"
+                or "/files" or "/trash" or "/service_logs" or "/network" or "/services" or "/webhook" =>
+                new Dictionary<string, object?> { ["text"] = remainder.Trim() },
             _ => new Dictionary<string, object?> { ["text"] = remainder.Trim() }
         };
     }

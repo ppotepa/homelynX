@@ -14,6 +14,7 @@ using TorrentBot.Integrations.Models;
 using TorrentBot.Plugins.Downloads;
 using TorrentBot.Plugins.System;
 using TorrentBot.Plugins.Torrent;
+using TorrentBot.Plugins.Tools;
 
 namespace TorrentBot.Bootstrap;
 
@@ -46,6 +47,7 @@ public static class EngineBootstrap
         engine.RegisterPlugin(new SystemPlugin());
         engine.RegisterPlugin(downloadsPlugin ?? CreateDefaultDownloadsPlugin());
         engine.RegisterPlugin(new TorrentPlugin());
+        engine.RegisterPlugin(new ToolsPlugin());
         
         configure?.Invoke(engine);
         return engine;

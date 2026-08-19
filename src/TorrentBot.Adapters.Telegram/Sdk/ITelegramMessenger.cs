@@ -14,4 +14,5 @@ public interface ITelegramMessenger
     Task SendAudioAsync(long chatId, Stream content, string fileName, CancellationToken ct = default);
     Task SendVideoAsync(long chatId, Stream content, string fileName, CancellationToken ct = default);
     Task SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken ct = default);
+    Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default);
 }

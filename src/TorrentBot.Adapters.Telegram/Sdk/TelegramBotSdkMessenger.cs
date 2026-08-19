@@ -49,4 +49,13 @@ public sealed class TelegramBotSdkMessenger : ITelegramMessenger
 
     public async Task SendDocumentAsync(long chatId, Stream content, string fileName, CancellationToken ct = default) =>
         await _client.SendDocument(chatId, InputFile.FromStream(content, fileName), cancellationToken: ct).ConfigureAwait(false);
+
+    public async Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default)
+    {
+        var file = await _client.GetFile(fileId, cancellationToken: ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(file.FilePath)) throw new InvalidOperationException("Telegram file path is unavailable.");
+        await using var output = new MemoryStream();
+        await _client.DownloadFile(file.FilePath, output, cancellationToken: ct).ConfigureAwait(false);
+        return output.ToArray();
+    }
 }

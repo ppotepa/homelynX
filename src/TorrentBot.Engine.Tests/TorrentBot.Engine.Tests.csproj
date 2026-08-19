@@ -4,6 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -14,6 +15,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,7 +41,18 @@
     <ProjectReference Include="..\TorrentBot.Plugins.Torrent\TorrentBot.Plugins.Torrent.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.Media\TorrentBot.Plugins.Media.csproj" />
     <ProjectReference Include="..\TorrentBot.Plugins.BotControl\TorrentBot.Plugins.BotControl.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Tools\TorrentBot.Plugins.Tools.csproj" />
     <ProjectReference Include="..\TorrentBot.Adapters.Telegram\TorrentBot.Adapters.Telegram.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(NuGetPackageRoot)qrcoder\1.6.0\lib\net6.0\QRCoder.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(NuGetPackageRoot)zxing.net\0.16.9\lib\net7.0\zxing.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

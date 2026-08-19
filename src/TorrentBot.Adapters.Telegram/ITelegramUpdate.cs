@@ -8,4 +8,5 @@ public interface ITelegramUpdate
     string? CallbackData { get; }
     string UserId { get; }
     bool IsCallback { get; }
+    TelegramAttachment? Attachment { get; }
 }

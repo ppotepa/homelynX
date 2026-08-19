@@ -10,6 +10,12 @@
   <ItemGroup>
     <ProjectReference Include="..\TorrentBot.Bootstrap\TorrentBot.Bootstrap.csproj" />
     <ProjectReference Include="..\TorrentBot.Adapters.Telegram\TorrentBot.Adapters.Telegram.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Tools\TorrentBot.Plugins.Tools.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.9" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
   </ItemGroup>
 
 </Project>

@@ -8,7 +8,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 ARG TARGETARCH=amd64
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg ca-certificates curl \
+    && apt-get install -y --no-install-recommends ffmpeg chromium ca-certificates curl \
     && case "$TARGETARCH" in \
          amd64) YTDLP_ASSET=yt-dlp_linux ;; \
          arm64) YTDLP_ASSET=yt-dlp_linux_aarch64 ;; \
@@ -23,5 +23,6 @@ ENV TORRENTBOT_ENABLE_NEW_ENGINE=true
 ENV TORRENTBOT_ENABLE_LEGACY_PYTHON=false
 ENV YTDLP_PATH=/usr/local/bin/yt-dlp
 ENV FFMPEG_PATH=/usr/bin/ffmpeg
+ENV PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/chromium
 LABEL org.homelynx.component="bot"
 ENTRYPOINT ["dotnet", "TorrentBot.Adapters.Telegram.Host.dll"]

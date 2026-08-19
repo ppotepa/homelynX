@@ -18,7 +18,15 @@ services:
       TORRENTBOT_ENABLE_LEGACY_PYTHON: "false"
       TORRENTBOT_MEDIA_ROOT: "/media"
       TORRENTBOT_AUDIT_DB: "${HOMELYNX_AUDIT_DB:-/data/audit/homelynx.db}"
+      TORRENTBOT_TOOLS_DB: "${HOMELYNX_TOOLS_DB:-/data/tools/homelynx-tools.db}"
       HOMELYNX_CAPABILITIES_FILE: "/data/capabilities.json"
+      TORRENTBOT_SHORTENER_ENABLED: "${TORRENTBOT_SHORTENER_ENABLED:-false}"
+      TORRENTBOT_SHORTENER_BASE_URL: "${TORRENTBOT_SHORTENER_BASE_URL:-http://localhost:8089}"
+      TORRENTBOT_SHORTENER_BIND_URL: "http://0.0.0.0:8089"
+      AFTERSHIP_API_KEY: "${AFTERSHIP_API_KEY:-}"
+      PLAYWRIGHT_EXECUTABLE_PATH: "/usr/bin/chromium"
+      TORRENTBOT_MAP_TILE_URL: "${TORRENTBOT_MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
+      TORRENTBOT_MAP_TILE_CACHE: "/data/tools/map-tiles"
 
       QBIT_HOST: "qbittorrent"
       QBIT_PORT: "8080"
@@ -44,6 +52,8 @@ services:
       - "./acl/presets.cfg:/app/acl/presets.cfg:ro"
       - "./data:/data"
       - "./logs:/app/logs"
+    ports:
+      - "${SHORTENER_PORT:-8089}:8089"
     depends_on:
       - qbittorrent
       - jackett

@@ -25,6 +25,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentBot.Plugins.Download
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentBot.Plugins.Torrent", "TorrentBot.Plugins.Torrent\TorrentBot.Plugins.Torrent.csproj", "{FACE70E0-9D74-474D-926C-4A8BAA538DDA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentBot.Plugins.Tools", "TorrentBot.Plugins.Tools\TorrentBot.Plugins.Tools.csproj", "{E4E8B2DF-7A4D-4B2A-BE5A-16CB9A9A9E01}"
+EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentBot.Plugins.Media", "TorrentBot.Plugins.Media\TorrentBot.Plugins.Media.csproj", "{019BF78B-00A0-4DA8-AD73-1173F951CF99}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TorrentBot.Adapters.Telegram", "TorrentBot.Adapters.Telegram\TorrentBot.Adapters.Telegram.csproj", "{52C60D81-961C-49A5-A189-1E41ABB7A7C2}"

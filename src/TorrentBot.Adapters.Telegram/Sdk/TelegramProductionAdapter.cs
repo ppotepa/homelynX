@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using TorrentBot.Acl;
 using TorrentBot.Bootstrap;
 using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Contracts.Presentation;
+using TorrentBot.Contracts.Invocation;
 using TorrentBot.Engine;
 using TorrentBot.Engine.Confirmations;
 using TorrentBot.Engine.Conversation;
@@ -39,7 +41,7 @@ public sealed class TelegramProductionAdapter
                 hostEngine,
                 pipeline,
                 hostEngine.GetCapabilityRegistry(),
-                hostEngine.GetInternalBus()));
+                hostEngine.GetInternalBus() ?? throw new InvalidOperationException("Engine internal bus is not initialized.")));
         var invocationAdapter = new TelegramInvocationAdapter(hostEngine.ResolveSlashCommand);
         _host = new TelegramBotHost(
             engine,
@@ -68,6 +70,7 @@ public sealed class TelegramProductionAdapter
 
     public async Task<string> HandleMappedUpdateAsync(ITelegramUpdate mapped, long progressMessageId, CancellationToken ct = default)
     {
+        mapped = await PrepareChiptuneAttachmentAsync(mapped, ct).ConfigureAwait(false);
         if (await TryHandleMediaInteractionAsync(mapped, progressMessageId, ct).ConfigureAwait(false))
         {
             return "Media selection handled";
@@ -142,6 +145,21 @@ public sealed class TelegramProductionAdapter
 
         var rendered = response.Rendered;
 
+        if (response.Success && TryReadToolArtifact(response.ExecutionResult, out var artifact))
+        {
+            await DeliverTextAsync(mapped.ChatId, progressMessageId, response.Message, ct).ConfigureAwait(false);
+            if (artifact.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase))
+                await _messenger.SendPhotoAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
+            else if (artifact.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
+                await _messenger.SendAudioAsync(mapped.ChatId, new MemoryStream(artifact.Content, writable: false), artifact.FileName, ct).ConfigureAwait(false);
+            else if (artifact.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                await _messenger.SendVideoAsync(mapped.ChatId, new MemoryStream(artifact.Content, writable: false), artifact.FileName, ct).ConfigureAwait(false);
+            else
+                await _messenger.SendDocumentAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
+
+            return response.Message;
+        }
+
         if (rendered?.Buttons is { Count: > 0 } renderedButtons
             && renderedButtons.Any(b => b.CallbackData.StartsWith("pending:", StringComparison.OrdinalIgnoreCase)))
         {
@@ -180,6 +198,62 @@ public sealed class TelegramProductionAdapter
 
         return finalText;
     }
+
+    private async Task<ITelegramUpdate> PrepareChiptuneAttachmentAsync(ITelegramUpdate update, CancellationToken ct)
+    {
+        if (update.Attachment is null || update.Text is null || !update.Text.TrimStart().StartsWith("/chiptune", StringComparison.OrdinalIgnoreCase)) return update;
+        const int maxMidiBytes = 5 * 1024 * 1024;
+        var bytes = await _messenger.DownloadFileAsync(update.Attachment.FileId, ct).ConfigureAwait(false);
+        if (bytes.Length > maxMidiBytes) throw new InvalidOperationException("MIDI file is larger than the 5 MB limit.");
+        var text = $"{update.Text} midi_base64={Convert.ToBase64String(bytes)}";
+        return new TelegramUpdate(update.ChatId, update.UserId, text, update.MessageId, update.CallbackData, update.Attachment);
+    }
+
+    private static bool TryReadToolArtifact(ExecutionResult? result, out ToolArtifact artifact)
+    {
+        artifact = default;
+        if (result?.CapabilityResult?.Data is not IDictionary<string, object?> data
+            || !TryGetValue(data, "toolArtifact", out var rawValue)
+            || !TryGetString(rawValue, "fileName", out var fileName)
+            || !TryGetString(rawValue, "contentType", out var contentType)
+            || !TryGetString(rawValue, "contentBase64", out var encoded))
+        {
+            return false;
+        }
+
+        try
+        {
+            artifact = new ToolArtifact(fileName, contentType, Convert.FromBase64String(encoded));
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetValue(IDictionary<string, object?> values, string key, out object? value)
+        => values.TryGetValue(key, out value);
+
+    private static bool TryGetString(object? value, string key, out string text)
+    {
+        if (value is IDictionary<string, object?> dictionary && dictionary.TryGetValue(key, out var nested) && nested is string stringValue)
+        {
+            text = stringValue;
+            return true;
+        }
+
+        if (value is JsonElement element && element.ValueKind == JsonValueKind.Object && element.TryGetProperty(key, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            text = property.GetString()!;
+            return true;
+        }
+
+        text = string.Empty;
+        return false;
+    }
+
+    private readonly record struct ToolArtifact(string FileName, string ContentType, byte[] Content);
 
     private async Task<bool> TryHandleMediaInteractionAsync(ITelegramUpdate mapped, long progressMessageId, CancellationToken ct)
     {

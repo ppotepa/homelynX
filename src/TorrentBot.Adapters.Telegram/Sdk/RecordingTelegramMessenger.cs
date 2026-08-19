@@ -31,6 +31,7 @@ public sealed class RecordingTelegramMessenger : ITelegramMessenger
     public List<(long ChatId, string FileName, int Size)> Documents { get; } = [];
     public List<(long ChatId, string FileName, long Size)> Audios { get; } = [];
     public List<(long ChatId, string FileName, long Size)> Videos { get; } = [];
+    public Dictionary<string, byte[]> Downloads { get; } = new(StringComparer.Ordinal);
 
     public Task SendPhotoAsync(long chatId, byte[] content, string fileName, CancellationToken ct = default)
     {
@@ -61,4 +62,7 @@ public sealed class RecordingTelegramMessenger : ITelegramMessenger
         Documents.Add((chatId, fileName, checked((int)content.Length)));
         await Task.CompletedTask;
     }
+
+    public Task<byte[]> DownloadFileAsync(string fileId, CancellationToken ct = default) =>
+        Task.FromResult(Downloads.GetValueOrDefault(fileId, Array.Empty<byte>()));
 }

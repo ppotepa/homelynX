@@ -53,6 +53,9 @@ public sealed class EngineHost : IEngine
         get { lock (_lifecycleGate) { return _isRunning; } }
     }
 
+    public T? GetService<T>() where T : class =>
+        _services.TryGetValue(typeof(T), out var service) ? service as T : _registrationContext.GetService<T>();
+
     public ConversationContextStore? ConversationContextStore => _options.ConversationContextStore;
 
     public IReadOnlyList<CapabilityContract> GetCapabilityContracts(string? scope = null)

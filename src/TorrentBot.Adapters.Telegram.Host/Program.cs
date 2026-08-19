@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using TorrentBot.Adapters.Telegram.Sdk;
 using TorrentBot.Bootstrap;
+using TorrentBot.Plugins.Tools;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -38,6 +39,23 @@ public static class Program
         await engine.StartAsync(cts.Token).ConfigureAwait(false);
         await CapabilityManifestExporter.ExportIfConfiguredAsync(engine, cts.Token).ConfigureAwait(false);
         var adapter = new TelegramProductionAdapter(engine, messenger);
+
+        Task? shortenerTask = null;
+        Task? trackingTask = null;
+        if (string.Equals(Environment.GetEnvironmentVariable("TORRENTBOT_SHORTENER_ENABLED"), "true", StringComparison.OrdinalIgnoreCase)
+            && engine.GetService<ShortLinkService>() is { } shortLinks)
+        {
+            shortenerTask = Task.Run(() => RunShortenerEndpointAsync(args, shortLinks, cts.Token), cts.Token);
+        }
+        if (engine.GetService<TrackingMonitor>() is { } trackingMonitor)
+        {
+            trackingTask = Task.Run(() => trackingMonitor.RunAsync(async (shipment, update) =>
+            {
+                if (!long.TryParse(shipment.UserId, out var chatId)) return;
+                var label = string.IsNullOrWhiteSpace(shipment.Label) ? shipment.Number : shipment.Label;
+                await messenger.SendTextAsync(chatId, $"📦 {label} — {update.Status}\n{update.Description}", ct: cts.Token).ConfigureAwait(false);
+            }, cts.Token), cts.Token);
+        }
 
         _ = await client.GetMe(cts.Token).ConfigureAwait(false);
 
@@ -82,8 +100,35 @@ public static class Program
             }
         }
 
-        await engine.StopAsync(cts.Token).ConfigureAwait(false);
+        await engine.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        if (shortenerTask is not null)
+        {
+            try { await shortenerTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
+        if (trackingTask is not null)
+        {
+            try { await trackingTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+        }
         return 0;
+    }
+
+    private static async Task RunShortenerEndpointAsync(string[] args, ShortLinkService shortLinks, CancellationToken ct)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.UseUrls(Environment.GetEnvironmentVariable("TORRENTBOT_SHORTENER_BIND_URL") ?? "http://0.0.0.0:8089");
+        var app = builder.Build();
+        app.MapGet("/s/{code}", async (string code) =>
+        {
+            var link = await shortLinks.ResolveAsync(code, countVisit: true);
+            if (link is null) return Results.NotFound(new { error = "short link not found" });
+            if (!link.VisitAccepted || link.Disabled || link.Expires <= DateTimeOffset.UtcNow || link.MaxVisits is not null && link.Visits > link.MaxVisits)
+                return Results.StatusCode(StatusCodes.Status410Gone);
+            return Results.Redirect(link.Url, permanent: false, preserveMethod: false);
+        });
+        app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "shortener" }));
+        await app.RunAsync(ct).ConfigureAwait(false);
     }
 
     private static async Task RunTestEndpointAsync(

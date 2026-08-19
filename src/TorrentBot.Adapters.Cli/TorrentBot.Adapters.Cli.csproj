@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TorrentBot.Bootstrap\TorrentBot.Bootstrap.csproj" />
+    <ProjectReference Include="..\TorrentBot.Plugins.Tools\TorrentBot.Plugins.Tools.csproj" />
     <ProjectReference Include="..\TorrentBot.Contracts\TorrentBot.Contracts.csproj" />
     <ProjectReference Include="..\TorrentBot.Engine\TorrentBot.Engine.csproj" />
     <ProjectReference Include="..\TorrentBot.Acl\TorrentBot.Acl.csproj" />
@@ -11,6 +12,9 @@
 
   <ItemGroup>
     <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="ZXing.Net" Version="0.16.9" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
   </ItemGroup>
 
   <PropertyGroup>
