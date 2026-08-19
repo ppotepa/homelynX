@@ -78,6 +78,21 @@ static DivSample* makeSample(int voice, const std::string& patch) {
   return sample;
 }
 
+static int makeWave(DivEngine& engine, int voice, const std::string& patch) {
+  auto* wave = new DivWavetable();
+  wave->len = 32;
+  wave->min = 0;
+  wave->max = 31;
+  for (int i = 0; i < wave->len; ++i) {
+    double phase = (double)i / wave->len;
+    double value = patch == "bass" ? 1.0 - phase :
+      (patch == "bell" || patch == "strings" || patch == "epiano") ? (std::sin(phase * 2.0 * M_PI) * .5 + .5) :
+      (phase < .5 ? 1.0 : 0.0);
+    wave->data[i] = bounded((int)std::lround(value * 31.0), 0, 31);
+  }
+  return engine.addWavePtr(wave);
+}
+
 static void configureInstruments(DivEngine& engine, const std::string& chip, const json& request) {
   std::string wave = request.value("wave", "square");
   int duty = bounded(request.value("duty", 25), 1, 99);
@@ -136,6 +151,11 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->snes.r = (unsigned char)release;
     } else if (chip == "pce") {
       instrument->type = DIV_INS_PCE;
+      int waveIndex = makeWave(engine, voice, patch);
+      instrument->std.waveMacro.len = 1;
+      instrument->std.waveMacro.val[0] = waveIndex;
+      instrument->std.waveMacro.loop = 0;
+      instrument->std.waveMacro.open = true;
     } else if (chip == "pokey") {
       instrument->type = DIV_INS_POKEY;
     } else if (chip == "pcspeaker" || chip == "zx_spectrum") {
