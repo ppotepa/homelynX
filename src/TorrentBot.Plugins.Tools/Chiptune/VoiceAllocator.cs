@@ -89,7 +89,7 @@ internal static class VoiceAllocator
             InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
             note.Pan, note.Expression, note.PitchBend, note.PitchBendRange, note.Program,
             note.NoteCutTicks, note.NoteDelayTicks, note.Retrigger, note.PitchSlide, note.VolumeSlide,
-            note.Volume, note.Modulation, note.Aftertouch);
+            note.Volume, note.Modulation, note.Aftertouch, note.ReleaseVelocity);
     }
 
     private static int InstrumentIdFor(NoteEvent note)

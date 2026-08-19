@@ -114,7 +114,8 @@ internal static class DryWetMidiImporter
                     item.Track, item.Note.Channel, segmentState.Program, segmentState.Bank, segmentState.Pan, segmentState.Expression,
                     currentBend, segmentState.PitchBendRange,
                     item.Bends.Count == 0 ? null : item.Bends.Select(x => new PitchBendPoint(Scale(x.Time, ppq), x.Value)).ToArray(),
-                    Volume: segmentState.Volume, Modulation: segmentState.Modulation, Aftertouch: segmentState.Aftertouch);
+                    Volume: segmentState.Volume, Modulation: segmentState.Modulation, Aftertouch: segmentState.Aftertouch,
+                    ReleaseVelocity: item.Note.OffVelocity);
             });
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
 
@@ -174,7 +175,7 @@ internal static class DryWetMidiImporter
 
         public IReadOnlyList<AutomationPoint> Automation(int channel, long start, long end) => _channelEvents
             .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end &&
-                x.Event is ControlChangeEvent or ChannelAftertouchEvent)
+                x.Event is ControlChangeEvent or ChannelAftertouchEvent or NoteAftertouchEvent)
             .GroupBy(x => x.Time).OrderBy(x => x.Key)
             .Select(x => new AutomationPoint(x.Key, SnapshotAt(channel, x.Key))).ToArray();
 
@@ -208,6 +209,7 @@ internal static class DryWetMidiImporter
                 case ControlChangeEvent cc when cc.ControlNumber == 7: state.Volume = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 64: state.Sustain = cc.ControlValue >= 64; break;
                 case ChannelAftertouchEvent aftertouch: state.Aftertouch = aftertouch.AftertouchValue; break;
+                case NoteAftertouchEvent aftertouch: state.Aftertouch = aftertouch.AftertouchValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 101: state.RpnMsb = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 100: state.RpnLsb = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 6 && state.RpnMsb == 0 && state.RpnLsb == 0: state.PitchBendRange = Math.Clamp((int)cc.ControlValue, 0, 24); break;
