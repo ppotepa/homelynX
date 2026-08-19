@@ -24,6 +24,10 @@ internal static class ChiptuneTools
             spec=ApplyAction(spec,callback[1]);
         }
         else spec = ChiptuneParser.Parse(input);
+        // Sessions created by older builds may not contain Format. Keep the
+        // user-facing default stable: chiptune is delivered as MP3 unless a
+        // format was explicitly requested.
+        if (string.IsNullOrWhiteSpace(spec.Format)) spec = spec with { Format = "mp3" };
         var song = ChiptuneParser.Compose(spec);
         var hardware = VoiceAllocator.Allocate(song, spec);
         var waitSeconds = ReadInt("TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS", 600, 5, 3600);

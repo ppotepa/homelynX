@@ -59,6 +59,7 @@ The bot also exposes deterministic utility commands:
 
 ```text
 /chiptune notes="C4/8 E4/8 G4/4" bpm=140 chip=gameboy format=mp3
+/chiptune notes="C4/8 E4/8 G4/4" chip=gameboy    # MP3 is the default
 /chiptune degrees="1/8 3/8 5/8 8/4" key=D scale=minor chip=nes
 /chiptune generate=riff key=E scale=phrygian chip=sms bars=4 seed=42
 /chiptune generate=song key=D scale=minor progression="i VI III VII" chip=genesis wave=fm

@@ -5,6 +5,13 @@ namespace TorrentBot.Engine.Tests.Unit;
 public sealed class ChiptuneTests
 {
     [Fact]
+    public void Default_format_is_mp3()
+    {
+        var spec = ChiptuneParser.Parse("notes=\"C4/4\"");
+        Assert.Equal("mp3", spec.Format);
+    }
+
+    [Fact]
     public void Degrees_respect_key_scale_and_octave()
     {
         var spec = ChiptuneParser.Parse("degrees=\"1/8 2/8 3/8 8/4\" key=D scale=minor octave=4 format=wav");
