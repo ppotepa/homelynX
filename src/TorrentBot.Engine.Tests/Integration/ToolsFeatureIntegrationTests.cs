@@ -46,6 +46,22 @@ public sealed class ToolsFeatureIntegrationTests
     }
 
     [Fact]
+    public async Task Chiptune_composer_callback_loads_persisted_spec_and_renders_variation()
+    {
+        var (engine,messenger,restore)=Create();
+        try
+        {
+            await engine.StartAsync();var adapter=new TelegramProductionAdapter(engine,messenger);
+            await adapter.HandleMappedUpdateAsync(new TelegramUpdate(42,"feature-user","/chiptune generate=riff bars=1 seed=7 format=wav",30),30);
+            var button=messenger.Sent.SelectMany(x=>x.Buttons??[]).Single(x=>x.Text=="Variation");
+            var response=await adapter.HandleMappedUpdateAsync(new TelegramUpdate(42,"feature-user",null,31,button.CallbackData),31);
+            Assert.Contains("seed=8",response);
+            Assert.Equal(2,messenger.Audios.Count);
+        }
+        finally{await engine.StopAsync();restore();}
+    }
+
+    [Fact]
     public async Task Location_tracking_and_map_commands_use_the_private_feature_store()
     {
         var (engine, messenger, restore) = Create();

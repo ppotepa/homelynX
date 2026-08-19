@@ -33,4 +33,12 @@ public sealed class TelegramInvocationAdapterTests
         Assert.Equal("0:01", invocation.Parameters!["clipStart"]);
         Assert.Equal("0:03", invocation.Parameters["clipEnd"]);
     }
+
+    [Fact]
+    public void Chiptune_callback_maps_to_explicit_tool_capability()
+    {
+        var invocation=new TelegramInvocationAdapter().ToInvocation(new TelegramUpdate(1,"user",CallbackData:"ct:abcdefghijkl:chip"),new UserContext("user",[],"default"));
+        Assert.Equal("tools.chiptune",invocation.CapabilityName);
+        Assert.Equal("callback=abcdefghijkl:chip",invocation.Parameters!["text"]);
+    }
 }
