@@ -30,7 +30,7 @@ template<typename T> static T bounded(T value, T low, T high) {
 }
 
 static DivSystem systemFor(const std::string& chip) {
-  if (chip == "gameboy") return DIV_SYSTEM_GB;
+  if (chip == "gb" || chip == "gbc" || chip == "gameboy") return DIV_SYSTEM_GB;
   if (chip == "nes") return DIV_SYSTEM_NES;
   if (chip == "snes") return DIV_SYSTEM_SNES;
   if (chip == "sms") return DIV_SYSTEM_SMS;
@@ -86,7 +86,15 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
     if (instrumentIndex < 0) throw std::runtime_error("could not create instrument");
     DivInstrument* instrument = engine.song.ins[instrumentIndex];
     instrument->name = "Homelynx voice " + std::to_string(voice + 1);
-    if (chip == "genesis") {
+    if (chip == "gb" || chip == "gbc" || chip == "gameboy") {
+      instrument->type = DIV_INS_GB;
+      instrument->gb.envVol = 15;
+      instrument->gb.envDir = 0;
+      instrument->gb.envLen = chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
+      instrument->gb.soundLen = 64;
+      instrument->gb.softEnv = chip == "gbc";
+      instrument->gb.alwaysInit = true;
+    } else if (chip == "genesis") {
       instrument->type = DIV_INS_FM;
       instrument->fm.alg = wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
       instrument->fm.fb = 4;
@@ -179,7 +187,7 @@ int main(int argc, char** argv) {
     }
     if (argc != 2) throw std::runtime_error("usage: homelynx-chiptune-renderer OUTPUT.wav");
     json request; std::cin >> request;
-    std::string chip = request.value("chip", "gameboy");
+    std::string chip = request.value("chip", "gb");
     DivEngine engine;
     engine.preInit(true);
     engine.setAudio(DIV_AUDIO_DUMMY);

@@ -46,7 +46,7 @@ internal static class ManagedChipRenderer
         var chip = song.Chip;
         if (note.Role == TrackRole.Drums || note.Instrument == "drums")
         {
-            var bit = ((lfsr >> 0) ^ (lfsr >> (chip == "gameboy" ? 1 : 6))) & 1;
+            var bit = ((lfsr >> 0) ^ (lfsr >> (chip is "gb" or "gbc" or "gameboy" ? 1 : 6))) & 1;
             lfsr = (lfsr >> 1) | (bit << 14);
             return (lfsr & 1) == 0 ? -.8 : .8;
         }
@@ -61,7 +61,7 @@ internal static class ManagedChipRenderer
         return chip switch
         {
             "nes" when note.Voice == 2 => 4 * Math.Abs(p - .5) - 1,
-            "gameboy" when note.Voice == 2 => Wavetable(p, note.Instrument),
+            "gb" or "gbc" or "gameboy" when note.Voice == 2 => Wavetable(p, note.Instrument),
             "snes" => SampleBank(p, note.Instrument),
             "sms" => p < (note.Voice == 1 ? .5 : .25) ? 1 : -1,
             _ => p < song.Duty / 100d ? 1 : -1

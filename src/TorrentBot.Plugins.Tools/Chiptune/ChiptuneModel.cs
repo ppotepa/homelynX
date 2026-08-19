@@ -57,7 +57,7 @@ internal sealed record ChiptuneSpec
     public string? Generate { get; init; }
     [JsonIgnore] public byte[]? Midi { get; init; }
     public string? MidiBase64 { get; init; }
-    public string Chip { get; init; } = "gameboy";
+    public string Chip { get; init; } = "gb";
     public string Instrument { get; init; } = "lead";
     public string Style { get; init; } = "arcade";
     public string Key { get; init; } = "C";

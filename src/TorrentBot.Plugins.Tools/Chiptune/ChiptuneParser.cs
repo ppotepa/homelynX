@@ -5,7 +5,7 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 
 internal static partial class ChiptuneParser
 {
-    private static readonly string[] Chips = ["gameboy", "nes", "snes", "sms", "c64_6581", "c64_8580", "genesis", "pce", "atari2600", "pokey", "pcspeaker", "zx_spectrum"];
+    private static readonly string[] Chips = ["gb", "gbc", "nes", "snes", "sms", "c64_6581", "c64_8580", "genesis", "pce", "atari2600", "pokey", "pcspeaker", "zx_spectrum"];
     private static readonly string[] Instruments = ["lead", "soft_lead", "bass", "pluck", "arp", "bell", "brass", "organ", "epiano", "strings", "drums", "kick", "snare", "hat"];
     private static readonly string[] Styles = ["arcade", "jrpg", "boss", "dungeon", "menu", "racing", "space", "dark", "happy", "chipbreak", "minimal"];
     private static readonly string[] Formats = ["wav", "mp3", "ogg", "flac"];
@@ -17,7 +17,9 @@ internal static partial class ChiptuneParser
         if (new[] { hasNotes, hasDegrees, hasGenerate, hasMidi }.Count(x => x) != 1)
             throw new FormatException("Choose exactly one source: notes=..., degrees=..., generate=scale|arp|riff, or attach one MIDI file.");
 
-        var chip = Get(o, "chip", Get(o, "preset", "gameboy")).ToLowerInvariant();
+        var chip = Get(o, "chip", Get(o, "preset", "gb")).ToLowerInvariant();
+        if (chip is "gameboy" or "dmg") chip = "gb";
+        if (chip is "gameboy_color" or "color") chip = "gbc";
         if (chip == "sega") chip = "sms";
         if (chip is "c64" or "sid") chip = "c64_6581";
         if (chip is "genesis_fm" or "megadrive") chip = "genesis";

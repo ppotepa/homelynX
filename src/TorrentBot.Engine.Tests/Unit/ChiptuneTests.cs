@@ -71,6 +71,8 @@ public sealed class ChiptuneTests
     }
 
     [Theory]
+    [InlineData("gb")]
+    [InlineData("gbc")]
     [InlineData("c64_6581")]
     [InlineData("c64_8580")]
     [InlineData("genesis")]
@@ -85,6 +87,15 @@ public sealed class ChiptuneTests
         var hardware = VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec);
         Assert.NotEmpty(hardware.Notes);
         Assert.Equal(chip, hardware.Chip);
+    }
+
+    [Theory]
+    [InlineData("gameboy", "gb")]
+    [InlineData("dmg", "gb")]
+    [InlineData("gameboy_color", "gbc")]
+    public void GameBoy_aliases_resolve_to_explicit_profiles(string input, string expected)
+    {
+        Assert.Equal(expected, ChiptuneParser.Parse($"notes=C4/4 chip={input}").Chip);
     }
 
     [Fact]
