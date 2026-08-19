@@ -148,8 +148,19 @@ public sealed class TelegramProductionAdapter
         if (response.Success && TryReadToolArtifact(response.ExecutionResult, out var artifact))
         {
             await DeliverTextAsync(mapped.ChatId, progressMessageId, response.Message, ct).ConfigureAwait(false);
-            if (artifact.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase))
-                await _messenger.SendPhotoAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
+            if (artifact.ContentType.Equals("image/png", StringComparison.OrdinalIgnoreCase)
+                || artifact.ContentType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await _messenger.SendPhotoAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    // Telegram rejects oversized or very tall photos. Preserve the artifact as a document.
+                    await _messenger.SendDocumentAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
+                }
+            }
             else if (artifact.ContentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase))
                 await _messenger.SendAudioAsync(mapped.ChatId, new MemoryStream(artifact.Content, writable: false), artifact.FileName, ct).ConfigureAwait(false);
             else if (artifact.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))

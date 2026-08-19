@@ -44,4 +44,25 @@ public sealed class ToolsArtifactIntegrationTests
             await engine.StopAsync();
         }
     }
+
+    [Fact]
+    public async Task Telegram_screenshot_command_delivers_the_page_artifact()
+    {
+        var messenger = new RecordingTelegramMessenger();
+        var engine = EngineBootstrap.Create();
+        await engine.StartAsync();
+        try
+        {
+            var adapter = new TelegramProductionAdapter(engine, messenger);
+            var response = await adapter.HandleMappedUpdateAsync(new TelegramUpdate(42, "1001", "/screenshot https://example.com", 12), 12);
+            Assert.Contains("screenshot", response, StringComparison.OrdinalIgnoreCase);
+            Assert.True(
+                messenger.Photos.Any(x => x.FileName == "page.png" && x.Size > 100)
+                || messenger.Documents.Any(x => x.FileName == "page.png" && x.Size > 100));
+        }
+        finally
+        {
+            await engine.StopAsync();
+        }
+    }
 }
