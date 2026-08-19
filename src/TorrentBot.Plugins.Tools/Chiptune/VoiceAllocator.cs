@@ -88,7 +88,8 @@ internal static class VoiceAllocator
         return new(voice, note.StartTick, note.DurationTick, Math.Clamp(note.Pitch, 0, 127), note.Velocity,
             InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
             note.Pan, note.Expression, note.PitchBend, note.PitchBendRange, note.Program,
-            note.NoteCutTicks, note.NoteDelayTicks, note.Retrigger, note.PitchSlide, note.VolumeSlide);
+            note.NoteCutTicks, note.NoteDelayTicks, note.Retrigger, note.PitchSlide, note.VolumeSlide,
+            note.Volume, note.Modulation, note.Aftertouch);
     }
 
     private static int InstrumentIdFor(NoteEvent note)

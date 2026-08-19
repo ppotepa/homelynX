@@ -43,7 +43,8 @@ internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, i
     int Pan = 64, int Expression = 127, int PitchBend = 8192, int PitchBendRange = 2,
     IReadOnlyList<PitchBendPoint>? PitchBends = null,
     int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0,
-    int PitchSlide = 0, int VolumeSlide = 0)
+    int PitchSlide = 0, int VolumeSlide = 0, int Volume = 127,
+    int Modulation = 0, int Aftertouch = 0)
 {
     public long EndTick => StartTick + DurationTick;
 }
@@ -108,7 +109,8 @@ internal sealed record ChiptuneSpec
 
 internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role,
     int InstrumentId = 0, int Pan = 64, int Expression = 127, int PitchBend = 8192, int PitchBendRange = 2, int Program = 0,
-    int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0, int PitchSlide = 0, int VolumeSlide = 0);
+    int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0, int PitchSlide = 0, int VolumeSlide = 0,
+    int Volume = 127, int Modulation = 0, int Aftertouch = 0);
 internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick,
     string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0,
     int SourceNoteCount = 0, int RevoicedNotes = 0, int ArpeggiatedNotes = 0, int DroppedNotes = 0, string Fidelity = "balanced");

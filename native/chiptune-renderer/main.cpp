@@ -287,7 +287,8 @@ static void fillSong(DivEngine& engine, const json& request) {
     int maxVolume = engine.getMaxVolumeChan(voice);
     int velocity = bounded(item.value("velocity", 100), 1, 127);
     int expression = bounded(item.value("expression", 127), 0, 127);
-    int effectiveVolume = (velocity * expression + 63) / 127;
+    int volume = bounded(item.value("volume", 127), 0, 127);
+    int effectiveVolume = (velocity * expression * volume + 8064) / (127 * 127);
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 1, maxVolume);
     int pan = bounded(item.value("pan", 64), 0, 127);
     int nextEffect = 0;
@@ -301,7 +302,8 @@ static void fillSong(DivEngine& engine, const json& request) {
       pattern->newData[row][DIV_PAT_FXVAL(0)] = (short)((left << 4) | right);
       nextEffect = 1;
     }
-    int vibrato = bounded(request.value("vibrato", 0), 0, 31);
+    int modulation = bounded(item.value("modulation", 0), 0, 127);
+    int vibrato = bounded(std::max(request.value("vibrato", 0), modulation * 31 / 127), 0, 31);
     if (vibrato > 0 && nextEffect < DIV_MAX_EFFECTS) {
       // E4xx sets the tracker vibrato range for the current channel.
       pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE4;
