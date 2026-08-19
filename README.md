@@ -71,11 +71,15 @@ The bot also exposes deterministic utility commands:
 /location save work 50.0614 19.9383
 /distance home work
 /map home
+/verbosity medium       # plan status + periodic orchestrator heartbeat
+/verbosity full         # live pipeline stages and heartbeat summary
 ```
 
 Screenshots are delivered as Telegram photos when possible and automatically fall back to documents when Telegram rejects an oversized or very tall image. Web Reader and screenshots require Chromium (`/usr/bin/chromium` in Docker). Parcel polling uses AfterShip when `AFTERSHIP_API_KEY` is configured; without it, `/track` keeps a local record and manual lookup link. Location commands store only coordinates explicitly supplied by each user.
 
 Chiptune rendering uses a pinned headless Furnace build in Docker for Game Boy, NES, SNES, Sega Master System, C64/SID 6581/8580, YM2612/Genesis, PC Engine, Atari TIA/POKEY, PC Speaker and ZX Beeper profiles. Composer buttons remain valid for seven days in the tools SQLite database.
+
+Telegram progress verbosity defaults to `medium`. After `plan: submitting to orchestrator`, the existing status message is refreshed every 10 seconds with elapsed time while a long operation is running. Use `verbosity full` for live pipeline stages; use `verbosity off` to disable progress edits.
 
 ## Project layout
 

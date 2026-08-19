@@ -133,7 +133,27 @@ public sealed class TelegramProductionAdapter
             await DeliverTextAsync(mapped.ChatId, progressMessageId, "plan: submitting to orchestrator", ct).ConfigureAwait(false);
         }
 
-        var response = await _host.HandleUpdateAsync(mapped, user, cancellationToken: ct, invocationRecorder: invocationRecorder).ConfigureAwait(false);
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var heartbeatTask = verbosity >= VerbosityLevel.Medium
+            ? RunOrchestratorHeartbeatAsync(
+                mapped.ChatId,
+                progressMessageId,
+                formatter,
+                throttler,
+                heartbeatCts.Token)
+            : Task.CompletedTask;
+
+        TelegramBotResponse response;
+        try
+        {
+            response = await _host.HandleUpdateAsync(mapped, user, cancellationToken: ct, invocationRecorder: invocationRecorder).ConfigureAwait(false);
+        }
+        finally
+        {
+            heartbeatCts.Cancel();
+            try { await heartbeatTask.ConfigureAwait(false); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+        }
 
         // Flush any pending progress edits before writing final response
         if (throttler is not null)
@@ -211,6 +231,45 @@ public sealed class TelegramProductionAdapter
         await DeliverTextAsync(mapped.ChatId, progressMessageId, finalText, ct).ConfigureAwait(false);
 
         return finalText;
+    }
+
+    private async Task RunOrchestratorHeartbeatAsync(
+        long chatId,
+        long progressMessageId,
+        ProgressMessageFormatter? formatter,
+        ProgressThrottler? throttler,
+        CancellationToken ct)
+    {
+        var started = DateTimeOffset.UtcNow;
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+            while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
+            {
+                var elapsed = DateTimeOffset.UtcNow - started;
+                var detail = $"orchestrator nadal pracuje — elapsed {elapsed:mm\\:ss}";
+                if (formatter is not null && throttler is not null)
+                {
+                    formatter.HandleStage("heartbeat", detail);
+                    throttler.Submit(formatter.Format(), immediate: true);
+                }
+                else
+                {
+                    await _messenger.EditTextAsync(
+                        chatId,
+                        progressMessageId,
+                        $"plan: submitting to orchestrator\n⏳ {detail}",
+                        ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+        }
+        catch (Exception) when (!ct.IsCancellationRequested)
+        {
+            // Progress must never turn a successful orchestrator response into an error.
+        }
     }
 
     private async Task<ITelegramUpdate> PrepareChiptuneAttachmentAsync(ITelegramUpdate update, CancellationToken ct)

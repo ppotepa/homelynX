@@ -7,6 +7,7 @@ public sealed class ProgressMessageFormatter
     private readonly List<string> _entries = [];
     private readonly object _gate = new();
     private string? _userText;
+    private string? _heartbeat;
 
     public void SetUserText(string text)
     {
@@ -37,6 +38,9 @@ public sealed class ProgressMessageFormatter
                 case "confirm":
                     _entries.Add(detail == "confirmed" ? "Potwierdzono." : "Odrzucono.");
                     break;
+                case "heartbeat":
+                    _heartbeat = detail;
+                    break;
             }
         }
     }
@@ -52,6 +56,11 @@ public sealed class ProgressMessageFormatter
             if (!string.IsNullOrWhiteSpace(_userText))
             {
                 sb.AppendLine($"Komenda: {_userText}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(_heartbeat))
+            {
+                sb.AppendLine($"⏳ {_heartbeat}");
             }
 
             foreach (var entry in _entries)
