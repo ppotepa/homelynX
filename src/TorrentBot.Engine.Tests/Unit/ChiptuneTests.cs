@@ -79,6 +79,27 @@ public sealed class ChiptuneTests
         Assert.True(hardware.DroppedNotes >= 1);
     }
 
+    [Fact]
+    public void Fidelity_preserve_arpeggiates_while_balanced_uses_voice_stealing()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 60, 100, TrackRole.Lead),
+            new NoteEvent(0, 960, 64, 100, TrackRole.Lead),
+            new NoteEvent(0, 960, 67, 100, TrackRole.Lead)
+        ], TempoMap.Fixed(120));
+        var preserve = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=preserve");
+        var balanced = preserve with { Fidelity = "balanced" };
+
+        var preserved = VoiceAllocator.Allocate(song, preserve);
+        var balancedResult = VoiceAllocator.Allocate(song, balanced);
+
+        Assert.True(preserved.ArpeggiatedNotes > 0);
+        Assert.Equal(0, preserved.DroppedNotes);
+        Assert.True(balancedResult.RevoicedNotes > 0);
+        Assert.Equal(0, balancedResult.ArpeggiatedNotes);
+    }
+
     [Theory]
     [InlineData("gb")]
     [InlineData("gbc")]

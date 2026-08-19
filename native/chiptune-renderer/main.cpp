@@ -64,12 +64,12 @@ static DivSample* makeSample(int voice, const std::string& patch) {
   for (int i = 0; i < count; ++i) {
     double phase = (double)i / count;
     double value;
-    if (patch == "drums" || patch == "kick" || patch == "snare" || patch == "hat") {
+    if (patch == "drums" || patch == "kick" || patch == "snare" || patch == "hat" || patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride") {
       uint32_t bit = ((noise >> 0) ^ (noise >> 1)) & 1U;
       noise = (noise >> 1) | (bit << 14);
       value = (noise & 1U) ? .65 : -.65;
     } else if (patch == "bass") value = 1.0 - 2.0 * phase;
-    else if (patch == "bell" || patch == "strings" || patch == "epiano") value = std::sin(phase * 2.0 * M_PI);
+    else if (patch == "bell" || patch == "strings" || patch == "epiano" || patch == "flute" || patch == "brass") value = std::sin(phase * 2.0 * M_PI);
     else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
     else if (voice == 7) value = 1.0 - 2.0 * phase;
     else value = phase < .5 ? .72 : -.72;

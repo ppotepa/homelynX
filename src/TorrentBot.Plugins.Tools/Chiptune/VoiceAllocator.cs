@@ -40,7 +40,7 @@ internal static class VoiceAllocator
             {
                 var voices = map.TryGetValue(note.Role, out var mapped) ? mapped : map[TrackRole.Lead];
                 var voice = voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
-                if (voice < 0 && spec.Fidelity != "strict" && (note.Role is TrackRole.Lead or TrackRole.Harmony) && voices.Length == 1 && group.Count() > 1)
+                if (voice < 0 && spec.Fidelity == "preserve" && (note.Role is TrackRole.Lead or TrackRole.Harmony) && voices.Length == 1 && group.Count() > 1)
                 {
                     // A monophonic target expresses a simultaneous chord as a
                     // short deterministic arpeggio instead of silently losing it.
