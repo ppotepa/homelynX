@@ -29,12 +29,12 @@ MIDI type 0 and type 1 tracks are merged by absolute tick. Tempo events form a c
 
 After sending audio, Telegram offers octave, semitone, BPM, variation, instrument, chip and repeat controls. The normalized specification is retained in SQLite for seven days and callbacks are bound to the originating user and chat. There is no background session poller.
 
-## Runtime limits
+## Runtime behavior
 
-- 5 MB MIDI input
-- 32,768 notes
-- 120 seconds of audio
-- one render at a time per bot process
-- 60-second renderer timeout by default (`TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS`)
+- MIDI input remains bounded by the Telegram/download safety limits.
+- There is no composition note-count or duration rejection.
+- Furnace uses up to 255 patterns of 256 rows; files beyond that tracker capacity receive an explicit error instead of being silently truncated.
+- One render runs at a time per bot process.
+- Renderer timeout is 600 seconds by default and can be changed with `TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS` (5–3600 seconds).
 
 Production uses `CHIPTUNE_RENDERER_PATH=/usr/local/bin/homelynx-chiptune-renderer`. If the configured helper is missing or fails, the command returns a diagnostic error and does not silently claim hardware fidelity.

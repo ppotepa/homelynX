@@ -129,8 +129,10 @@ static void fillSong(DivEngine& engine, const json& request) {
   sub->speeds.val[0] = 1;
   long endTick = request.value("endTick", 960L);
   int endRow = std::max(1, (int)std::ceil(endTick / 240.0));
-  sub->patLen = endRow <= 256 ? bounded(endRow + 1, 2, 256) : 64;
-  sub->ordersLen = bounded((endRow + sub->patLen - 1) / sub->patLen, 1, 255);
+  sub->patLen = 256;
+  const int maxRows = 255 * sub->patLen;
+  if (endRow > maxRows) throw std::runtime_error("MIDI is larger than Furnace tracker capacity (255 patterns x 256 rows).");
+  sub->ordersLen = std::max(1, (endRow + sub->patLen - 1) / sub->patLen);
   for (int channel = 0; channel < engine.song.chans; ++channel)
     for (int order = 0; order < sub->ordersLen; ++order)
       sub->orders.ord[channel][order] = (unsigned char)order;

@@ -26,7 +26,7 @@ internal static class ChiptuneTools
         else spec = ChiptuneParser.Parse(input);
         var song = ChiptuneParser.Compose(spec);
         var hardware = VoiceAllocator.Allocate(song, spec);
-        var waitSeconds = ReadInt("TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS", 60, 5, 300);
+        var waitSeconds = ReadInt("TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS", 600, 5, 3600);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(waitSeconds));
         await RenderGate.WaitAsync(timeout.Token);
