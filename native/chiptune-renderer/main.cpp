@@ -51,12 +51,12 @@ static DivSystem systemFor(const std::string& chip) {
 }
 
 static DivSample* makeSample(int voice, const std::string& patch) {
-  const int count = 512;
+  const int count = patch == "kick" || patch == "snare" || patch == "hat" ? 384 : 1024;
   DivSample* sample = new DivSample();
-  sample->name = "Homelynx generated sample";
+  sample->name = "Homelynx SNES patch " + patch;
   sample->depth = DIV_SAMPLE_DEPTH_16BIT;
   sample->centerRate = 16726;
-  sample->loop = true;
+  sample->loop = patch != "kick" && patch != "snare" && patch != "hat";
   sample->loopStart = 0;
   sample->loopEnd = count;
   if (!sample->init(count)) throw std::runtime_error("could not allocate SNES sample");
@@ -64,13 +64,26 @@ static DivSample* makeSample(int voice, const std::string& patch) {
   for (int i = 0; i < count; ++i) {
     double phase = (double)i / count;
     double value;
-    if (patch == "drums" || patch == "kick" || patch == "snare" || patch == "hat" || patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride") {
+    if (patch == "drums" || patch == "snare" || patch == "hat" || patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride") {
       uint32_t bit = ((noise >> 0) ^ (noise >> 1)) & 1U;
       noise = (noise >> 1) | (bit << 14);
-      value = (noise & 1U) ? .65 : -.65;
-    } else if (patch == "bass") value = 1.0 - 2.0 * phase;
-    else if (patch == "bell" || patch == "strings" || patch == "epiano" || patch == "flute" || patch == "brass") value = std::sin(phase * 2.0 * M_PI);
-    else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
+      double envelope = 1.0 - phase;
+      value = (noise & 1U) ? .65 * envelope : -.65 * envelope;
+    } else if (patch == "kick") {
+      value = std::sin((phase * 1.8 + phase * phase * 12.0) * 2.0 * M_PI) * (1.0 - phase);
+    } else if (patch == "bass") {
+      value = (1.0 - 2.0 * phase) * .8 + std::sin(phase * 2.0 * M_PI) * .2;
+    } else if (patch == "bell") {
+      value = (std::sin(phase * 2.0 * M_PI) * .7 + std::sin(phase * 5.01 * 2.0 * M_PI) * .3) * (1.0 - phase);
+    } else if (patch == "strings" || patch == "pad") {
+      value = std::sin(phase * 2.0 * M_PI) * .65 + std::sin(phase * 3.0 * 2.0 * M_PI) * .2 + std::sin(phase * 5.0 * 2.0 * M_PI) * .15;
+    } else if (patch == "brass") {
+      value = (1.0 - 2.0 * phase) * .5 + std::sin(phase * 2.0 * M_PI) * .5;
+    } else if (patch == "flute" || patch == "reed") {
+      value = std::sin(phase * 2.0 * M_PI) * .85 + std::sin(phase * 2.0 * 2.0 * M_PI) * .15;
+    } else if (patch == "epiano") {
+      value = std::sin(phase * 2.0 * M_PI) * .7 + std::sin(phase * 4.0 * 2.0 * M_PI) * .3;
+    } else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
     else if (voice == 7) value = 1.0 - 2.0 * phase;
     else value = phase < .5 ? .72 : -.72;
     sample->data16[i] = (short)(value * 30000.0);
@@ -168,10 +181,14 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->amiga.useSample = true;
       instrument->amiga.initSample = sampleIndex;
       instrument->snes.useEnv = true;
-      instrument->snes.a = (unsigned char)attack;
-      instrument->snes.d = (unsigned char)decay;
-      instrument->snes.s = (unsigned char)sustain;
-      instrument->snes.r = (unsigned char)release;
+      int patchAttack = patch == "strings" || patch == "pad" ? 12 : patch == "brass" ? 3 : attack;
+      int patchDecay = patch == "bell" || patch == "epiano" ? 18 : decay;
+      int patchSustain = patch == "kick" || patch == "snare" || patch == "hat" ? 0 : patch == "strings" || patch == "pad" ? 15 : sustain;
+      int patchRelease = patch == "bell" || patch == "strings" || patch == "pad" ? 15 : release;
+      instrument->snes.a = (unsigned char)bounded(patchAttack, 0, 31);
+      instrument->snes.d = (unsigned char)bounded(patchDecay, 0, 31);
+      instrument->snes.s = (unsigned char)bounded(patchSustain, 0, 31);
+      instrument->snes.r = (unsigned char)bounded(patchRelease, 0, 31);
     } else if (chip == "pce") {
       instrument->type = DIV_INS_PCE;
       int waveIndex = makeWave(engine, voice, patch);
