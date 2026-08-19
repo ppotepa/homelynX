@@ -77,6 +77,16 @@ public sealed class EngineHost : IEngine
         _options.ConversationContextStore = store;
     }
 
+    public void SetLoggerFactory(ILoggerFactory loggerFactory)
+    {
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+        lock (_lifecycleGate)
+        {
+            if (_isRunning) throw new InvalidOperationException("Logger factory must be configured before the engine starts.");
+            _options.LoggerFactory = loggerFactory;
+        }
+    }
+
     public void RegisterPlugin(IPlugin plugin)
     {
         ArgumentNullException.ThrowIfNull(plugin);

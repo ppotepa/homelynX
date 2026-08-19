@@ -50,6 +50,12 @@ public sealed class ProgressMessageFormatter
                 case "heartbeat":
                     _heartbeat = detail;
                     break;
+                case "chiptune:parsed":
+                case "chiptune:composed":
+                case "chiptune:rendering":
+                case "chiptune:encoded":
+                    _entries.Add($"Chiptune [{stage[9..]}]: {detail}");
+                    break;
             }
         }
     }

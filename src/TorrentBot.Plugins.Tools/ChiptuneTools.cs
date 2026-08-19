@@ -1,4 +1,5 @@
 using TorrentBot.Contracts.Capabilities;
+using TorrentBot.Contracts.Pipeline;
 using TorrentBot.Plugins.Tools.Chiptune;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -9,7 +10,7 @@ internal static class ChiptuneTools
 {
     private static readonly SemaphoreSlim RenderGate = new(1, 1);
 
-    public static async Task<CapabilityResult> ExecuteAsync(string input, string user, string chat, ToolsStore store, CancellationToken ct)
+    public static async Task<CapabilityResult> ExecuteAsync(string input, string user, string chat, ToolsStore store, IProgressReporter? progress, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(input))
             return new(true, null, "Usage: /chiptune notes=\"C4/8 E4/8 G4/4\" | degrees=\"1/8 3/8 5/4\" key=D scale=minor | generate=song seed=42 chip=genesis");
@@ -24,12 +25,15 @@ internal static class ChiptuneTools
             spec=ApplyAction(spec,callback[1]);
         }
         else spec = ChiptuneParser.Parse(input);
+        progress?.Report("chiptune:parsed", $"chip={spec.Chip}, format={spec.Format}");
         // Sessions created by older builds may not contain Format. Keep the
         // user-facing default stable: chiptune is delivered as MP3 unless a
         // format was explicitly requested.
         if (string.IsNullOrWhiteSpace(spec.Format)) spec = spec with { Format = "mp3" };
         var song = ChiptuneParser.Compose(spec);
+        progress?.Report("chiptune:composed", $"{song.Notes.Count} notes, {song.DurationSeconds:F1}s");
         var hardware = VoiceAllocator.Allocate(song, spec);
+        progress?.Report("chiptune:rendering", $"backend={(Environment.GetEnvironmentVariable("CHIPTUNE_RENDERER_PATH") is null ? "managed" : "furnace")}");
         var waitSeconds = ReadInt("TORRENTBOT_CHIPTUNE_RENDER_TIMEOUT_SECONDS", 600, 5, 3600);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(waitSeconds));
@@ -38,6 +42,7 @@ internal static class ChiptuneTools
         try { wav = await FurnaceChipRenderer.RenderAsync(hardware, timeout.Token); }
         finally { RenderGate.Release(); }
         var output = await AudioEncoder.EncodeAsync(wav, spec.Format, timeout.Token);
+        progress?.Report("chiptune:encoded", $"mp3={output.Length / 1024} KiB");
         var type = spec.Format switch { "mp3"=>"audio/mpeg", "ogg"=>"audio/ogg", "flac"=>"audio/flac", _=>"audio/wav" };
         var token=Token();
         await store.SaveChiptuneSession(token,user,chat,JsonSerializer.Serialize(spec));

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using TorrentBot.Adapters.Telegram.Sdk;
@@ -37,6 +38,12 @@ public static class Program
         var client = new TelegramBotClient(token);
         var messenger = new TelegramBotSdkMessenger(client);
         var engine = EngineBootstrap.Create(completionNotifier: new TelegramDownloadCompletionNotifier(messenger));
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddSimpleConsole(options => options.SingleLine = true);
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+        engine.SetLoggerFactory(loggerFactory);
         await engine.StartAsync(cts.Token).ConfigureAwait(false);
         await CapabilityManifestExporter.ExportIfConfiguredAsync(engine, cts.Token).ConfigureAwait(false);
         var adapter = new TelegramProductionAdapter(engine, messenger);

@@ -10,7 +10,7 @@ namespace TorrentBot.Engine;
 
 public sealed class EngineOptions
 {
-    public ILoggerFactory? LoggerFactory { get; init; }
+    public ILoggerFactory? LoggerFactory { get; set; }
     public bool DryRunSkipsJobPersistence { get; init; } = true;
     public AclService? AclService { get; init; }
     public IConfirmationStore? ConfirmationStore { get; init; }
