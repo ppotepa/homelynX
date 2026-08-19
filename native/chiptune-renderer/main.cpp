@@ -204,7 +204,8 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->c64.duty = (unsigned short)((patch == "soft_lead" ? 12 : duty) * 4095 / 100);
       instrument->c64.toFilter = patch == "bass" || patch == "pad" || patch == "strings" || voice == 1;
       instrument->c64.lp = true;
-      instrument->c64.cut = patch == "bass" ? 650 : patch == "pad" ? 1200 : 900;
+      int requestedCutoff = bounded(request.value("filter", 0), 0, 2047);
+      instrument->c64.cut = requestedCutoff > 0 ? requestedCutoff : patch == "bass" ? 650 : patch == "pad" ? 1200 : 900;
       instrument->c64.res = patch == "bell" || patch == "pad" ? 8 : 5;
     } else if (chip == "nes") {
       instrument->type = DIV_INS_NES;
@@ -289,6 +290,7 @@ static void fillSong(DivEngine& engine, const json& request) {
     int effectiveVolume = (velocity * expression + 63) / 127;
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 1, maxVolume);
     int pan = bounded(item.value("pan", 64), 0, 127);
+    int nextEffect = 0;
     if (pan != 64) {
       // Furnace's 88xy effect uses one nibble for left and one for right.
       // Keep centered MIDI pan implicit so chips without panning support are
@@ -297,6 +299,14 @@ static void fillSong(DivEngine& engine, const json& request) {
       int right = bounded(pan * 15 / 127, 0, 15);
       pattern->newData[row][DIV_PAT_FX(0)] = 0x88;
       pattern->newData[row][DIV_PAT_FXVAL(0)] = (short)((left << 4) | right);
+      nextEffect = 1;
+    }
+    int vibrato = bounded(request.value("vibrato", 0), 0, 31);
+    if (vibrato > 0 && nextEffect < DIV_MAX_EFFECTS) {
+      // E4xx sets the tracker vibrato range for the current channel.
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE4;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)vibrato;
+      nextEffect++;
     }
     double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
     double residual = bendSemitones - std::round(bendSemitones);
@@ -304,8 +314,10 @@ static void fillSong(DivEngine& engine, const json& request) {
       // E5xx is Furnace's fine pitch effect, with 0x80 as the neutral value.
       // The C# arranger already encoded the integral semitone in the note;
       // only emit the residual here to avoid applying the bend twice.
-      pattern->newData[row][DIV_PAT_FX(1)] = 0xE5;
-      pattern->newData[row][DIV_PAT_FXVAL(1)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+      if (nextEffect < DIV_MAX_EFFECTS) {
+        pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE5;
+        pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+      }
     }
     if (endNoteRow < sub->ordersLen * sub->patLen) {
       int offOrder = endNoteRow / sub->patLen, offRow = endNoteRow % sub->patLen;
