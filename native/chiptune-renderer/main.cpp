@@ -136,9 +136,9 @@ static void fillSong(DivEngine& engine, const json& request) {
   int bpm = bounded(request.value("bpm", 140), 40, 300);
   long endTick = request.value("endTick", 960L);
   constexpr int maxRows = 255 * 256;
-  // Use 1/64-note rows for normal songs. For unusually long MIDI files,
+  // Use 1/256-note rows for normal songs. For unusually long MIDI files,
   // reduce resolution only as much as needed to fit Furnace's order table.
-  int ticksPerRow = std::max(60, (int)std::ceil(endTick / (double)maxRows));
+  int ticksPerRow = std::max(15, (int)std::ceil(endTick / (double)maxRows));
   sub->hz = (float)bpm * 16.0f / ticksPerRow;
   sub->speeds.len = 1;
   sub->speeds.val[0] = 1;
