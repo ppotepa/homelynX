@@ -42,7 +42,7 @@ internal static class ChiptuneTools
         try { wav = await FurnaceChipRenderer.RenderAsync(hardware, timeout.Token); }
         finally { RenderGate.Release(); }
         var output = await AudioEncoder.EncodeAsync(wav, spec.Format, timeout.Token);
-        progress?.Report("chiptune:encoded", $"mp3={output.Length / 1024} KiB");
+        progress?.Report("chiptune:encoded", $"{spec.Format}={output.Length / 1024} KiB");
         var type = spec.Format switch { "mp3"=>"audio/mpeg", "ogg"=>"audio/ogg", "flac"=>"audio/flac", _=>"audio/wav" };
         var token=Token();
         await store.SaveChiptuneSession(token,user,chat,JsonSerializer.Serialize(spec));
