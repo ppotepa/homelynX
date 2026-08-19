@@ -203,7 +203,19 @@ static void fillSong(DivEngine& engine, const json& request) {
     pattern->newData[row][DIV_PAT_INS] = (short)bounded(item.value("instrumentId", voice), 0, 179);
     int maxVolume = engine.getMaxVolumeChan(voice);
     int velocity = bounded(item.value("velocity", 100), 1, 127);
-    pattern->newData[row][DIV_PAT_VOL] = (short)bounded((velocity * maxVolume + 63) / 127, 1, maxVolume);
+    int expression = bounded(item.value("expression", 127), 0, 127);
+    int effectiveVolume = (velocity * expression + 63) / 127;
+    pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 1, maxVolume);
+    int pan = bounded(item.value("pan", 64), 0, 127);
+    if (pan != 64) {
+      // Furnace's 88xy effect uses one nibble for left and one for right.
+      // Keep centered MIDI pan implicit so chips without panning support are
+      // unaffected by an unnecessary effect column.
+      int left = bounded((127 - pan) * 15 / 127, 0, 15);
+      int right = bounded(pan * 15 / 127, 0, 15);
+      pattern->newData[row][DIV_PAT_FX(0)] = 0x88;
+      pattern->newData[row][DIV_PAT_FXVAL(0)] = (short)((left << 4) | right);
+    }
     if (endNoteRow < sub->ordersLen * sub->patLen) {
       int offOrder = endNoteRow / sub->patLen, offRow = endNoteRow % sub->patLen;
       DivPattern* offPattern = sub->pat[voice].getPattern(offOrder, true);
