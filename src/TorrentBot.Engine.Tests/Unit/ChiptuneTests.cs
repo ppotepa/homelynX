@@ -161,7 +161,7 @@ public sealed class ChiptuneTests
         var midi = new byte[]
         {
             (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
-            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,23,
             0,0x90,60,100, 30,0x80,60,0,
             15,0x90,62,100, 45,0x80,62,0,
             0,0xFF,0x2F,0
@@ -181,7 +181,7 @@ public sealed class ChiptuneTests
         var midi = new byte[]
         {
             (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
-            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,23,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
             0,0xC0,32, 0,0xB0,64,127, 0,0x90,60,100,
             30,0x80,60,0, 30,0xB0,64,0, 0,0xFF,0x2F,0
         };
@@ -190,6 +190,24 @@ public sealed class ChiptuneTests
 
         Assert.Equal(32, note.Program);
         Assert.Equal(120, note.DurationTick);
+    }
+
+    [Fact]
+    public void Midi_import_turns_pitch_bend_automation_into_timed_note_segments()
+    {
+        var midi = new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
+            0,0x90,60,100, 30,0xE0,0,96, 30,0xE0,0,64, 30,0x80,60,0,
+            0,0xFF,0x2F,0
+        };
+        var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
+        var notes = ChiptuneParser.Compose(spec).Notes;
+
+        Assert.Equal([0L, 60L, 120L], notes.Select(x => x.StartTick));
+        Assert.Equal([60, 61, 60], notes.Select(x => x.Pitch));
+        Assert.All(notes, x => Assert.Equal(60L, x.DurationTick));
     }
 
     [Fact]
