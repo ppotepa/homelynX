@@ -37,6 +37,10 @@ static DivSystem systemFor(const std::string& chip) {
   if (chip == "sms") return DIV_SYSTEM_SMS;
   if (chip == "c64_6581") return DIV_SYSTEM_C64_6581;
   if (chip == "c64_8580") return DIV_SYSTEM_C64_8580;
+  // Genesis is a compound machine: six YM2612 FM channels plus the
+  // SN76489 PSG.  The adapter adds the two systems separately below instead
+  // of selecting Furnace's internal compound marker (which is intended for
+  // file import/export, not direct engine dispatch).
   if (chip == "genesis") return DIV_SYSTEM_YM2612;
   if (chip == "pce") return DIV_SYSTEM_PCE;
   if (chip == "atari2600") return DIV_SYSTEM_TIA;
@@ -81,7 +85,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   int decay = bounded(request.value("decay", 8), 0, 31);
   int sustain = bounded(request.value("sustain", 12), 0, 31);
   int release = bounded(request.value("release", 8), 0, 31);
-  int voices = chip == "snes" ? 8 : chip == "genesis" ? 6 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
+  int voices = chip == "snes" ? 8 : chip == "genesis" ? 10 : chip == "pce" ? 6 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
   int instruments = voices;
   std::map<int, std::string> patches;
   for (const auto& item : request.at("notes")) patches[item.value("instrumentId", 0)] = item.value("instrument", "lead");
@@ -102,6 +106,10 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->gb.soundLen = 64;
       instrument->gb.softEnv = chip == "gbc" || patch == "soft_lead" || patch == "strings";
       instrument->gb.alwaysInit = true;
+    } else if (chip == "genesis" && voice >= 6) {
+      // Channels 6..9 are the Genesis PSG (SN76489), whose instruments use
+      // Furnace's standard pulse/noise instrument type.
+      instrument->type = DIV_INS_STD;
     } else if (chip == "genesis") {
       instrument->type = DIV_INS_FM;
       instrument->fm.alg = patch == "epiano" || patch == "bell" ? 4 : patch == "brass" ? 1 : wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
@@ -201,6 +209,9 @@ int main(int argc, char** argv) {
     engine.setAudio(DIV_AUDIO_DUMMY);
     if (!engine.init()) throw std::runtime_error("could not initialize Furnace engine");
     if (!engine.changeSystem(0, systemFor(chip), false)) throw std::runtime_error("could not select Furnace system");
+    if (chip == "genesis" && !engine.addSystem(DIV_SYSTEM_SMS)) {
+      throw std::runtime_error("could not add Genesis SN76489 PSG");
+    }
     configureInstruments(engine, chip, request);
     fillSong(engine, request);
     DivAudioExportOptions options;

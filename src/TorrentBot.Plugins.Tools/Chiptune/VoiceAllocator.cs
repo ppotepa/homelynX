@@ -13,7 +13,10 @@ internal static class VoiceAllocator
             ["snes"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0,1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3,4,5], [TrackRole.Harmony]=[6], [TrackRole.Arp]=[7] }
             , ["c64_6581"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[1], [TrackRole.Drums]=[2] }
             , ["c64_8580"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[1], [TrackRole.Drums]=[2] }
-            , ["genesis"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1,2], [TrackRole.Arp]=[3], [TrackRole.Bass]=[4], [TrackRole.Drums]=[5] }
+            // Genesis/Mega Drive: FM1-6 (0..5) plus PSG tone/noise (6..9).
+            // Keep bass on FM and reserve the PSG for cheap harmony/arp and
+            // percussion, while still allowing polyphonic lead material.
+            , ["genesis"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0,1], [TrackRole.Harmony]=[2,3,6,7], [TrackRole.Arp]=[6,7,8], [TrackRole.Bass]=[4], [TrackRole.Drums]=[9] }
             , ["pce"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2,3], [TrackRole.Bass]=[4], [TrackRole.Drums]=[5] }
             , ["atari2600"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Bass]=[1], [TrackRole.Drums]=[1] }
             , ["pokey"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[3], [TrackRole.Drums]=[3] }
@@ -45,6 +48,8 @@ internal static class VoiceAllocator
                     var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == voices[0]) * slice;
                     var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note.Role));
                     allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
+                    voiceUntil[voices[0]] = Math.Max(voiceUntil.GetValueOrDefault(voices[0]), arpStart + Math.Min(slice, note.DurationTick));
+                    lastOnVoice[voices[0]] = allocated.Count - 1;
                     arpeggiated++;
                     continue;
                 }
