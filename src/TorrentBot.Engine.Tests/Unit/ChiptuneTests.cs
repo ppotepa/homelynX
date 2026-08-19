@@ -101,6 +101,25 @@ public sealed class ChiptuneTests
     }
 
     [Theory]
+    [InlineData("atari2600", 1)]
+    [InlineData("pcspeaker", 2)]
+    [InlineData("zx_spectrum", 2)]
+    public void Strict_mode_reports_loss_on_single_or_two_voice_targets(string chip, int minimumDropped)
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 480, 48, 100, TrackRole.Lead),
+            new NoteEvent(0, 480, 55, 100, TrackRole.Harmony),
+            new NoteEvent(0, 480, 60, 100, TrackRole.Bass)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse($"notes=C4/4 chip={chip} fidelity=strict");
+
+        var hardware = VoiceAllocator.Allocate(song, spec);
+
+        Assert.True(hardware.DroppedNotes >= minimumDropped);
+    }
+
+    [Theory]
     [InlineData("gb")]
     [InlineData("gbc")]
     [InlineData("c64_6581")]
@@ -271,5 +290,28 @@ public sealed class ChiptuneTests
         Assert.Equal("kick", notes[0].Instrument);
         Assert.Equal(3, notes[1].Voice);
         Assert.Equal("hat", notes[1].Instrument);
+    }
+
+    [Theory]
+    [InlineData("gb")]
+    [InlineData("gbc")]
+    [InlineData("nes")]
+    [InlineData("snes")]
+    [InlineData("sms")]
+    [InlineData("c64_6581")]
+    [InlineData("c64_8580")]
+    [InlineData("genesis")]
+    [InlineData("pce")]
+    [InlineData("atari2600")]
+    [InlineData("pokey")]
+    [InlineData("pcspeaker")]
+    [InlineData("zx_spectrum")]
+    public void Every_chip_profile_produces_non_silent_managed_audio(string chip)
+    {
+        var spec = ChiptuneParser.Parse($"generate=song chip={chip} bars=1 format=wav");
+        var wav = ManagedChipRenderer.Render(VoiceAllocator.Allocate(ChiptuneParser.Compose(spec), spec));
+        var samples = Enumerable.Range(0, (wav.Length - 44) / 2).Select(i => BitConverter.ToInt16(wav, 44 + i * 2));
+
+        Assert.True(samples.Any(x => x != 0), $"{chip} produced silence.");
     }
 }
