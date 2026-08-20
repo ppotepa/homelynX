@@ -19,6 +19,8 @@ public sealed class MediaDownloader : IDownloader
     ];
 
     private readonly ConcurrentDictionary<string, MediaEntry> _downloads = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _userGates = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _downloadGate;
     private readonly string _ytDlpPath;
     private readonly string _ffmpegPath;
     private readonly string _outputRoot;
@@ -26,13 +28,19 @@ public sealed class MediaDownloader : IDownloader
     private readonly string _cookiesDirectory;
     private readonly string? _configuredCookiesFile;
     private readonly int _maxDurationSeconds;
+    private readonly int _maxConcurrency;
+    private readonly int _maxPerUser;
+    private readonly int _timeoutSeconds;
 
     public MediaDownloader(
         string? ytDlpPath = null,
         string? ffmpegPath = null,
         string? outputRoot = null,
         string? tempRoot = null,
-        int? maxDurationSeconds = null)
+        int? maxDurationSeconds = null,
+        int? maxConcurrency = null,
+        int? maxPerUser = null,
+        int? timeoutSeconds = null)
     {
         _ytDlpPath = ytDlpPath ?? Environment.GetEnvironmentVariable("YTDLP_PATH") ?? "yt-dlp";
         _ffmpegPath = ffmpegPath ?? Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
@@ -53,6 +61,11 @@ public sealed class MediaDownloader : IDownloader
         {
             _maxDurationSeconds = 14_400;
         }
+
+        _maxConcurrency = ReadPositiveSetting(maxConcurrency, "MEDIA_DOWNLOAD_MAX_CONCURRENCY", 4);
+        _maxPerUser = ReadPositiveSetting(maxPerUser, "MEDIA_DOWNLOAD_MAX_PER_USER", 2);
+        _timeoutSeconds = ReadPositiveSetting(timeoutSeconds, "MEDIA_DOWNLOAD_TIMEOUT_SECONDS", 1_200);
+        _downloadGate = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
     }
 
     public string Type => "media";
@@ -103,6 +116,7 @@ public sealed class MediaDownloader : IDownloader
             quality,
             clip,
             subtitles,
+            request.OwnerUserId ?? "unknown",
             "probing",
             0,
             0,
@@ -110,6 +124,7 @@ public sealed class MediaDownloader : IDownloader
             null,
             new CancellationTokenSource());
         _downloads[id] = entry;
+        Update(id, e => e with { Status = "queued" });
 
         _ = Task.Run(() => DownloadAsync(entry, probe), CancellationToken.None);
         return new DownloadTicket(id, Type, probe.Title);
@@ -170,9 +185,51 @@ public sealed class MediaDownloader : IDownloader
 
     private async Task DownloadAsync(MediaEntry entry, MediaProbe probe)
     {
+        var userGate = _userGates.GetOrAdd(entry.OwnerUserId, _ => new SemaphoreSlim(_maxPerUser, _maxPerUser));
+        var globalAcquired = false;
+        var userAcquired = false;
         try
         {
-            Log(entry, $"starting provider=media format={entry.Format} quality={entry.Quality}");
+            await _downloadGate.WaitAsync(entry.Cancellation.Token).ConfigureAwait(false);
+            globalAcquired = true;
+            await userGate.WaitAsync(entry.Cancellation.Token).ConfigureAwait(false);
+            userAcquired = true;
+            await DownloadCoreAsync(entry, probe).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (entry.Cancellation.IsCancellationRequested)
+            {
+                Log(entry, "cancelled");
+                Update(entry.Id, e => e with { Status = "cancelled" });
+            }
+            else
+            {
+                var message = $"Pobieranie przekroczyło limit {_timeoutSeconds} s.";
+                Log(entry, message);
+                Update(entry.Id, e => e with { Status = "failed", Error = message });
+            }
+        }
+        catch (Exception exception)
+        {
+            Log(entry, $"failed: {exception.Message}");
+            Update(entry.Id, e => e with { Status = "failed", Error = exception.Message });
+        }
+        finally
+        {
+            if (userAcquired) userGate.Release();
+            if (globalAcquired) _downloadGate.Release();
+            TryDelete(entry.TempDirectory);
+            entry.Process?.Dispose();
+        }
+    }
+
+    private async Task DownloadCoreAsync(MediaEntry entry, MediaProbe probe)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(entry.Cancellation.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(_timeoutSeconds));
+        var processToken = timeout.Token;
+        Log(entry, $"starting provider=media format={entry.Format} quality={entry.Quality}");
             Directory.CreateDirectory(_tempRoot);
             entry.TempDirectory = Path.Combine(_tempRoot, entry.Id);
             Directory.CreateDirectory(entry.TempDirectory);
@@ -183,7 +240,11 @@ public sealed class MediaDownloader : IDownloader
             var process = StartProcess(_ytDlpPath, arguments, entry.TempDirectory);
             entry.Process = process;
 
-            var processOutput = await ReadProcessAsync(process, entry).ConfigureAwait(false);
+            var processOutput = await ReadProcessAsync(process, entry, processToken).ConfigureAwait(false);
+            if (timeout.IsCancellationRequested && !entry.Cancellation.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(processToken);
+            }
             if (process.ExitCode != 0 || entry.Cancellation.IsCancellationRequested)
             {
                 var error = Tail(string.IsNullOrWhiteSpace(processOutput.Error)
@@ -221,7 +282,7 @@ public sealed class MediaDownloader : IDownloader
 
             if (entry.Format.Equals("mp4", StringComparison.OrdinalIgnoreCase))
             {
-                await EnsureVideoHasAudioAsync(source, entry.Cancellation.Token).ConfigureAwait(false);
+                await EnsureVideoHasAudioAsync(source, processToken).ConfigureAwait(false);
             }
 
             var destinationDirectory = entry.Format.Equals("mp3", StringComparison.OrdinalIgnoreCase)
@@ -231,7 +292,10 @@ public sealed class MediaDownloader : IDownloader
             var extension = entry.Format.Equals("mp3", StringComparison.OrdinalIgnoreCase) ? "mp3" : "mp4";
             var destination = NextAvailablePath(destinationDirectory, SanitizeFileName(probe.Title), probe.Id, entry.Quality, extension, entry.Clip);
             File.Move(source, destination);
-            MoveSubtitles(entry, probe, destination);
+            if (entry.Subtitles is not null)
+            {
+                MoveSubtitles(entry, probe, destination);
+            }
             var size = new FileInfo(destination).Length;
             Update(entry.Id, e => e with
             {
@@ -242,22 +306,6 @@ public sealed class MediaDownloader : IDownloader
                 OutputPath = destination,
                 Process = null
             });
-        }
-        catch (OperationCanceledException)
-        {
-            Log(entry, "cancelled");
-            Update(entry.Id, e => e with { Status = "cancelled" });
-        }
-        catch (Exception exception)
-        {
-            Log(entry, $"failed: {exception.Message}");
-            Update(entry.Id, e => e with { Status = "failed", Error = exception.Message });
-        }
-        finally
-        {
-            TryDelete(entry.TempDirectory);
-            entry.Process?.Dispose();
-        }
     }
 
     private async Task<MediaProbe> ProbeAsync(string url, CancellationToken ct)
@@ -296,9 +344,9 @@ public sealed class MediaDownloader : IDownloader
         return new MediaProbe(id ?? Guid.NewGuid().ToString("N"), title ?? "media", duration, live);
     }
 
-    private async Task<ProcessOutput> ReadProcessAsync(Process process, MediaEntry entry)
+    private async Task<ProcessOutput> ReadProcessAsync(Process process, MediaEntry entry, CancellationToken processToken)
     {
-        using var cancellation = entry.Cancellation.Token.Register(() => TryKill(process));
+        using var cancellation = processToken.Register(() => TryKill(process));
         var stdoutTask = ReadStreamAsync(process.StandardOutput, entry);
         var stderrTask = ReadStreamAsync(process.StandardError, entry);
         var waitTask = process.WaitForExitAsync();
@@ -586,6 +634,13 @@ public sealed class MediaDownloader : IDownloader
         }
     }
 
+    private static int ReadPositiveSetting(int? explicitValue, string variable, int fallback)
+    {
+        var value = explicitValue
+            ?? (int.TryParse(Environment.GetEnvironmentVariable(variable), out var configured) ? configured : fallback);
+        return value > 0 ? value : fallback;
+    }
+
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
@@ -704,7 +759,7 @@ public sealed class MediaDownloader : IDownloader
 
     private sealed record MediaEntry
     {
-        public MediaEntry(string id, string name, string url, string format, string quality, MediaClip? clip, SubtitleOptions? subtitles, string status,
+        public MediaEntry(string id, string name, string url, string format, string quality, MediaClip? clip, SubtitleOptions? subtitles, string ownerUserId, string status,
             double progress, long sizeBytes, long downloadedBytes, string? outputPath, CancellationTokenSource cancellation)
         {
             Id = id;
@@ -714,6 +769,7 @@ public sealed class MediaDownloader : IDownloader
             Quality = quality;
             Clip = clip;
             Subtitles = subtitles;
+            OwnerUserId = ownerUserId;
             Status = status;
             Progress = progress;
             SizeBytes = sizeBytes;
@@ -729,6 +785,7 @@ public sealed class MediaDownloader : IDownloader
         public string Quality { get; init; } = string.Empty;
         public MediaClip? Clip { get; init; }
         public SubtitleOptions? Subtitles { get; init; }
+        public string OwnerUserId { get; init; } = "unknown";
         public string Status { get; set; }
         public double Progress { get; set; }
         public long SizeBytes { get; set; }

@@ -38,7 +38,8 @@ public sealed record DownloadStartRequest(
     string? MediaQuality = null,
     string? MediaClipStart = null,
     string? MediaClipEnd = null,
-    string? MediaSubtitles = null);
+    string? MediaSubtitles = null,
+    string? OwnerUserId = null);
 
 public sealed record DownloadTicket(string DownloadId, string Provider, string Name);
 

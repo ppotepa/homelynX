@@ -31,7 +31,8 @@ public sealed class DownloadStartHandler : ICapabilityHandler
             MediaQuality: GetString(parameters, "quality") ?? GetString(parameters, "mediaQuality"),
             MediaClipStart: GetString(parameters, "clipStart") ?? GetString(parameters, "mediaClipStart"),
             MediaClipEnd: GetString(parameters, "clipEnd") ?? GetString(parameters, "mediaClipEnd"),
-            MediaSubtitles: GetString(parameters, "subtitles") ?? GetString(parameters, "mediaSubtitles"));
+            MediaSubtitles: GetString(parameters, "subtitles") ?? GetString(parameters, "mediaSubtitles"),
+            OwnerUserId: context.Request.UserId);
 
         if (context.IsDryRun)
         {

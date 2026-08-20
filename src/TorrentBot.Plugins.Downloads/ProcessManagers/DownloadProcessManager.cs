@@ -183,7 +183,8 @@ public sealed class DownloadProcessManager : IDownloadProcessManager
             MediaQuality: GetString(dict, "quality") ?? GetString(dict, "mediaQuality"),
             MediaClipStart: GetString(dict, "clipStart") ?? GetString(dict, "mediaClipStart"),
             MediaClipEnd: GetString(dict, "clipEnd") ?? GetString(dict, "mediaClipEnd"),
-            MediaSubtitles: GetString(dict, "subtitles") ?? GetString(dict, "mediaSubtitles")),
+            MediaSubtitles: GetString(dict, "subtitles") ?? GetString(dict, "mediaSubtitles"),
+            OwnerUserId: GetString(dict, "ownerUserId")),
         _ => throw new ArgumentException("Unsupported download start payload.", nameof(startPayload))
     };
 

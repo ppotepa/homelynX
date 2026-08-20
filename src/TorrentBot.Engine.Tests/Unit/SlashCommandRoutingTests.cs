@@ -8,6 +8,7 @@ public sealed class SlashCommandRoutingTests
     [InlineData("/download_search", "torrent.search")]
     [InlineData("/list", "system.help")]
     [InlineData("/commands", "system.help")]
+    [InlineData("/download_media", "download.start_media")]
     public void ResolveCapabilityOverride_maps_shared_commands(string command, string capability) =>
         Assert.Equal(capability, SlashCommandRouting.ResolveCapabilityOverride(command));
 
