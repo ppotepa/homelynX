@@ -68,12 +68,18 @@ internal static class ChiptuneTools
             return new(false, Message: $"Unknown chip '{chip}'. Available: {string.Join(", ", ChiptuneParser.AvailableChips)}");
         if (!ChiptuneParser.AvailableStyles.Contains(style))
             return new(false, Message: $"Unknown style '{style}'. Available: {string.Join(", ", ChiptuneParser.AvailableStyles)}");
+        var profile = ChipProfile.For(chip);
+        var voices = string.Join(", ", profile.Voices.Select(x =>
+            $"{x.Index}:{x.Class.ToString().ToLowerInvariant()}{(x.Melodic && x.Percussion ? "(mel+perc)" : x.Melodic ? "(mel)" : "(perc)")}"));
         var message = string.Join('\n',
             $"Chiptune instruments for chip={chip}, style={style}",
+            $"Hardware voices: {voices}",
+            $"Recommended registers: {RoleRegisterSummary(chip)}",
             $"Auto palette: {ArrangementPlanner.DescribePalette(chip, style)}",
             $"Available patches: {string.Join(", ", ChiptuneParser.AvailableInstruments)}",
-            "Overrides: instrument=<patch> or lead=<patch> counter=<patch> bass=<patch> harmony=<patch> arp=<patch> drums=<patch>",
-            "Compact form: instruments=\"lead:soft_lead,counter:bell,bass:bass,arp:pluck\"",
+            "Role overrides: instrument=<patch> or lead=<patch> counter=<patch> bass=<patch> harmony=<patch> arp=<patch> drums=<patch>",
+            "Compact role form: instruments=\"lead:soft_lead,counter:bell,bass:bass,arp:pluck\"",
+            "Section overrides: chorus_lead=brass verse_lead=soft_lead or instruments=\"verse.lead:soft_lead,chorus.lead:brass,chorus.counter:bell\"",
             "Register control: register=auto|off chorus_lift=0..24");
         return new(true, null, message);
     }
@@ -111,8 +117,9 @@ internal static class ChiptuneTools
             var range = melodic.Length == 0 ? "n/a" : $"{melodic.Min(x => x.Pitch)}..{melodic.Max(x => x.Pitch)}";
             return $"  {group.Key}: notes={group.Count()}, intensity={group.Average(x => x.SectionIntensity):F2}, pitch={range}";
         }));
-        var orchestration = string.Join('\n', hardware.Notes.GroupBy(x => (x.Role, x.Instrument, x.VoiceClass)).OrderBy(x => x.Key.Role).Select(group =>
-            $"  {group.Key.Role}: {group.Key.Instrument}/{group.Key.VoiceClass}, voices={string.Join(",", group.Select(x => x.Voice).Distinct().OrderBy(x => x))}, pitch={group.Min(x => x.Pitch)}..{group.Max(x => x.Pitch)}, notes={group.Count()}"));
+        var orchestration = string.Join('\n', hardware.Notes.GroupBy(x => (x.Section, x.Role, x.Instrument, x.VoiceClass))
+            .OrderBy(x => x.Key.Section).ThenBy(x => x.Key.Role).Select(group =>
+            $"  {group.Key.Section}/{group.Key.Role}: {group.Key.Instrument}/{group.Key.VoiceClass}, voices={string.Join(",", group.Select(x => x.Voice).Distinct().OrderBy(x => x))}, pitch={group.Min(x => x.Pitch)}..{group.Max(x => x.Pitch)}, notes={group.Count()}"));
         var message = string.Join('\n', new[]
         {
             $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, real peak polyphony={peakPolyphony}, auto-chip={spec.Chip}",
@@ -150,6 +157,18 @@ internal static class ChiptuneTools
         Add("Octave -1","o-");Add("Octave +1","o+");Add("Semitone -1","t-");Add("Semitone +1","t+");Add("BPM -10","b-");Add("BPM +10","b+");
         if(spec.Mode==ChiptuneMode.Generate)Add("Variation","var");
         Add("Next instrument","ins");Add("Next chip","chip");Add("Repeat x2","x2");return actions;
+    }
+
+    private static string RoleRegisterSummary(string chip)
+    {
+        var rich = chip is "snes" or "genesis" or "pce";
+        var constrained = chip is "atari2600" or "pcspeaker" or "zx_spectrum";
+        var lead = $"{(constrained ? 48 : 55)}..{(rich ? 96 : 88)}";
+        var counter = $"55..{(rich ? 91 : 84)}";
+        var bass = $"30..{(rich ? 60 : 55)}";
+        var harmony = $"43..{(rich ? 76 : 72)}";
+        var arp = $"52..{(rich ? 91 : 84)}";
+        return $"lead={lead}, counter={counter}, bass={bass}, harmony={harmony}, arp={arp} (MIDI note numbers; auto shifts by octaves only when needed)";
     }
 
     private static string ReadOption(string input, string key, string fallback)
