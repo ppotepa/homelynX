@@ -107,9 +107,31 @@ public sealed class DownloadStartHandler : ICapabilityHandler
             {
                 return "torrent";
             }
+
+            if (IsSupportedMediaUrl(url))
+            {
+                return "media";
+            }
         }
 
         // Domyślnie URL
         return "torrent";
+    }
+
+    private static bool IsSupportedMediaUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return false;
+        }
+
+        var hosts = new[]
+        {
+            "youtube.com", "youtu.be", "facebook.com", "fb.watch", "dailymotion.com", "dai.ly",
+            "vimeo.com", "instagram.com", "tiktok.com"
+        };
+        return hosts.Any(host => uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase));
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace TorrentBot.Plugins.Downloads.Downloaders;
@@ -22,6 +23,7 @@ public sealed class MediaDownloader : IDownloader
     private readonly string _ffmpegPath;
     private readonly string _outputRoot;
     private readonly string _tempRoot;
+    private readonly string? _cookiesFile;
     private readonly int _maxDurationSeconds;
 
     public MediaDownloader(
@@ -35,6 +37,10 @@ public sealed class MediaDownloader : IDownloader
         _ffmpegPath = ffmpegPath ?? Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
         _outputRoot = outputRoot ?? Environment.GetEnvironmentVariable("MEDIA_LIBRARY_PATH") ?? "/media";
         _tempRoot = tempRoot ?? Environment.GetEnvironmentVariable("MEDIA_DOWNLOAD_TEMP_DIR") ?? "/downloads/incomplete/media";
+        var configuredCookies = Environment.GetEnvironmentVariable("YTDLP_COOKIES_FILE");
+        _cookiesFile = !string.IsNullOrWhiteSpace(configuredCookies) && File.Exists(configuredCookies)
+            ? configuredCookies
+            : null;
         if (maxDurationSeconds.HasValue)
         {
             _maxDurationSeconds = maxDurationSeconds.Value;
@@ -61,7 +67,17 @@ public sealed class MediaDownloader : IDownloader
         var format = ParseFormat(request.MediaFormat);
         var quality = ParseQuality(format, request.MediaQuality);
         var subtitles = ParseSubtitles(request.MediaSubtitles);
-        var probe = await ProbeAsync(url, ct).ConfigureAwait(false);
+        LogProbe(url, "starting");
+        MediaProbe probe;
+        try
+        {
+            probe = await ProbeAsync(url, ct).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogProbe(url, $"failed: {exception.Message}");
+            throw;
+        }
         var clip = ParseClip(request.MediaClipStart, request.MediaClipEnd, probe.DurationSeconds);
 
         if (probe.IsLive)
@@ -152,6 +168,7 @@ public sealed class MediaDownloader : IDownloader
     {
         try
         {
+            Log(entry, $"starting provider=media format={entry.Format} quality={entry.Quality}");
             Directory.CreateDirectory(_tempRoot);
             entry.TempDirectory = Path.Combine(_tempRoot, entry.Id);
             Directory.CreateDirectory(entry.TempDirectory);
@@ -162,9 +179,15 @@ public sealed class MediaDownloader : IDownloader
             var process = StartProcess(_ytDlpPath, arguments, entry.TempDirectory);
             entry.Process = process;
 
-            await ReadProcessAsync(process, entry).ConfigureAwait(false);
+            var processOutput = await ReadProcessAsync(process, entry).ConfigureAwait(false);
             if (process.ExitCode != 0 || entry.Cancellation.IsCancellationRequested)
             {
+                var error = Tail(string.IsNullOrWhiteSpace(processOutput.Error)
+                    ? processOutput.StandardOutput
+                    : processOutput.Error);
+                var message = string.IsNullOrWhiteSpace(error) ? $"yt-dlp zakończył się kodem {process.ExitCode}." : error;
+                Log(entry, $"yt-dlp failed exit={process.ExitCode}: {message}");
+                Update(entry.Id, e => e with { Error = message });
                 Update(entry.Id, e => e with { Status = entry.Cancellation.IsCancellationRequested ? "cancelled" : "failed" });
                 return;
             }
@@ -218,10 +241,12 @@ public sealed class MediaDownloader : IDownloader
         }
         catch (OperationCanceledException)
         {
+            Log(entry, "cancelled");
             Update(entry.Id, e => e with { Status = "cancelled" });
         }
         catch (Exception exception)
         {
+            Log(entry, $"failed: {exception.Message}");
             Update(entry.Id, e => e with { Status = "failed", Error = exception.Message });
         }
         finally
@@ -233,15 +258,21 @@ public sealed class MediaDownloader : IDownloader
 
     private async Task<MediaProbe> ProbeAsync(string url, CancellationToken ct)
     {
-        using var process = StartProcess(_ytDlpPath,
-            ["--extractor-args", "youtube:player_client=android", "--dump-single-json", "--no-playlist", "--skip-download", url],
-            Directory.GetCurrentDirectory());
-        var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-        var error = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+        var arguments = new List<string>();
+        AddProviderArguments(arguments, url);
+        AddCookieArguments(arguments);
+        arguments.AddRange(["--dump-single-json", "--no-playlist", "--skip-download", url]);
+        using var process = StartProcess(_ytDlpPath, arguments, Directory.GetCurrentDirectory());
+        using var cancellation = ct.Register(() => TryKill(process));
+        var outputTask = process.StandardOutput.ReadToEndAsync(ct);
+        var errorTask = process.StandardError.ReadToEndAsync(ct);
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+        var output = await outputTask.ConfigureAwait(false);
+        var error = await errorTask.ConfigureAwait(false);
         await process.WaitForExitAsync(ct).ConfigureAwait(false);
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "Nie udało się odczytać materiału." : error.Trim());
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "Nie udało się odczytać materiału." : Tail(error));
         }
 
         using var json = JsonDocument.Parse(output);
@@ -261,37 +292,45 @@ public sealed class MediaDownloader : IDownloader
         return new MediaProbe(id ?? Guid.NewGuid().ToString("N"), title ?? "media", duration, live);
     }
 
-    private async Task ReadProcessAsync(Process process, MediaEntry entry)
+    private async Task<ProcessOutput> ReadProcessAsync(Process process, MediaEntry entry)
     {
-        while (!process.HasExited)
-        {
-            if (entry.Cancellation.IsCancellationRequested)
-            {
-                TryKill(process);
-                break;
-            }
+        using var cancellation = entry.Cancellation.Token.Register(() => TryKill(process));
+        var stdoutTask = ReadStreamAsync(process.StandardOutput, entry);
+        var stderrTask = ReadStreamAsync(process.StandardError, entry);
+        var waitTask = process.WaitForExitAsync();
+        await Task.WhenAll(stdoutTask, stderrTask, waitTask).ConfigureAwait(false);
 
-            var line = await process.StandardError.ReadLineAsync().ConfigureAwait(false);
-            if (line is not null && line.Contains('%'))
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+        return new ProcessOutput(stdout, stderr);
+    }
+
+    private async Task<string> ReadStreamAsync(StreamReader reader, MediaEntry entry)
+    {
+        var output = new StringBuilder();
+        while (await reader.ReadLineAsync().ConfigureAwait(false) is { } line)
+        {
+            output.AppendLine(line);
+            if (line.Contains('%'))
             {
                 var percent = line.Split('%')[0].Split(' ').LastOrDefault();
                 if (double.TryParse(percent, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
-                {
                     Update(entry.Id, e => e with { Progress = Math.Clamp(value / 100, 0, 0.95) });
-                }
             }
+            if (line.Contains("ERROR", StringComparison.OrdinalIgnoreCase) || line.Contains("WARNING", StringComparison.OrdinalIgnoreCase))
+                Log(entry, line.Trim());
         }
-
-        await process.WaitForExitAsync().ConfigureAwait(false);
+        return output.ToString();
     }
 
     private string[] BuildDownloadArguments(MediaEntry entry, string outputTemplate)
     {
         var args = new List<string>
         {
-            "--extractor-args", "youtube:player_client=android",
             "--no-playlist", "--newline", "--ffmpeg-location", _ffmpegPath
         };
+        AddProviderArguments(args, entry.Url);
+        AddCookieArguments(args);
         if (entry.Clip is not null)
         {
             args.AddRange(["--download-sections", $"*{entry.Clip.Start}-{entry.Clip.End}", "--force-keyframes-at-cuts"]);
@@ -326,6 +365,39 @@ public sealed class MediaDownloader : IDownloader
         args.AddRange(["-o", outputTemplate, entry.Url]);
         return args.ToArray();
     }
+
+    private static void AddProviderArguments(List<string> args, string url)
+    {
+        if (IsYoutubeUrl(url))
+            args.AddRange(["--extractor-args", "youtube:player_client=android"]);
+    }
+
+    private void AddCookieArguments(List<string> args)
+    {
+        if (_cookiesFile is not null)
+            args.AddRange(["--cookies", _cookiesFile]);
+    }
+
+    private static bool IsYoutubeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Host.Equals("youtube.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("youtu.be", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".youtube.com", StringComparison.OrdinalIgnoreCase));
+
+    private static string Tail(string value)
+    {
+        var compact = value.Trim();
+        return compact.Length <= 1200 ? compact : compact[^1200..];
+    }
+
+    private static void Log(MediaEntry entry, string message) =>
+        Console.Error.WriteLine($"media-download id={entry.Id} host={GetHost(entry.Url)} {message}");
+
+    private static void LogProbe(string url, string message) =>
+        Console.Error.WriteLine($"media-probe host={GetHost(url)} {message}");
+
+    private static string GetHost(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "unknown";
 
     private static bool IsTikTokUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri)
@@ -578,6 +650,7 @@ public sealed class MediaDownloader : IDownloader
     }
 
     private sealed record MediaProbe(string Id, string Title, double? DurationSeconds, bool IsLive);
+    private sealed record ProcessOutput(string StandardOutput, string Error);
     private sealed record MediaClip(string Start, string End);
     private sealed record SubtitleOptions(string Languages, bool IncludeAuto);
 
