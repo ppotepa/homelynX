@@ -65,6 +65,7 @@ internal static class DryWetMidiImporter
                 var keyRelease = state.ChannelModeKeyRelease(note.Channel, note.Time, naturalKeyRelease);
                 var soundingEnd = state.SustainExtension(note.Channel, keyRelease, trackEnd);
                 soundingEnd = state.AllSoundOff(note.Channel, note.Time, soundingEnd);
+                keyRelease = Math.Min(keyRelease, soundingEnd);
                 var bends = state.Bends(note.Channel, note.Time, soundingEnd);
                 var automation = state.Automation(note.Channel, (int)note.NoteNumber, note.Time, soundingEnd);
                 completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), keyRelease, soundingEnd, bends, automation));
@@ -139,7 +140,8 @@ internal static class DryWetMidiImporter
             var startTick = Quantize(rawStart, grid);
             var minimumDuration = Math.Max(1, grid);
             var keyEndTick = Math.Max(startTick + minimumDuration, Quantize(rawKeyEnd, grid));
-            var endTick = Math.Max(keyEndTick, Quantize(rawEnd, grid));
+            var endTick = Math.Max(startTick + minimumDuration, Quantize(rawEnd, grid));
+            keyEndTick = Math.Min(keyEndTick, endTick);
             return new NoteEvent(startTick, endTick - startTick, pitch, item.Note.Velocity, role,
                 item.Track, item.Note.Channel, initialState.Program, initialState.Bank, initialState.Pan, initialState.Expression,
                 initialState.PitchBend, initialState.PitchBendRange,
