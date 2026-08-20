@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using TorrentBot.Plugins.Tools.Chiptune;
 
 namespace TorrentBot.Engine.Tests.Unit;
@@ -56,6 +57,47 @@ public sealed class ChiptuneManagedAudioRegressionTests
         Assert.True(Rms(left[..half]) > Rms(right[..half]) * 8);
         Assert.True(Rms(right[half..]) > Rms(left[half..]) * 8);
     }
+
+    [Fact]
+    public void Managed_sample_patches_are_audibly_distinct()
+    {
+        var lead = RenderPatch("snes", "sample", "lead");
+        var soft = RenderPatch("snes", "sample", "soft_lead");
+        var reed = RenderPatch("snes", "sample", "reed");
+        var flute = RenderPatch("snes", "sample", "flute");
+        var bell = RenderPatch("snes", "sample", "bell");
+
+        Assert.NotEqual(PcmHash(lead), PcmHash(soft));
+        Assert.NotEqual(PcmHash(soft), PcmHash(reed));
+        Assert.NotEqual(PcmHash(reed), PcmHash(flute));
+        Assert.NotEqual(PcmHash(flute), PcmHash(bell));
+    }
+
+    [Fact]
+    public void Managed_fm_patches_are_audibly_distinct()
+    {
+        var lead = RenderPatch("genesis", "fm", "lead");
+        var epiano = RenderPatch("genesis", "fm", "epiano");
+        var brass = RenderPatch("genesis", "fm", "brass");
+        var flute = RenderPatch("genesis", "fm", "flute");
+
+        Assert.NotEqual(PcmHash(lead), PcmHash(epiano));
+        Assert.NotEqual(PcmHash(epiano), PcmHash(brass));
+        Assert.NotEqual(PcmHash(brass), PcmHash(flute));
+    }
+
+    private static byte[] RenderPatch(string chip, string voiceClass, string patch)
+    {
+        var hardware = new HardwareSong(chip, 120, 44_100, TempoMap.Fixed(120).Points,
+        [
+            new HardwareNote(0, 0, 960, 69, 110, patch, TrackRole.Lead,
+                InstrumentId: 0, VoiceClass: voiceClass)
+        ], 960);
+        return ManagedChipRenderer.Render(hardware);
+    }
+
+    private static string PcmHash(byte[] wav)
+        => Convert.ToHexString(SHA256.HashData(wav.AsSpan(44).ToArray()));
 
     private static short[] Left(byte[] wav) => Stereo(wav).Left;
 
