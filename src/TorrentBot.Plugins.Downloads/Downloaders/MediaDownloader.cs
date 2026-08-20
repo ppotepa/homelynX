@@ -369,7 +369,10 @@ public sealed class MediaDownloader : IDownloader
     private static void AddProviderArguments(List<string> args, string url)
     {
         if (IsYoutubeUrl(url))
-            args.AddRange(["--extractor-args", "youtube:player_client=android"]);
+            args.AddRange([
+                "--extractor-args", "youtube:player_client=android",
+                "--remote-components", "ejs:github"
+            ]);
     }
 
     private void AddCookieArguments(List<string> args)
