@@ -30,8 +30,9 @@ internal static class VoiceAllocator
 
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
-            foreach (var note in group
-                         .OrderByDescending(x => PriorityOf(x, partInfo, laneInfo))
+            var groupNotes = group.ToArray();
+            foreach (var note in groupNotes
+                         .OrderByDescending(x => GroupPriority(x, groupNotes, partInfo, laneInfo))
                          .ThenByDescending(x => x.Velocity)
                          .ThenByDescending(x => x.Pitch))
             {
@@ -41,20 +42,20 @@ internal static class VoiceAllocator
                 var part = KeyOf(note);
                 var lane = laneInfo[note];
                 var voiceKey = new VoiceKey(part, lane.Lane);
-                var notePriority = PriorityOf(note, partInfo, laneInfo);
+                var notePriority = GroupPriority(note, groupNotes, partInfo, laneInfo);
                 var preferred = preferredVoice.GetValueOrDefault(voiceKey, -1);
                 var voice = preferred >= 0 && voices.Contains(preferred) && voiceUntil.GetValueOrDefault(preferred) <= note.StartTick
                     ? preferred
                     : BestFreeVoice(voices, voiceUntil, preferredVoice, voiceKey, note.StartTick);
 
-                if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
+                if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && groupNotes.Length > 1)
                 {
                     var arpVoice = voices.FirstOrDefault(candidate =>
                         arpCursor.ContainsKey((note.StartTick, candidate)) ||
                         (lastOnVoice.TryGetValue(candidate, out var index) && allocated[index].StartTick == note.StartTick), -1);
                     if (arpVoice >= 0)
                     {
-                        var slice = Math.Max(1, note.DurationTick / Math.Max(1, group.Count()));
+                        var slice = Math.Max(1, note.DurationTick / Math.Max(1, groupNotes.Length));
                         var cursorKey = (note.StartTick, arpVoice);
                         if (!arpCursor.TryGetValue(cursorKey, out var arpStart))
                         {
@@ -251,8 +252,59 @@ internal static class VoiceAllocator
         return result;
     }
 
+    private static int GroupPriority(NoteEvent note, IReadOnlyList<NoteEvent> group,
+        IReadOnlyDictionary<PartKey, PartInfo> parts, IReadOnlyDictionary<NoteEvent, LaneInfo> lanes)
+    {
+        var score = PriorityOf(note, parts, lanes);
+        if (note.Role is TrackRole.Harmony or TrackRole.Arp)
+        {
+            var bass = group.FirstOrDefault(x => x.Role == TrackRole.Bass);
+            var anchorPitch = bass?.Pitch ?? group.Where(x => x.Role != TrackRole.Drums).Select(x => x.Pitch).DefaultIfEmpty(note.Pitch).Min();
+            var interval = ((note.Pitch - anchorPitch) % 12 + 12) % 12;
+            score += interval switch
+            {
+                0 => 10,
+                3 or 4 => 8,
+                7 => 7,
+                10 or 11 => 4,
+                2 or 5 or 9 => 2,
+                _ => 0
+            };
+        }
+        if (note.Role == TrackRole.Drums)
+        {
+            score += note.Pitch switch
+            {
+                35 or 36 => 8,
+                37 or 38 or 39 or 40 => 7,
+                49 or 55 or 57 => 4,
+                42 or 44 or 46 => 2,
+                _ => 0
+            };
+        }
+        return Math.Clamp(score, 1, 280);
+    }
+
     private static int PriorityOf(NoteEvent note, IReadOnlyDictionary<PartKey, PartInfo> parts, IReadOnlyDictionary<NoteEvent, LaneInfo> lanes)
-        => Math.Clamp(parts[KeyOf(note)].Priority + lanes[note].PriorityBonus, 1, 240);
+    {
+        var score = parts[KeyOf(note)].Priority + lanes[note].PriorityBonus;
+        score += (int)Math.Round((note.SectionIntensity - .55) * 30);
+        if (note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase))
+        {
+            score += note.Role switch
+            {
+                TrackRole.Lead => 18,
+                TrackRole.CounterLead => 14,
+                TrackRole.Bass => 5,
+                TrackRole.Arp => 4,
+                _ => 0
+            };
+        }
+        if (note.Role is TrackRole.Lead or TrackRole.CounterLead)
+            score += Math.Clamp((note.Pitch - 66) / 2, 0, 10);
+        if (note.Role == TrackRole.Harmony && note.Patch is "pad" or "strings") score -= 6;
+        return Math.Clamp(score, 1, 260);
+    }
 
     private static PartKey KeyOf(NoteEvent note)
         => new(note.SourceTrack, note.SourceChannel, note.Program, note.Bank, note.Role);
