@@ -89,10 +89,6 @@ internal static class VoiceAllocator
                 {
                     if (spec.Fidelity == "strict") { dropped++; continue; }
 
-                    // A new key press on the same logical source lane must win
-                    // over that lane's sustained tail. This is essential for
-                    // piano MIDI: pedal overlap may be sacrificed on a small chip,
-                    // but the next melodic attack may never be dropped.
                     var continuationVoice = preferred >= 0 && voices.Contains(preferred) &&
                                             lastOnVoice.TryGetValue(preferred, out var continuationIndex) &&
                                             allocatedVoiceKeys[continuationIndex] == voiceKey
@@ -196,9 +192,6 @@ internal static class VoiceAllocator
             var lanes = new List<LaneState>();
             foreach (var note in group.OrderBy(x => x.StartTick).ThenBy(x => x.Pitch))
             {
-                // Lane continuity is based on physical key release, not the
-                // pedal-extended sounding tail. This keeps a melodic line stable
-                // through sustain-heavy piano performances.
                 var candidate = lanes
                     .Select((lane, index) => (lane, index))
                     .Where(x => x.lane.EndTick <= note.StartTick)
@@ -386,6 +379,7 @@ internal static class VoiceAllocator
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass || note.Program is >= 32 and <= 39) return "bass";
+        if (note.Role == TrackRole.Arp && (note.SourceTrack < 0 || requested.Equals("lead", StringComparison.OrdinalIgnoreCase))) return "arp";
         if (note.SourceTrack < 0 && note.Program == 0) return requested;
         return note.Program switch
         {
