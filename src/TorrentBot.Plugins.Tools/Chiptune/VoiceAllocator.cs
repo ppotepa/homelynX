@@ -379,8 +379,11 @@ internal static class VoiceAllocator
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass || note.Program is >= 32 and <= 39) return "bass";
-        if (note.Role == TrackRole.Arp && (note.SourceTrack < 0 || requested.Equals("lead", StringComparison.OrdinalIgnoreCase))) return "arp";
-        if (note.SourceTrack < 0 && note.Program == 0) return requested;
+        if (note.Role == TrackRole.Arp &&
+            (requested.Equals("lead", StringComparison.OrdinalIgnoreCase) || requested.Equals("arp", StringComparison.OrdinalIgnoreCase)))
+            return "pluck";
+        if (note.SourceTrack < 0 && note.Program == 0)
+            return requested.Equals("arp", StringComparison.OrdinalIgnoreCase) ? "pluck" : requested;
         return note.Program switch
         {
             >= 0 and <= 7 => "epiano",
