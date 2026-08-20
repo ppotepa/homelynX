@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TorrentBot.Plugins.Tools.Chiptune;
 
 namespace TorrentBot.Engine.Tests.Unit;
@@ -46,6 +47,21 @@ public sealed class ChiptuneSectionInstrumentOverrideTests
         Assert.NotEmpty(chorusDrums);
         Assert.All(chorusDrums, x => Assert.Equal("snare", x.Patch));
         Assert.Contains(otherDrums, x => x.Patch != "snare");
+    }
+
+    [Fact]
+    public void Section_instrument_map_round_trips_through_session_json()
+    {
+        var spec = ChiptuneParser.Parse("generate=song chip=nes style=happy bars=8 instruments=\"verse.lead:soft_lead,chorus.lead:brass,chorus.counter:bell\"");
+
+        var json = JsonSerializer.Serialize(spec);
+        var restored = JsonSerializer.Deserialize<ChiptuneSpec>(json);
+
+        Assert.NotNull(restored);
+        Assert.NotNull(restored!.SectionInstruments);
+        Assert.Equal("soft_lead", restored.SectionInstruments!["verse.lead"]);
+        Assert.Equal("brass", restored.SectionInstruments["chorus.lead"]);
+        Assert.Equal("bell", restored.SectionInstruments["chorus.counter"]);
     }
 
     [Fact]
