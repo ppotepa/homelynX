@@ -14,9 +14,7 @@ public sealed class ChiptunePerformanceRegressionTests
             30, 0xFF, 0x2F, 0
         ]);
         var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
-
         var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
-
         Assert.Equal(120L, note.DurationTick);
         Assert.Equal(60L, note.KeyDurationTick);
         Assert.Equal(60L, note.KeyEndTick);
@@ -34,12 +32,58 @@ public sealed class ChiptunePerformanceRegressionTests
             0, 0xFF, 0x2F, 0
         ]);
         var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
-
         var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
-
         Assert.Equal(120L, note.DurationTick);
         Assert.Equal(60L, note.KeyDurationTick);
         Assert.Contains(new PitchBendPoint(90, 12288), note.PitchBends!);
+    }
+
+    [Fact]
+    public void Reset_all_controllers_releases_active_sustain()
+    {
+        var midi = Midi([
+            0, 0xB0, 64, 127,
+            0, 0x90, 60, 100,
+            30, 0x80, 60, 0,
+            15, 0xB0, 121, 0,
+            15, 0xFF, 0x2F, 0
+        ]);
+        var note = Assert.Single(ChiptuneParser.Compose(ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}")).Notes);
+
+        Assert.Equal(60L, note.KeyDurationTick);
+        Assert.Equal(90L, note.DurationTick);
+    }
+
+    [Fact]
+    public void All_notes_off_is_key_release_but_still_respects_sustain()
+    {
+        var midi = Midi([
+            0, 0xB0, 64, 127,
+            0, 0x90, 60, 100,
+            30, 0xB0, 123, 0,
+            30, 0xB0, 64, 0,
+            30, 0x80, 60, 0,
+            0, 0xFF, 0x2F, 0
+        ]);
+        var note = Assert.Single(ChiptuneParser.Compose(ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}")).Notes);
+
+        Assert.Equal(60L, note.KeyDurationTick);
+        Assert.Equal(120L, note.DurationTick);
+    }
+
+    [Fact]
+    public void All_sound_off_ends_note_immediately_even_before_note_off()
+    {
+        var midi = Midi([
+            0, 0x90, 60, 100,
+            30, 0xB0, 120, 0,
+            30, 0x80, 60, 0,
+            0, 0xFF, 0x2F, 0
+        ]);
+        var note = Assert.Single(ChiptuneParser.Compose(ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}")).Notes);
+
+        Assert.Equal(60L, note.KeyDurationTick);
+        Assert.Equal(60L, note.DurationTick);
     }
 
     [Fact]
@@ -55,7 +99,6 @@ public sealed class ChiptunePerformanceRegressionTests
         ]);
         var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
         var notes = ChiptuneParser.Compose(spec).Notes.OrderBy(x => x.Pitch).ToArray();
-
         Assert.Equal(2, notes.Length);
         Assert.Contains(notes[0].ControllerChanges!, x => x.Aftertouch == 80);
         Assert.True(notes[1].ControllerChanges is null || notes[1].ControllerChanges.All(x => x.Aftertouch == 0));
@@ -71,11 +114,9 @@ public sealed class ChiptunePerformanceRegressionTests
             new NoteEvent(480, 480, 69, 100, TrackRole.Harmony, SourceTrack: 0, SourceChannel: 0, Program: 0)
         ], TempoMap.Fixed(120));
         var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes fidelity=recognizable format=wav");
-
         var notes = VoiceAllocator.Allocate(song, spec).Notes;
         var low = notes.Where(x => x.Pitch is 60 or 62).OrderBy(x => x.StartTick).ToArray();
         var high = notes.Where(x => x.Pitch is 67 or 69).OrderBy(x => x.StartTick).ToArray();
-
         Assert.Equal(2, low.Length);
         Assert.Equal(2, high.Length);
         Assert.Equal(low[0].Voice, low[1].Voice);
@@ -93,10 +134,8 @@ public sealed class ChiptunePerformanceRegressionTests
                 SourceTrack: 0, SourceChannel: 0, Program: 0, KeyDurationTick: 480)
         ], TempoMap.Fixed(120));
         var spec = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=recognizable format=wav");
-
         var hardware = VoiceAllocator.Allocate(song, spec);
         var notes = hardware.Notes.OrderBy(x => x.StartTick).ToArray();
-
         Assert.Equal(2, notes.Length);
         Assert.Equal(480, notes[0].DurationTick);
         Assert.Equal(480, notes[1].StartTick);
@@ -113,9 +152,7 @@ public sealed class ChiptunePerformanceRegressionTests
             new NoteEvent(720, 240, 72, 100, TrackRole.Harmony, SourceTrack: 3, SourceChannel: 3, Program: 110)
         ], TempoMap.Fixed(120));
         var spec = ChiptuneParser.Parse("notes=C4/4 chip=snes fidelity=recognizable format=wav");
-
         var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
-
         Assert.Equal(["flute", "pluck", "bell", "strings"], notes.Select(x => x.Instrument).ToArray());
     }
 
