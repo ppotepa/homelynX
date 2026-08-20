@@ -12,6 +12,7 @@ internal static class VoiceAllocator
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
         var preferredVoice = new Dictionary<(int Track, int Channel, int Program, int Bank, TrackRole Role), int>();
+        var arpCursor = new Dictionary<(long GroupStart, int Voice), long>();
         var revoiced = 0; var arpeggiated = 0; var dropped = 0;
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
@@ -23,33 +24,47 @@ internal static class VoiceAllocator
                 var voice = preferred >= 0 && voices.Contains(preferred) && voiceUntil.GetValueOrDefault(preferred) <= note.StartTick
                     ? preferred
                     : voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
+
                 if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
                 {
-                    // A hardware voice is monophonic. Schedule an arpeggio only
-                    // after the selected voice is actually free; never overlap an
-                    // existing note and hope the tracker will resolve it later.
-                    var slice = Math.Max(60, note.DurationTick / Math.Max(1, group.Count()));
-                    var arpVoice = voices
-                        .OrderBy(x => voiceUntil.GetValueOrDefault(x))
-                        .ThenBy(x => allocated.Count(y => y.StartTick == note.StartTick && y.Voice == x))
-                        .First();
-                    var arpStart = Math.Max(note.StartTick, voiceUntil.GetValueOrDefault(arpVoice));
-                    var available = note.EndTick - arpStart;
-                    if (available <= 0)
+                    // If this hardware voice already contains another note from
+                    // the same simultaneous chord, turn the chord into a real
+                    // non-overlapping arpeggio. The first chord note is shortened
+                    // to its slice; later notes continue from the shared cursor.
+                    var arpVoice = voices.FirstOrDefault(candidate =>
+                        arpCursor.ContainsKey((note.StartTick, candidate)) ||
+                        (lastOnVoice.TryGetValue(candidate, out var index) && allocated[index].StartTick == note.StartTick), -1);
+                    if (arpVoice >= 0)
                     {
-                        dropped++;
+                        var slice = Math.Max(1, note.DurationTick / Math.Max(1, group.Count()));
+                        var cursorKey = (note.StartTick, arpVoice);
+                        if (!arpCursor.TryGetValue(cursorKey, out var arpStart))
+                        {
+                            var previousIndex = lastOnVoice[arpVoice];
+                            var previous = allocated[previousIndex];
+                            var previousDuration = Math.Min(slice, previous.DurationTick);
+                            allocated[previousIndex] = TrimToSpan(previous, previous.StartTick, previousDuration);
+                            arpStart = previous.StartTick + previousDuration;
+                        }
+                        var available = note.EndTick - arpStart;
+                        if (available <= 0)
+                        {
+                            dropped++;
+                            continue;
+                        }
+                        var duration = Math.Min(slice, available);
+                        var arp = TrimToSpan(ToHardware(note, arpVoice, spec), arpStart, duration);
+                        allocated.Add(arp);
+                        arpCursor[cursorKey] = arpStart + duration;
+                        voiceUntil[arpVoice] = arpStart + duration;
+                        lastOnVoice[arpVoice] = allocated.Count - 1;
+                        preferredVoice[part] = arpVoice;
+                        if (spec.Fidelity == "preserve") arpeggiated++;
+                        else revoiced++;
                         continue;
                     }
-                    var duration = Math.Min(slice, available);
-                    var arp = TrimToSpan(ToHardware(note, arpVoice, spec), arpStart, duration);
-                    allocated.Add(arp);
-                    voiceUntil[arpVoice] = arpStart + duration;
-                    lastOnVoice[arpVoice] = allocated.Count - 1;
-                    preferredVoice[part] = arpVoice;
-                    if (spec.Fidelity == "preserve") arpeggiated++;
-                    else revoiced++;
-                    continue;
                 }
+
                 if (voice < 0)
                 {
                     if (spec.Fidelity == "strict") { dropped++; continue; }
@@ -129,9 +144,6 @@ internal static class VoiceAllocator
 
     private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec)
     {
-        // The importer keeps bends/controller changes attached to this note;
-        // the native bridge emits them as tracker effects without another
-        // Note On, so the chip envelope is not retriggered.
         var profile = ChipProfile.For(spec.Chip);
         var voiceClass = profile.Voice(voice).Class;
         var patch = InstrumentFor(note, spec.Instrument);
@@ -143,26 +155,10 @@ internal static class VoiceAllocator
             voiceClass.ToString().ToLowerInvariant());
     }
 
-    private static int PercussionFamily(int pitch) => pitch switch
-    {
-        35 or 36 => 0, // kick
-        38 or 40 or 37 or 39 => 1, // snare/clap
-        42 or 44 => 2, // closed hat/pedal hat
-        46 => 3, // open hat
-        49 or 55 or 57 => 5, // crash/splash
-        51 or 53 or 59 => 6, // ride/bell
-        >= 41 and <= 50 => 4, // toms
-        _ => 7
-    };
-
-    private static bool IsDpcmPercussion(int pitch) => pitch is 35 or 36 or 37 or 38 or 39 or 40;
-
     private static string InstrumentFor(NoteEvent note, string requested)
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass) return "bass";
-        // Procedural/manual notes have no MIDI program. Preserve the explicit
-        // user instrument instead of treating the default Program=0 as piano.
         if (note.SourceTrack < 0 && note.Program == 0) return requested;
         return note.Program switch
         {
