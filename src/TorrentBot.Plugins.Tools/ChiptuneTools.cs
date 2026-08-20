@@ -34,7 +34,7 @@ internal static class ChiptuneTools
         var song = ChiptuneParser.Compose(spec);
         spec = AutoProfileResolver.Resolve(spec, song);
         song = ArrangementPlanner.Plan(song, spec);
-        var sections = string.Join(',', song.Notes.Select(x => x.Section).Distinct(StringComparer.OrdinalIgnoreCase));
+        var sections = string.Join(",", song.Notes.Select(x => x.Section).Distinct(StringComparer.OrdinalIgnoreCase));
         progress?.Report("chiptune:profile", $"chip={spec.Chip}, fidelity={spec.Fidelity}, explicit={spec.ChipExplicit}");
         progress?.Report("chiptune:planned", $"sections={sections}, palette={ArrangementPlanner.DescribePalette(spec.Chip, spec.Style)}");
         progress?.Report("chiptune:composed", $"{song.Notes.Count} notes, {song.DurationSeconds:F1}s");
@@ -55,7 +55,7 @@ internal static class ChiptuneTools
         await store.SaveChiptuneSession(token,user,chat,JsonSerializer.Serialize(spec));
         var paletteSummary = string.Join(", ", hardware.Notes.Where(x => x.Role != TrackRole.Drums)
             .GroupBy(x => x.Role).OrderBy(x => x.Key)
-            .Select(x => $"{x.Key}:{string.Join('/', x.Select(n => n.Instrument).Distinct())}"));
+            .Select(x => $"{x.Key}:{string.Join("/", x.Select(n => n.Instrument).Distinct())}"));
         return FeatureArtifacts.Binary($"chiptune.{spec.Format}", type, output,
             $"Chiptune generated: {spec.Chip}, {song.DurationSeconds:F1}s, {song.Notes.Count} notes, sections={sections}, instruments={paletteSummary}, seed={spec.Seed}.",Actions(token,spec));
     }
@@ -112,7 +112,7 @@ internal static class ChiptuneTools
             return $"  {group.Key}: notes={group.Count()}, intensity={group.Average(x => x.SectionIntensity):F2}, pitch={range}";
         }));
         var orchestration = string.Join('\n', hardware.Notes.GroupBy(x => (x.Role, x.Instrument, x.VoiceClass)).OrderBy(x => x.Key.Role).Select(group =>
-            $"  {group.Key.Role}: {group.Key.Instrument}/{group.Key.VoiceClass}, voices={string.Join(',', group.Select(x => x.Voice).Distinct().Order())}, pitch={group.Min(x => x.Pitch)}..{group.Max(x => x.Pitch)}, notes={group.Count()}"));
+            $"  {group.Key.Role}: {group.Key.Instrument}/{group.Key.VoiceClass}, voices={string.Join(",", group.Select(x => x.Voice).Distinct().OrderBy(x => x))}, pitch={group.Min(x => x.Pitch)}..{group.Max(x => x.Pitch)}, notes={group.Count()}"));
         var message = string.Join('\n', new[]
         {
             $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, real peak polyphony={peakPolyphony}, auto-chip={spec.Chip}",
