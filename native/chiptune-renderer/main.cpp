@@ -553,12 +553,21 @@ static void requireEffect(DivPattern* pattern, int row, int effect, int value, c
     throw std::runtime_error(std::string("tracker effect capacity exhausted while writing ") + name);
 }
 
+static void setStateEffect(DivPattern* pattern, int row, int effect, int value, const char* name) {
+  for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot) {
+    if (pattern->newData[row][DIV_PAT_FX(slot)] != effect) continue;
+    pattern->newData[row][DIV_PAT_FXVAL(slot)] = (short)value;
+    return;
+  }
+  requireEffect(pattern, row, effect, value, name);
+}
+
 static void writeVibrato(DivPattern* pattern, int row, int control) {
   control = bounded(control, 0, 31);
-  if (control > 0) requireEffect(pattern, row, 0xE4, control, "vibrato range");
+  if (control > 0) setStateEffect(pattern, row, 0xE4, control, "vibrato range");
   int depth = control == 0 ? 0 : bounded((control + 1) / 2, 1, 15);
   int speed = control == 0 ? 0 : 5;
-  requireEffect(pattern, row, 0x04, (speed << 4) | depth, "vibrato");
+  setStateEffect(pattern, row, 0x04, (speed << 4) | depth, "vibrato");
 }
 
 static CompileStats fillSong(DivEngine& engine, const json& request) {
@@ -620,18 +629,15 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 0, maxVolume);
 
     auto [leftPan,rightPan] = panLevels(item.value("pan", 64));
-    requireEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "panning");
+    setStateEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "panning");
     int modulation = bounded(item.value("modulation", 0), 0, 127);
     int explicitVibrato = bounded(request.value("vibrato", 0), 0, 31);
     int midiVibrato = modulation * 8 / 127;
     writeVibrato(pattern, row, std::max(explicitVibrato, midiVibrato));
 
-    // Fine-pitch reset is channel-stateful and therefore critical. Write it
-    // before optional articulation effects so stale pitch can never leak from
-    // the previous note when the effect columns are crowded.
     double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
     double residual = bendSemitones - std::round(bendSemitones);
-    requireEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residual * 128.0), 0, 255), "fine pitch");
+    setStateEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residual * 128.0), 0, 255), "fine pitch");
 
     int pitchSlide = bounded(item.value("pitchSlide", 0), -127, 127);
     if (pitchSlide != 0)
@@ -685,15 +691,18 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     int bendRange = bounded(item.value("pitchBendRange", 2), 0, 24);
     double initialSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * bendRange;
     int coarse = (int)std::lround(initialSemitones);
+    std::map<int,int> bendByRow;
     for (const auto& bend : item.value("pitchBends", json::array())) {
       long tick = bend.value("tick", noteStart);
       if (tick <= noteStart || tick >= noteEnd) continue;
       int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
       if (rowIndex >= rowCapacity) continue;
+      bendByRow[rowIndex] = bend.value("value", 8192); // last MIDI state wins inside one tracker row
+    }
+    for (const auto& [rowIndex,bendValue] : bendByRow) {
       int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
       DivPattern* pattern = sub->pat[voice].getPattern(order, true);
-
-      double semitones = (bend.value("value", 8192) - 8192) / 8192.0 * bendRange;
+      double semitones = (bendValue - 8192) / 8192.0 * bendRange;
       int targetCoarse = (int)std::lround(semitones);
       int delta = targetCoarse - coarse;
       while (delta != 0) {
@@ -703,7 +712,7 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
         delta = targetCoarse - coarse;
       }
       double residualPoint = semitones - targetCoarse;
-      requireEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255), "pitch bend");
+      setStateEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255), "pitch bend");
     }
   }
 
@@ -713,11 +722,15 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     long noteStart = item.value("startTick", 0L);
     long noteEnd = noteStart + std::max(1L, item.value("durationTick", 240L));
     int velocity = bounded(item.value("velocity", 100), 1, 127);
+    std::map<int,json> controllerByRow;
     for (const auto& point : item.value("controllerChanges", json::array())) {
       long tick = point.value("tick", noteStart);
       if (tick <= noteStart || tick >= noteEnd) continue;
       int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
       if (rowIndex >= rowCapacity) continue;
+      controllerByRow[rowIndex] = point; // one representable state per row
+    }
+    for (const auto& [rowIndex,point] : controllerByRow) {
       int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
       DivPattern* pattern = sub->pat[voice].getPattern(order, true);
       int volume = bounded(point.value("volume", 127), 0, 127);
@@ -725,9 +738,8 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
       int effectiveVolume = (velocity * expression * volume + 8064) / (127 * 127);
       int maxVolume = engine.getMaxVolumeChan(voice);
       pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 0, maxVolume);
-
       auto [leftPan,rightPan] = panLevels(point.value("pan", 64));
-      requireEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "controller panning");
+      setStateEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "controller panning");
       int modulation = bounded(std::max(point.value("modulation", 0), point.value("aftertouch", 0)), 0, 127);
       writeVibrato(pattern, row, modulation * 8 / 127);
     }
