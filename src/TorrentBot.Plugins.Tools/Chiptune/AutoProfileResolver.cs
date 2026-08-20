@@ -7,11 +7,11 @@ internal static class AutoProfileResolver
 
     public static ChiptuneSpec Resolve(ChiptuneSpec spec, Song song)
     {
-        if (spec.Mode != ChiptuneMode.Midi || spec.ChipExplicit) return spec;
+        if (spec.ChipExplicit || spec.Mode is not (ChiptuneMode.Midi or ChiptuneMode.Generate)) return spec;
 
         var scored = Rank(spec, song);
         if (scored.Count == 0)
-            return spec with { Chip = "genesis" };
+            return spec with { Chip = spec.Mode == ChiptuneMode.Generate ? "snes" : "genesis" };
         return spec with { Chip = scored[0].Chip };
     }
 
@@ -39,6 +39,12 @@ internal static class AutoProfileResolver
                 .Select(x => x.Program)
                 .Distinct()
                 .ToArray();
+            var patches = planned.Notes
+                .Where(x => x.Role != TrackRole.Drums)
+                .Select(x => x.Patch)
+                .Where(x => !string.IsNullOrWhiteSpace(x) && x != "auto")
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             var hasDrums = planned.Notes.Any(x => x.Role == TrackRole.Drums);
             var hooks = planned.Notes.Count(x => x.Role is TrackRole.Lead or TrackRole.CounterLead);
 
@@ -50,7 +56,7 @@ internal static class AutoProfileResolver
             if (voices >= peak) score += 120;
             score += Math.Min(120, hooks * 2);
 
-            var diversity = programs.Length;
+            var diversity = programs.Length > 0 ? programs.Length : patches.Length;
             score += chip switch
             {
                 "snes" => 80 + diversity * 8,
@@ -63,7 +69,9 @@ internal static class AutoProfileResolver
                 _ => 0
             };
 
-            var fmFriendly = programs.Count(program => program is >= 0 and <= 39 or >= 56 and <= 87);
+            var fmFriendly = programs.Length > 0
+                ? programs.Count(program => program is >= 0 and <= 39 or >= 56 and <= 87)
+                : patches.Count(patch => patch is "lead" or "soft_lead" or "bass" or "pluck" or "bell" or "brass" or "organ" or "epiano" or "reed" or "flute");
             if (chip == "genesis") score += fmFriendly * 5;
 
             if (peak <= 2 && diversity <= 2)
