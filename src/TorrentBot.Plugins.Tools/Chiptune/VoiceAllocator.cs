@@ -21,6 +21,7 @@ internal static class VoiceAllocator
         var laneInfo = AnalyzeLanes(song);
         var allocated = new List<HardwareNote>();
         var allocatedPriority = new List<int>();
+        var allocatedVoiceKeys = new List<VoiceKey>();
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
         var preferredVoice = new Dictionary<VoiceKey, int>();
@@ -48,10 +49,6 @@ internal static class VoiceAllocator
 
                 if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
                 {
-                    // If this hardware voice already contains another note from
-                    // the same simultaneous chord, turn the chord into a real
-                    // non-overlapping arpeggio. This preserves harmonic identity
-                    // without creating overlapping tracker notes.
                     var arpVoice = voices.FirstOrDefault(candidate =>
                         arpCursor.ContainsKey((note.StartTick, candidate)) ||
                         (lastOnVoice.TryGetValue(candidate, out var index) && allocated[index].StartTick == note.StartTick), -1);
@@ -77,6 +74,7 @@ internal static class VoiceAllocator
                         var arp = TrimToSpan(ToHardware(note, arpVoice, spec), arpStart, duration);
                         allocated.Add(arp);
                         allocatedPriority.Add(notePriority);
+                        allocatedVoiceKeys.Add(voiceKey);
                         arpCursor[cursorKey] = arpStart + duration;
                         voiceUntil[arpVoice] = arpStart + duration;
                         lastOnVoice[arpVoice] = allocated.Count - 1;
@@ -91,36 +89,52 @@ internal static class VoiceAllocator
                 {
                     if (spec.Fidelity == "strict") { dropped++; continue; }
 
-                    // When no voice is free, choose the lane whose active note is
-                    // least costly to replace. A low-value pad may yield to an
-                    // explicit melody/counter-melody even when both are Harmony.
-                    voice = voices
-                        .OrderBy(candidate => lastOnVoice.TryGetValue(candidate, out var index) ? allocatedPriority[index] : int.MinValue)
-                        .ThenBy(candidate => voiceUntil.GetValueOrDefault(candidate))
-                        .First();
-
-                    if (lastOnVoice.TryGetValue(voice, out var previousIndex))
+                    // A new key press on the same logical source lane must win
+                    // over that lane's sustained tail. This is essential for
+                    // piano MIDI: pedal overlap may be sacrificed on a small chip,
+                    // but the next melodic attack may never be dropped.
+                    var continuationVoice = preferred >= 0 && voices.Contains(preferred) &&
+                                            lastOnVoice.TryGetValue(preferred, out var continuationIndex) &&
+                                            allocatedVoiceKeys[continuationIndex] == voiceKey
+                        ? preferred
+                        : -1;
+                    if (continuationVoice >= 0)
                     {
+                        voice = continuationVoice;
+                        var previousIndex = lastOnVoice[voice];
                         var previous = allocated[previousIndex];
-                        var previousPriority = allocatedPriority[previousIndex];
-                        if (spec.Fidelity == "recognizable" && previousPriority >= notePriority)
-                        {
-                            dropped++;
-                            continue;
-                        }
                         if (previous.StartTick < note.StartTick)
-                        {
-                            var duration = Math.Max(1, note.StartTick - previous.StartTick);
-                            allocated[previousIndex] = TrimToSpan(previous, previous.StartTick, duration);
-                        }
+                            allocated[previousIndex] = TrimToSpan(previous, previous.StartTick, Math.Max(1, note.StartTick - previous.StartTick));
+                        revoiced++;
                     }
-                    revoiced++;
+                    else
+                    {
+                        voice = voices
+                            .OrderBy(candidate => lastOnVoice.TryGetValue(candidate, out var index) ? allocatedPriority[index] : int.MinValue)
+                            .ThenBy(candidate => voiceUntil.GetValueOrDefault(candidate))
+                            .First();
+
+                        if (lastOnVoice.TryGetValue(voice, out var previousIndex))
+                        {
+                            var previous = allocated[previousIndex];
+                            var previousPriority = allocatedPriority[previousIndex];
+                            if (spec.Fidelity == "recognizable" && previousPriority >= notePriority)
+                            {
+                                dropped++;
+                                continue;
+                            }
+                            if (previous.StartTick < note.StartTick)
+                                allocated[previousIndex] = TrimToSpan(previous, previous.StartTick, Math.Max(1, note.StartTick - previous.StartTick));
+                        }
+                        revoiced++;
+                    }
                 }
 
                 var hardware = ToHardware(note, voice, spec);
                 lastOnVoice[voice] = allocated.Count;
                 allocated.Add(hardware);
                 allocatedPriority.Add(notePriority);
+                allocatedVoiceKeys.Add(voiceKey);
                 preferredVoice[voiceKey] = voice;
                 voiceUntil[voice] = note.EndTick;
             }
@@ -141,8 +155,6 @@ internal static class VoiceAllocator
         VoiceKey voiceKey,
         long startTick)
     {
-        // Keep a stable source lane on its previous hardware channel whenever
-        // possible, then use the profile's compatibility order.
         var previous = preferredVoice.GetValueOrDefault(voiceKey, -1);
         if (previous >= 0 && voices.Contains(previous) && voiceUntil.GetValueOrDefault(previous) <= startTick)
             return previous;
@@ -184,6 +196,9 @@ internal static class VoiceAllocator
             var lanes = new List<LaneState>();
             foreach (var note in group.OrderBy(x => x.StartTick).ThenBy(x => x.Pitch))
             {
+                // Lane continuity is based on physical key release, not the
+                // pedal-extended sounding tail. This keeps a melodic line stable
+                // through sustain-heavy piano performances.
                 var candidate = lanes
                     .Select((lane, index) => (lane, index))
                     .Where(x => x.lane.EndTick <= note.StartTick)
@@ -200,7 +215,7 @@ internal static class VoiceAllocator
                 else laneIndex = candidate.index;
 
                 var lane = lanes[laneIndex];
-                lane.EndTick = note.EndTick;
+                lane.EndTick = note.KeyEndTick;
                 lane.LastPitch = note.Pitch;
                 lane.Notes.Add(note);
                 result[note] = new LaneInfo(laneIndex, 0);
@@ -229,7 +244,7 @@ internal static class VoiceAllocator
                     if (characteristic.Index == highest) bonus += group.Key.Program is >= 88 and <= 103 ? 5 : 16;
                     if (characteristic.Index == lowest && group.Key.Program is >= 0 and <= 39) bonus += 10;
                     if (characteristic.Velocity >= 96) bonus += 3;
-                    if (characteristic.Count <= 2) bonus -= 2; // one-off ornament lanes are less important than stable lines
+                    if (characteristic.Count <= 2) bonus -= 2;
                 }
                 foreach (var note in lanes[characteristic.Index].Notes)
                     result[note] = new LaneInfo(characteristic.Index, bonus);
@@ -262,7 +277,8 @@ internal static class VoiceAllocator
         return program switch
         {
             >= 80 and <= 87 => 32,
-            >= 64 and <= 79 => 25,
+            >= 72 and <= 79 => 26,
+            >= 64 and <= 71 => 25,
             >= 56 and <= 63 => 24,
             >= 32 and <= 39 => 28,
             >= 24 and <= 31 => 22,
@@ -272,6 +288,7 @@ internal static class VoiceAllocator
             >= 40 and <= 55 => 8,
             >= 88 and <= 103 => -12,
             >= 104 and <= 111 => 12,
+            >= 112 and <= 119 => 4,
             _ => 0
         };
     }
@@ -359,9 +376,9 @@ internal static class VoiceAllocator
         37 or 38 or 39 or 40 => 1,
         42 or 44 => 2,
         46 => 3,
-        >= 41 and <= 50 => 4,
         49 or 55 or 57 => 5,
         51 or 53 or 59 => 6,
+        >= 41 and <= 50 => 4,
         _ => 7
     };
 
@@ -378,11 +395,18 @@ internal static class VoiceAllocator
             >= 24 and <= 31 => "pluck",
             >= 40 and <= 55 => "strings",
             >= 56 and <= 63 => "brass",
-            >= 64 and <= 79 => "reed",
+            >= 64 and <= 71 => "reed",
+            >= 72 and <= 79 => "flute",
             >= 80 and <= 87 => "lead",
             >= 88 and <= 103 => "pad",
-            >= 104 and <= 111 => "lead",
-            >= 112 and <= 119 => "pad",
+            >= 104 and <= 107 => "pluck",
+            108 => "bell",
+            109 => "reed",
+            110 => "strings",
+            111 => "reed",
+            >= 112 and <= 114 => "bell",
+            >= 115 and <= 119 => "pluck",
+            >= 120 and <= 127 => "pad",
             _ => requested
         };
     }
