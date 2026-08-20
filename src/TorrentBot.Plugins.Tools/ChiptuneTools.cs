@@ -33,6 +33,8 @@ internal static class ChiptuneTools
         // format was explicitly requested.
         if (string.IsNullOrWhiteSpace(spec.Format)) spec = spec with { Format = "mp3" };
         var song = ChiptuneParser.Compose(spec);
+        spec = AutoProfileResolver.Resolve(spec, song);
+        progress?.Report("chiptune:profile", $"chip={spec.Chip}, fidelity={spec.Fidelity}, explicit={spec.ChipExplicit}");
         progress?.Report("chiptune:composed", $"{song.Notes.Count} notes, {song.DurationSeconds:F1}s");
         var hardware = VoiceAllocator.Allocate(song, spec);
         progress?.Report("chiptune:arranged", $"{hardware.Notes.Count}/{song.Notes.Count} notes, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}, revoiced={hardware.RevoicedNotes}, arp={hardware.ArpeggiatedNotes}, dropped={hardware.DroppedNotes}, fidelity={hardware.Fidelity}");
@@ -61,12 +63,12 @@ internal static class ChiptuneTools
         if (spec.Mode != ChiptuneMode.Midi)
             return new(false, Message: "Inspection currently requires an attached MIDI file.");
         var song = ChiptuneParser.Compose(spec);
+        spec = AutoProfileResolver.Resolve(spec, song);
         var hardware = VoiceAllocator.Allocate(song, spec);
-        var channels = song.Notes.Where(x => x.SourceChannel >= 0)
-            .GroupBy(x => (x.SourceTrack, x.SourceChannel))
-            .OrderByDescending(x => x.Count())
-            .Select(x => $"  track {x.Key.SourceTrack + 1}/ch {x.Key.SourceChannel + 1}: {x.Count()} notes, programs={string.Join(',', x.Select(n => n.Program).Distinct())}");
-        var peakPolyphony = song.Notes.GroupBy(x => x.StartTick).Select(x => x.Count()).DefaultIfEmpty().Max();
+        var sourceParts = song.MidiMetadata?.SourceParts is { Count: > 0 } parts
+            ? string.Join('\n', parts.Select(x => $"  {x.Name}: track {x.Track + 1}/ch {x.Channel + 1}, program={x.Program}, bank={x.Bank}, role={x.Role}, notes={x.NoteCount}, peak={x.PeakPolyphony}"))
+            : "  (none)";
+        var peakPolyphony = PeakOverlap(song.Notes);
         var metadata = song.MidiMetadata;
         var names = metadata is null || metadata.TrackNames.Count == 0
             ? "  (none)"
@@ -74,18 +76,18 @@ internal static class ChiptuneTools
         var meters = metadata is null || metadata.TimeSignatures.Count == 0
             ? "  (default 4/4)"
             : string.Join(", ", metadata.TimeSignatures.Select(x => $"{x.Numerator}/{x.Denominator}@{x.Tick}"));
-        var bendSegments = song.Notes.Count(x => x.PitchBends is { Count: > 0 });
-        var volumeSegments = song.Notes.Count(x => x.Volume != 127);
-        var modulationSegments = song.Notes.Count(x => x.Modulation != 0);
-        var aftertouchSegments = song.Notes.Count(x => x.Aftertouch != 0);
+        var bendSegments = song.Notes.Sum(x => x.PitchBends?.Count ?? 0);
+        var volumeSegments = song.Notes.Sum(x => x.ControllerChanges?.Count(p => p.Volume != 127) ?? 0);
+        var modulationSegments = song.Notes.Sum(x => x.ControllerChanges?.Count(p => p.Modulation != 0) ?? 0);
+        var aftertouchSegments = song.Notes.Sum(x => x.ControllerChanges?.Count(p => p.Aftertouch != 0) ?? 0);
         var releaseVelocityNotes = song.Notes.Count(x => x.ReleaseVelocity != 0);
         var message = string.Join('\n', new[]
         {
-            $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, peak onset polyphony={peakPolyphony}",
+            $"MIDI inspection: notes={song.Notes.Count}, duration={song.DurationSeconds:F2}s, real peak polyphony={peakPolyphony}, auto-chip={spec.Chip}",
             $"Target={spec.Chip}, fidelity={spec.Fidelity}, arranged={hardware.Notes.Count}, voices={hardware.Notes.Select(x => x.Voice).Distinct().Count()}, revoiced={hardware.RevoicedNotes}, arpeggiated={hardware.ArpeggiatedNotes}, dropped={hardware.DroppedNotes}",
             $"Performance data: pitch-bend segments={bendSegments}, CC7 volume segments={volumeSegments}, modulation segments={modulationSegments}, aftertouch segments={aftertouchSegments}, release velocity notes={releaseVelocityNotes}",
             "Source parts:",
-            string.Join('\n', channels),
+            sourceParts,
             "Track names:", names,
             $"Time signatures: {meters}",
             $"Key signatures: {metadata?.KeySignatures.Count ?? 0}"
@@ -119,4 +121,24 @@ internal static class ChiptuneTools
     private static string Token()=>Convert.ToBase64String(RandomNumberGenerator.GetBytes(9)).TrimEnd('=').Replace('+','-').Replace('/','_');
 
     private static int ReadInt(string name,int fallback,int min,int max)=>int.TryParse(Environment.GetEnvironmentVariable(name),out var value)?Math.Clamp(value,min,max):fallback;
+
+    private static int PeakOverlap(IReadOnlyList<NoteEvent> notes)
+    {
+        var events = notes.SelectMany(note => new[]
+        {
+            (Tick: note.StartTick, Delta: 1),
+            (Tick: note.EndTick, Delta: -1)
+        })
+        .OrderBy(x => x.Tick)
+        .ThenBy(x => x.Delta) // release before onset at the same tick
+        .ToArray();
+        var active = 0;
+        var peak = 0;
+        foreach (var item in events)
+        {
+            active += item.Delta;
+            peak = Math.Max(peak, active);
+        }
+        return peak;
+    }
 }

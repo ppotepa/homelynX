@@ -44,12 +44,14 @@ internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, i
     IReadOnlyList<PitchBendPoint>? PitchBends = null,
     int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0,
     int PitchSlide = 0, int VolumeSlide = 0, int Volume = 127,
-    int Modulation = 0, int Aftertouch = 0, int ReleaseVelocity = 0)
+    int Modulation = 0, int Aftertouch = 0, int ReleaseVelocity = 0,
+    IReadOnlyList<ControllerPoint>? ControllerChanges = null)
 {
     public long EndTick => StartTick + DurationTick;
 }
 
 internal sealed record PitchBendPoint(long Tick, int Value);
+internal sealed record ControllerPoint(long Tick, int Volume = 127, int Expression = 127, int Pan = 64, int Modulation = 0, int Aftertouch = 0);
 
 internal sealed record Song(IReadOnlyList<NoteEvent> Notes, TempoMap TempoMap, MidiMetadata? MidiMetadata = null)
 {
@@ -62,7 +64,18 @@ internal sealed record KeySignaturePoint(long Tick, int SharpsFlats, bool Minor)
 internal sealed record MidiMetadata(
     IReadOnlyDictionary<int, string> TrackNames,
     IReadOnlyList<TimeSignaturePoint> TimeSignatures,
-    IReadOnlyList<KeySignaturePoint> KeySignatures);
+    IReadOnlyList<KeySignaturePoint> KeySignatures,
+    IReadOnlyList<MidiSourcePart>? SourceParts = null);
+
+internal sealed record MidiSourcePart(
+    int Track,
+    int Channel,
+    int Program,
+    int Bank,
+    string Name,
+    TrackRole Role,
+    int NoteCount,
+    int PeakPolyphony);
 
 internal sealed record ChiptuneSpec
 {
@@ -73,13 +86,14 @@ internal sealed record ChiptuneSpec
     [JsonIgnore] public byte[]? Midi { get; init; }
     public string? MidiBase64 { get; init; }
     public string Chip { get; init; } = "gb";
+    public bool ChipExplicit { get; init; }
     public string Instrument { get; init; } = "lead";
     public string Style { get; init; } = "arcade";
     public string Key { get; init; } = "C";
     public string Scale { get; init; } = "major";
     public int Bpm { get; init; } = 140;
     public string TempoMode { get; init; } = "file";
-    public string Fidelity { get; init; } = "balanced";
+    public string Fidelity { get; init; } = "recognizable";
     public int Transpose { get; init; }
     public int Octave { get; init; } = 4;
     public int Octaves { get; init; } = 2;
@@ -110,7 +124,9 @@ internal sealed record ChiptuneSpec
 internal sealed record HardwareNote(int Voice, long StartTick, long DurationTick, int Pitch, int Velocity, string Instrument, TrackRole Role,
     int InstrumentId = 0, int Pan = 64, int Expression = 127, int PitchBend = 8192, int PitchBendRange = 2, int Program = 0,
     int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0, int PitchSlide = 0, int VolumeSlide = 0,
-    int Volume = 127, int Modulation = 0, int Aftertouch = 0, int ReleaseVelocity = 0);
+    int Volume = 127, int Modulation = 0, int Aftertouch = 0, int ReleaseVelocity = 0,
+    IReadOnlyList<PitchBendPoint>? PitchBends = null, IReadOnlyList<ControllerPoint>? ControllerChanges = null,
+    string VoiceClass = "pulse");
 internal sealed record HardwareSong(string Chip, int Bpm, int SampleRate, IReadOnlyList<TempoPoint> Tempo, IReadOnlyList<HardwareNote> Notes, long EndTick,
     string Wave = "square", int Duty = 25, int Attack = 0, int Decay = 8, int Sustain = 12, int Release = 8, int Vibrato = 0, int Filter = 0,
-    int SourceNoteCount = 0, int RevoicedNotes = 0, int ArpeggiatedNotes = 0, int DroppedNotes = 0, string Fidelity = "balanced");
+    int SourceNoteCount = 0, int RevoicedNotes = 0, int ArpeggiatedNotes = 0, int DroppedNotes = 0, string Fidelity = "recognizable");

@@ -157,10 +157,14 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   int decay = bounded(request.value("decay", 8), 0, 31);
   int sustain = bounded(request.value("sustain", 12), 0, 31);
   int release = bounded(request.value("release", 8), 0, 31);
-  int voices = chip == "snes" ? 8 : chip == "genesis" ? 10 : chip == "pce" ? 6 : chip == "nes" ? 5 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" ? 1 : 4;
+  int voices = chip == "snes" ? 8 : chip == "genesis" ? 10 : chip == "pce" ? 6 : chip == "nes" ? 5 : chip == "c64_6581" || chip == "c64_8580" ? 3 : chip == "zx_spectrum" ? 6 : chip == "atari2600" ? 2 : chip == "pcspeaker" ? 1 : 4;
   int instruments = voices;
   std::map<int, std::string> patches;
-  for (const auto& item : request.at("notes")) patches[item.value("instrumentId", 0)] = item.value("instrument", "lead");
+  std::map<int, std::string> voiceClasses;
+  for (const auto& item : request.at("notes")) {
+    patches[item.value("instrumentId", 0)] = item.value("instrument", "lead");
+    voiceClasses[item.value("instrumentId", 0)] = item.value("voiceClass", "pulse");
+  }
   for (const auto& item : request.at("notes")) instruments = std::max(instruments, item.value("instrumentId", 0) + 1);
   for (int voice = 0; voice < instruments; ++voice) {
     const auto patch = patches.count(voice) ? patches[voice] : (voice == 2 ? "bass" : voice == 3 ? "drums" : "lead");
@@ -175,13 +179,16 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->type = DIV_INS_GB;
       instrument->gb.envVol = 15;
       instrument->gb.envDir = 0;
-      instrument->gb.envLen = patch == "pluck" || patch == "kick" || patch == "hat" || patch == "open_hat" ? 1 : patch == "snare" ? 2 : chip == "gbc" ? (voice == 0 ? 1 : 3) : (voice == 0 ? 2 : 4);
+      // Envelope belongs to the patch, not to the instrument table index.
+      // The old code used `voice` here even though it was an InstrumentId;
+      // almost every MIDI patch consequently received the same GBC envelope.
+      instrument->gb.envLen = patch == "pluck" || patch == "kick" || patch == "hat" || patch == "open_hat" ? 1 : patch == "snare" ? 2 : patch == "soft_lead" ? 3 : patch == "strings" || patch == "pad" ? 5 : 4;
       instrument->gb.soundLen = 64;
-      instrument->gb.softEnv = chip == "gbc" || patch == "soft_lead" || patch == "strings";
+      instrument->gb.softEnv = patch == "soft_lead" || patch == "strings" || patch == "pad";
       instrument->gb.alwaysInit = true;
-    } else if (chip == "genesis" && voice >= 6) {
-      // Channels 6..9 are the Genesis PSG (SN76489), whose instruments use
-      // Furnace's standard pulse/noise instrument type.
+    } else if (chip == "genesis" && (voiceClasses[voice] == "psg" || voiceClasses[voice] == "noise")) {
+      // Instrument type follows the target voice class. InstrumentId is only
+      // a compact catalog index and must never imply a hardware channel.
       instrument->type = DIV_INS_STD;
     } else if (chip == "genesis") {
       instrument->type = DIV_INS_FM;
@@ -282,8 +289,18 @@ static void fillSong(DivEngine& engine, const json& request) {
     if (startRow >= sub->ordersLen * sub->patLen) continue;
     int order = startRow / sub->patLen, row = startRow % sub->patLen;
     DivPattern* pattern = sub->pat[voice].getPattern(order, true);
+    // A tracker cell can contain one note only. The allocator normally
+    // guarantees this invariant; keep the bridge defensive for direct JSON
+    // callers so a later event cannot silently replace an earlier one.
+    if (pattern->newData[row][DIV_PAT_NOTE] != -1) continue;
     pattern->newData[row][DIV_PAT_NOTE] = (short)bounded(item.value("pitch", 60) + 48, 0, 179);
-    pattern->newData[row][DIV_PAT_INS] = (short)bounded(item.value("instrumentId", voice), 0, 179);
+    // Instrument IDs are dense semantic patch IDs produced by the C# side.
+    // Validate the Furnace capacity; never clamp an invalid ID to another
+    // patch, which was the source of the old percussion corruption.
+    int instrumentId = item.value("instrumentId", voice);
+    if (instrumentId < 0 || instrumentId >= 180)
+      throw std::runtime_error("instrument catalog index exceeds Furnace capacity");
+    pattern->newData[row][DIV_PAT_INS] = (short)instrumentId;
     int maxVolume = engine.getMaxVolumeChan(voice);
     int velocity = bounded(item.value("velocity", 100), 1, 127);
     int expression = bounded(item.value("expression", 127), 0, 127);
@@ -365,6 +382,73 @@ static void fillSong(DivEngine& engine, const json& request) {
       DivPattern* offPattern = sub->pat[voice].getPattern(offOrder, true);
       if (offPattern->newData[offRow][DIV_PAT_NOTE] == -1)
         offPattern->newData[offRow][DIV_PAT_NOTE] = DIV_NOTE_OFF;
+    }
+  }
+
+  // Apply pitch-bend points on later tracker rows without emitting another
+  // note. This preserves the original envelope/voice while still allowing a
+  // MIDI bend to move an already-playing chip voice.
+  for (const auto& item : request.at("notes")) {
+    int voice = item.value("voice", 0);
+    if (voice < 0 || voice >= engine.song.chans) continue;
+    long noteStart = item.value("startTick", 0L);
+    int bendRange = bounded(item.value("pitchBendRange", 2), 0, 24);
+    for (const auto& bend : item.value("pitchBends", json::array())) {
+      long tick = bend.value("tick", noteStart);
+      if (tick <= noteStart) continue;
+      int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
+      if (rowIndex >= sub->ordersLen * sub->patLen) continue;
+      int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
+      DivPattern* pattern = sub->pat[voice].getPattern(order, true);
+      int effect = -1;
+      for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot) {
+        if (pattern->newData[row][DIV_PAT_FX(slot)] == -1) { effect = slot; break; }
+      }
+      if (effect < 0) continue;
+      double semitones = (bend.value("value", 8192) - 8192) / 8192.0 * bendRange;
+      double residual = semitones - std::round(semitones);
+      pattern->newData[row][DIV_PAT_FX(effect)] = 0xE5;
+      pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+    }
+  }
+
+  // Controller automation also updates an existing channel without a new
+  // note. This keeps sustain, dynamics, pan and modulation expressive while
+  // preserving the patch envelope.
+  for (const auto& item : request.at("notes")) {
+    int voice = item.value("voice", 0);
+    if (voice < 0 || voice >= engine.song.chans) continue;
+    long noteStart = item.value("startTick", 0L);
+    int velocity = bounded(item.value("velocity", 100), 1, 127);
+    for (const auto& point : item.value("controllerChanges", json::array())) {
+      long tick = point.value("tick", noteStart);
+      if (tick <= noteStart) continue;
+      int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
+      if (rowIndex >= sub->ordersLen * sub->patLen) continue;
+      int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
+      DivPattern* pattern = sub->pat[voice].getPattern(order, true);
+      int volume = bounded(point.value("volume", 127), 0, 127);
+      int expression = bounded(point.value("expression", 127), 0, 127);
+      int effectiveVolume = (velocity * expression * volume + 8064) / (127 * 127);
+      int maxVolume = engine.getMaxVolumeChan(voice);
+      pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 0, maxVolume);
+      int effect = -1;
+      for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot) {
+        if (pattern->newData[row][DIV_PAT_FX(slot)] == -1) { effect = slot; break; }
+      }
+      int pan = bounded(point.value("pan", 64), 0, 127);
+      if (pan != 64 && effect >= 0) {
+        int left = bounded((127 - pan) * 15 / 127, 0, 15);
+        int right = bounded(pan * 15 / 127, 0, 15);
+        pattern->newData[row][DIV_PAT_FX(effect)] = 0x88;
+        pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)((left << 4) | right);
+        effect++;
+      }
+      int modulation = bounded(std::max(point.value("modulation", 0), point.value("aftertouch", 0)), 0, 127);
+      if (modulation > 0 && effect >= 0 && effect < DIV_MAX_EFFECTS) {
+        pattern->newData[row][DIV_PAT_FX(effect)] = 0xE4;
+        pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)(modulation * 31 / 127);
+      }
     }
   }
   engine.song.name = "Homelynx chiptune";

@@ -2,57 +2,42 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 
 internal static class VoiceAllocator
 {
-    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<TrackRole, int[]>> Maps =
-        new Dictionary<string, IReadOnlyDictionary<TrackRole, int[]>>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["gb"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3] },
-            ["gbc"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3] },
-            ["gameboy"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3] },
-            ["nes"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3,4] },
-            ["sms"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3] },
-            ["snes"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0,1], [TrackRole.Bass]=[2], [TrackRole.Drums]=[3,4,5], [TrackRole.Harmony]=[6], [TrackRole.Arp]=[7] }
-            , ["c64_6581"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[1], [TrackRole.Drums]=[2] }
-            , ["c64_8580"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[1], [TrackRole.Drums]=[2] }
-            // Genesis/Mega Drive: FM1-6 (0..5) plus PSG tone/noise (6..9).
-            // Keep bass on FM and reserve the PSG for cheap harmony/arp and
-            // percussion, while still allowing polyphonic lead material.
-            , ["genesis"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0,1], [TrackRole.Harmony]=[2,3,6,7], [TrackRole.Arp]=[6,7,8], [TrackRole.Bass]=[4], [TrackRole.Drums]=[9] }
-            , ["pce"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2,3], [TrackRole.Bass]=[4], [TrackRole.Drums]=[5] }
-            , ["atari2600"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Bass]=[1], [TrackRole.Drums]=[1] }
-            , ["pokey"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Harmony]=[1], [TrackRole.Arp]=[2], [TrackRole.Bass]=[3], [TrackRole.Drums]=[3] }
-            , ["pcspeaker"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Bass]=[0], [TrackRole.Drums]=[0] }
-            , ["zx_spectrum"] = new Dictionary<TrackRole,int[]> { [TrackRole.Lead]=[0], [TrackRole.Bass]=[0], [TrackRole.Drums]=[0] }
-        };
-
     private static readonly IReadOnlyDictionary<TrackRole,int> Priority = new Dictionary<TrackRole,int>
     { [TrackRole.Lead]=5, [TrackRole.Bass]=4, [TrackRole.Drums]=3, [TrackRole.Arp]=2, [TrackRole.Harmony]=1 };
 
     public static HardwareSong Allocate(Song song, ChiptuneSpec spec)
     {
-        var map = Maps[spec.Chip];
+        var profile = ChipProfile.For(spec.Chip);
         var allocated = new List<HardwareNote>();
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
+        var preferredVoice = new Dictionary<(int Track, int Channel, int Program, int Bank, TrackRole Role), int>();
         var revoiced = 0; var arpeggiated = 0; var dropped = 0;
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
             foreach (var note in group.OrderByDescending(x => Priority[x.Role]).ThenByDescending(x => x.Velocity).ThenByDescending(x => x.Pitch))
             {
-                var voices = map.TryGetValue(note.Role, out var mapped) ? mapped : map[TrackRole.Lead];
-                if (spec.Chip == "nes" && note.Role == TrackRole.Drums && IsDpcmPercussion(note.Pitch))
-                    voices = [4, 3];
-                var voice = voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
-                if (voice < 0 && spec.Fidelity == "preserve" && (note.Role is TrackRole.Lead or TrackRole.Harmony) && voices.Length == 1 && group.Count() > 1)
+                var voices = profile.Candidates(note);
+                var part = (note.SourceTrack, note.SourceChannel, note.Program, note.Bank, note.Role);
+                var preferred = preferredVoice.GetValueOrDefault(part, -1);
+                var voice = preferred >= 0 && voices.Contains(preferred) && voiceUntil.GetValueOrDefault(preferred) <= note.StartTick
+                    ? preferred
+                    : voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
+                if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
                 {
-                    // A monophonic target expresses a simultaneous chord as a
-                    // short deterministic arpeggio instead of silently losing it.
+                    // A full hardware chord cannot occupy one tracker cell.
+                    // Spread the colliding note over the same compatible voice
+                    // instead of letting native Furnace overwrite a note.
                     var slice = Math.Max(60, note.DurationTick / Math.Max(1, group.Count()));
-                    var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == voices[0]) * slice;
-                    var arp = ToHardware(note, voices[0], spec, InstrumentIdFor(note));
+                    var arpVoice = voices.OrderBy(x => allocated.Count(y => y.StartTick == note.StartTick && y.Voice == x)).First();
+                    var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == arpVoice) * slice;
+                    var arp = ToHardware(note, arpVoice, spec);
                     allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
-                    voiceUntil[voices[0]] = Math.Max(voiceUntil.GetValueOrDefault(voices[0]), arpStart + Math.Min(slice, note.DurationTick));
-                    lastOnVoice[voices[0]] = allocated.Count - 1;
-                    arpeggiated++;
+                    voiceUntil[arpVoice] = Math.Max(voiceUntil.GetValueOrDefault(arpVoice), arpStart + Math.Min(slice, note.DurationTick));
+                    lastOnVoice[arpVoice] = allocated.Count - 1;
+                    preferredVoice[part] = arpVoice;
+                    if (spec.Fidelity == "preserve") arpeggiated++;
+                    else revoiced++;
                     continue;
                 }
                 if (voice < 0)
@@ -64,13 +49,19 @@ internal static class VoiceAllocator
                     if (lastOnVoice.TryGetValue(voice, out var previousIndex))
                     {
                         var previous = allocated[previousIndex];
+                        if (spec.Fidelity == "recognizable" && Priority[previous.Role] >= Priority[note.Role])
+                        {
+                            dropped++;
+                            continue;
+                        }
                         if (previous.StartTick < note.StartTick)
                             allocated[previousIndex] = previous with { DurationTick = Math.Max(1, note.StartTick - previous.StartTick) };
                     }
                     revoiced++;
                 }
-                var hardware = ToHardware(note, voice, spec, InstrumentIdFor(note));
+                var hardware = ToHardware(note, voice, spec);
                 lastOnVoice[voice] = allocated.Count;
+                preferredVoice[part] = voice;
                 allocated.Add(hardware);
                 voiceUntil[voice] = note.EndTick;
             }
@@ -80,28 +71,20 @@ internal static class VoiceAllocator
             song.Notes.Count, revoiced, arpeggiated, dropped, spec.Fidelity);
     }
 
-    private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec, int instrumentId)
+    private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec)
     {
-        // MIDI importer expands bend automation into short note segments. Do
-        // not apply the same bend twice here; the value remains on the event
-        // for diagnostics and future native tracker automation.
+        // The importer keeps bends/controller changes attached to this note;
+        // the native bridge emits them as tracker effects without another
+        // Note On, so the chip envelope is not retriggered.
+        var profile = ChipProfile.For(spec.Chip);
+        var voiceClass = profile.Voice(voice).Class;
+        var patch = InstrumentFor(note, spec.Instrument);
         return new(voice, note.StartTick, note.DurationTick, Math.Clamp(note.Pitch, 0, 127), note.Velocity,
-            InstrumentFor(note, spec.Instrument), note.Role, instrumentId,
+            patch, note.Role, InstrumentCatalog.Id(patch, voiceClass),
             note.Pan, note.Expression, note.PitchBend, note.PitchBendRange, note.Program,
             note.NoteCutTicks, note.NoteDelayTicks, note.Retrigger, note.PitchSlide, note.VolumeSlide,
-            note.Volume, note.Modulation, note.Aftertouch, note.ReleaseVelocity);
-    }
-
-    private static int InstrumentIdFor(NoteEvent note)
-    {
-        // Keep IDs deterministic and independent of hardware voice. Program
-        // changes therefore select a different patch while a part moves
-        // between voices. Drum IDs are semantic GM percussion families.
-        return note.Role switch
-        {
-            TrackRole.Drums => 200 + PercussionFamily(note.Pitch),
-            _ => 10 + Math.Clamp(note.Program, 0, 127)
-        };
+            note.Volume, note.Modulation, note.Aftertouch, note.ReleaseVelocity, note.PitchBends, note.ControllerChanges,
+            voiceClass.ToString().ToLowerInvariant());
     }
 
     private static int PercussionFamily(int pitch) => pitch switch
@@ -122,8 +105,15 @@ internal static class VoiceAllocator
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass) return "bass";
+        // Procedural/manual notes have no MIDI program. Preserve the explicit
+        // user instrument instead of treating the default Program=0 as piano.
+        if (note.SourceTrack < 0 && note.Program == 0) return requested;
         return note.Program switch
         {
+            >= 0 and <= 7 => "epiano",
+            >= 8 and <= 15 => "bell",
+            >= 16 and <= 23 => "organ",
+            >= 24 and <= 31 => "pluck",
             >= 32 and <= 39 => "bass",
             >= 40 and <= 55 => "strings",
             >= 56 and <= 63 => "brass",

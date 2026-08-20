@@ -76,7 +76,9 @@ internal static class FurnaceChipRenderer
         {
             var start = ToFixedTick(note.StartTick);
             var end = ToFixedTick(note.StartTick + note.DurationTick);
-            return note with { StartTick = start, DurationTick = Math.Max(1, end - start) };
+            var bends = note.PitchBends?.Select(point => point with { Tick = ToFixedTick(point.Tick) }).ToArray();
+            var controllers = note.ControllerChanges?.Select(point => point with { Tick = ToFixedTick(point.Tick) }).ToArray();
+            return note with { StartTick = start, DurationTick = Math.Max(1, end - start), PitchBends = bends, ControllerChanges = controllers };
         }).ToArray();
 
         return song with

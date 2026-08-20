@@ -17,7 +17,9 @@ internal static partial class ChiptuneParser
         if (new[] { hasNotes, hasDegrees, hasGenerate, hasMidi }.Count(x => x) != 1)
             throw new FormatException("Choose exactly one source: notes=..., degrees=..., generate=scale|arp|riff, or attach one MIDI file.");
 
+        var chipExplicit = (o.ContainsKey("chip") || o.ContainsKey("preset")) && !string.Equals(Get(o, "chip", Get(o, "preset", "")), "auto", StringComparison.OrdinalIgnoreCase);
         var chip = Get(o, "chip", Get(o, "preset", "gb")).ToLowerInvariant();
+        if (chip == "auto") chip = "gb";
         if (chip is "gameboy" or "dmg") chip = "gb";
         if (chip is "gameboy_color" or "color") chip = "gbc";
         if (chip == "sega") chip = "sms";
@@ -32,7 +34,7 @@ internal static partial class ChiptuneParser
         var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
         var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
         var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
-        var fidelity = Get(o, "fidelity", "balanced").ToLowerInvariant(); Ensure(fidelity, ["preserve", "balanced", "strict"], "fidelity");
+        var fidelity = Get(o, "fidelity", hasMidi ? "recognizable" : "balanced").ToLowerInvariant(); Ensure(fidelity, ["recognizable", "preserve", "balanced", "strict"], "fidelity");
         // Imported MIDI should preserve its original performance timing unless
         // the user explicitly asks for quantization. Generated music remains
         // aligned to the tracker-friendly sixteenth-note grid.
@@ -51,7 +53,7 @@ internal static partial class ChiptuneParser
             Mode = hasNotes ? ChiptuneMode.Notes : hasDegrees ? ChiptuneMode.Degrees : hasGenerate ? ChiptuneMode.Generate : ChiptuneMode.Midi,
             Notes=o.GetValueOrDefault("notes"), Degrees=o.GetValueOrDefault("degrees"), Generate=generate,
             MidiBase64=o.GetValueOrDefault("midi_base64"), Chip=chip, Instrument=instrument, Style=style,
-            Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode,
+            Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode, ChipExplicit=chipExplicit,
             Fidelity=fidelity,
             Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
             Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",4,1,16), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),

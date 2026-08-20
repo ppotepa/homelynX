@@ -12,6 +12,79 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Midi_defaults_to_recognizable_and_auto_chip_when_chip_is_omitted()
+    {
+        var spec = ChiptuneParser.Parse("midi_base64=" + Convert.ToBase64String(new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d',0,0,0,6,0,0,0,1,1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k',0,0,0,13,
+            0,0x90,60,100,0x83,0x60,0x80,60,0,0,0xFF,0x2F,0
+        }));
+        var resolved = AutoProfileResolver.Resolve(spec, ChiptuneParser.Compose(spec));
+
+        Assert.False(spec.ChipExplicit);
+        Assert.Equal("recognizable", spec.Fidelity);
+        Assert.Equal("gbc", resolved.Chip);
+    }
+
+    [Fact]
+    public void Chip_profiles_expose_real_dynamic_voice_pools()
+    {
+        var snes = ChipProfile.For("snes");
+        var zx = ChipProfile.For("zx_spectrum");
+
+        Assert.Equal(8, snes.Voices.Count);
+        Assert.Equal(6, zx.Voices.Count);
+        Assert.Equal([0, 1, 2, 3, 4, 5, 6, 7], snes.Candidates(new NoteEvent(0, 120, 60, 100, TrackRole.Harmony)));
+        Assert.Equal([0, 1, 2, 3, 4, 5], zx.Candidates(new NoteEvent(0, 120, 60, 100, TrackRole.Lead)));
+    }
+
+    [Fact]
+    public void Snes_uses_available_sample_pool_before_reducing_a_chord()
+    {
+        var song = new Song(Enumerable.Range(0, 8)
+            .Select(i => new NoteEvent(0, 960, 48 + i * 2, 100, TrackRole.Harmony, SourceTrack: i, SourceChannel: i))
+            .ToArray(), TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=snes fidelity=recognizable format=wav");
+        var hardware = VoiceAllocator.Allocate(song, spec);
+
+        Assert.Equal(8, hardware.Notes.Select(x => x.Voice).Distinct().Count());
+        Assert.Equal(0, hardware.DroppedNotes);
+        Assert.Equal(0, hardware.ArpeggiatedNotes);
+    }
+
+    [Fact]
+    public void Genesis_instrument_class_follows_target_voice_not_catalog_id()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 480, 60, 100, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0),
+            new NoteEvent(0, 480, 64, 90, TrackRole.Arp, SourceTrack: 1, SourceChannel: 1)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=genesis format=wav");
+        var notes = VoiceAllocator.Allocate(song, spec).Notes;
+
+        Assert.Contains(notes, x => x.VoiceClass == "fm");
+        Assert.Contains(notes, x => x.VoiceClass == "psg");
+        Assert.All(notes, x => Assert.InRange(x.InstrumentId, 0, 79));
+    }
+
+    [Fact]
+    public void Recognizable_fidelity_protects_existing_lead_from_lower_priority_stealing()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 72, 100, TrackRole.Lead),
+            new NoteEvent(240, 960, 48, 90, TrackRole.Harmony)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=recognizable format=wav");
+        var notes = VoiceAllocator.Allocate(song, spec);
+
+        Assert.Equal(960, notes.Notes.Single(x => x.Role == TrackRole.Lead).DurationTick);
+        Assert.Equal(1, notes.DroppedNotes);
+    }
+
+    [Fact]
     public void Tracker_articulation_options_reach_hardware_notes()
     {
         var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes note_cut=120 note_delay=15 retrigger=3 pitch_slide=4 volume_slide=-2");
@@ -73,6 +146,27 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Gbc_shares_pulse_channels_across_melodic_parts_without_same_cell_collisions()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 76, 110, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0),
+            new NoteEvent(0, 960, 64, 90, TrackRole.Harmony, SourceTrack: 1, SourceChannel: 1),
+            new NoteEvent(0, 960, 55, 85, TrackRole.Harmony, SourceTrack: 2, SourceChannel: 2),
+            new NoteEvent(0, 960, 40, 100, TrackRole.Bass, SourceTrack: 3, SourceChannel: 3)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=gbc fidelity=preserve format=wav");
+
+        var hardware = VoiceAllocator.Allocate(song, spec);
+        var cells = hardware.Notes.GroupBy(x => (x.Voice, x.StartTick));
+
+        Assert.All(cells, cell => Assert.Single(cell));
+        Assert.Contains(hardware.Notes, x => x.Voice == 2 && x.Role == TrackRole.Bass);
+        Assert.True(hardware.ArpeggiatedNotes > 0);
+        Assert.All(hardware.Notes, x => Assert.InRange(x.InstrumentId, 0, 39));
+    }
+
+    [Fact]
     public void Voice_allocator_prevents_old_note_off_from_cutting_a_new_note()
     {
         var song = new Song(
@@ -84,8 +178,11 @@ public sealed class ChiptuneTests
 
         var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
 
-        Assert.Equal(240, notes[0].DurationTick);
+        // NES now uses both pulse channels for melodic parts, so the second
+        // note no longer steals and truncates the first one.
+        Assert.Equal(960, notes[0].DurationTick);
         Assert.Equal(960, notes[1].DurationTick);
+        Assert.NotEqual(notes[0].Voice, notes[1].Voice);
     }
 
     [Theory]
@@ -130,7 +227,7 @@ public sealed class ChiptuneTests
     [Theory]
     [InlineData("atari2600", 1)]
     [InlineData("pcspeaker", 2)]
-    [InlineData("zx_spectrum", 2)]
+    [InlineData("zx_spectrum", 0)]
     public void Strict_mode_reports_loss_on_single_or_two_voice_targets(string chip, int minimumDropped)
     {
         var song = new Song(
@@ -239,7 +336,23 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
-    public void Midi_import_turns_pitch_bend_automation_into_timed_note_segments()
+    public void Midi_import_extends_note_when_pedal_goes_down_after_attack()
+    {
+        var midi = new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,20,
+            0,0x90,60,100, 30,0xB0,64,127, 30,0x80,60,0,
+            30,0xB0,64,0, 0,0xFF,0x2F,0
+        };
+        var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
+        var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
+
+        Assert.Equal(180L, note.DurationTick);
+    }
+
+    [Fact]
+    public void Midi_import_keeps_pitch_bend_automation_on_one_note()
     {
         var midi = new byte[]
         {
@@ -251,9 +364,30 @@ public sealed class ChiptuneTests
         var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
         var notes = ChiptuneParser.Compose(spec).Notes;
 
-        Assert.Equal([0L, 60L, 120L], notes.Select(x => x.StartTick));
-        Assert.Equal([60, 61, 60], notes.Select(x => x.Pitch));
-        Assert.All(notes, x => Assert.Equal(60L, x.DurationTick));
+        var note = Assert.Single(notes);
+        Assert.Equal(0L, note.StartTick);
+        Assert.Equal(180L, note.DurationTick);
+        Assert.Equal(60, note.Pitch);
+        Assert.Equal([new PitchBendPoint(60, 12288), new PitchBendPoint(120, 8192)], note.PitchBends);
+    }
+
+    [Fact]
+    public void Midi_controller_changes_do_not_split_or_retrigger_a_note()
+    {
+        var midi = new byte[]
+        {
+            (byte)'M',(byte)'T',(byte)'h',(byte)'d', 0,0,0,6, 0,0, 0,1, 1,0xE0,
+            (byte)'M',(byte)'T',(byte)'r',(byte)'k', 0,0,0,16,
+            0,0x90,60,100, 30,0xB0,7,64, 30,0x80,60,0,
+            0,0xFF,0x2F,0
+        };
+        var spec = ChiptuneParser.Parse($"midi_base64={Convert.ToBase64String(midi)}");
+        var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
+
+        Assert.Equal(120L, note.DurationTick);
+        var controller = Assert.Single(note.ControllerChanges!);
+        Assert.Equal(60L, controller.Tick);
+        Assert.Equal(64, controller.Volume);
     }
 
     [Fact]
@@ -270,9 +404,9 @@ public sealed class ChiptuneTests
 
         var hardware = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray();
 
-        Assert.Contains(hardware, x => x.Instrument == "bass" && x.InstrumentId == 42);
-        Assert.Contains(hardware, x => x.Instrument == "kick" && x.InstrumentId == 200);
-        Assert.Contains(hardware, x => x.Instrument == "hat" && x.InstrumentId == 202);
+        Assert.Contains(hardware, x => x.Instrument == "bass" && x.InstrumentId == 3);
+        Assert.Contains(hardware, x => x.Instrument == "kick" && x.InstrumentId == 16);
+        Assert.Contains(hardware, x => x.Instrument == "hat" && x.InstrumentId != x.Voice && x.VoiceClass == "noise");
         Assert.NotEqual(hardware.Single(x => x.Instrument == "kick").Voice, hardware.Single(x => x.Instrument == "kick").InstrumentId);
     }
 

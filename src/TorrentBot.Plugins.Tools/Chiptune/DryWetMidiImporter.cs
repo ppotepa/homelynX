@@ -97,35 +97,53 @@ internal static class DryWetMidiImporter
             var end = Math.Max(start + Math.Max(1, grid), Quantize(rawEnd, grid));
             var key = (item.Track, Channel: (int)item.Note.Channel);
             var role = item.Note.Channel == 9 ? TrackRole.Drums : key == bass ? TrackRole.Bass : key == lead ? TrackRole.Lead : TrackRole.Harmony;
-            var boundaries = new[] { item.Note.Time }
-                .Concat(item.Bends.Select(x => x.Time))
-                .Concat(item.Automation.Select(x => x.Time))
-                .Append(item.End).Distinct().Order().ToArray();
-            var currentBend = item.State.PitchBend;
-            return boundaries.Zip(boundaries.Skip(1), (rawStart, rawEnd) =>
-            {
-                var segmentState = item.Automation.LastOrDefault(x => x.Time <= rawStart)?.State ?? item.State;
-                if (rawStart > item.Note.Time && item.Bends.FirstOrDefault(x => x.Time == rawStart) is { } bend) currentBend = bend.Value;
-                var segmentStart = Quantize(Scale(rawStart, ppq), grid);
-                var segmentEnd = Math.Max(segmentStart + Math.Max(1, grid), Quantize(Scale(rawEnd, ppq), grid));
-                var pitch = Math.Clamp((int)item.Note.NoteNumber + (item.Note.Channel == 9 ? 0 : spec.Transpose) +
-                    (int)Math.Round((currentBend - 8192) / 8192d * segmentState.PitchBendRange, MidpointRounding.AwayFromZero), 0, 127);
-                return new NoteEvent(segmentStart, segmentEnd - segmentStart, pitch, item.Note.Velocity, role,
-                    item.Track, item.Note.Channel, segmentState.Program, segmentState.Bank, segmentState.Pan, segmentState.Expression,
-                    currentBend, segmentState.PitchBendRange,
-                    item.Bends.Count == 0 ? null : item.Bends.Select(x => new PitchBendPoint(Scale(x.Time, ppq), x.Value)).ToArray(),
-                    Volume: segmentState.Volume, Modulation: segmentState.Modulation, Aftertouch: segmentState.Aftertouch,
-                    ReleaseVelocity: item.Note.OffVelocity);
-            });
+            // Keep the note as one Note On. Controller and pitch automation is
+            // emitted as tracker effects later; splitting it here retriggered
+            // the chip envelope and destroyed sustained instruments.
+            var initialState = item.State;
+            var pitch = Math.Clamp((int)item.Note.NoteNumber + (item.Note.Channel == 9 ? 0 : spec.Transpose) +
+                (int)Math.Round((initialState.PitchBend - 8192) / 8192d * initialState.PitchBendRange, MidpointRounding.AwayFromZero), 0, 127);
+            var startTick = Quantize(rawStart, grid);
+            var endTick = Math.Max(startTick + Math.Max(1, grid), Quantize(rawEnd, grid));
+            return new[] { new NoteEvent(startTick, endTick - startTick, pitch, item.Note.Velocity, role,
+                item.Track, item.Note.Channel, initialState.Program, initialState.Bank, initialState.Pan, initialState.Expression,
+                initialState.PitchBend, initialState.PitchBendRange,
+                item.Bends.Count == 0 ? null : item.Bends.Select(x => new PitchBendPoint(Scale(x.Time, ppq), x.Value)).ToArray(),
+                Volume: initialState.Volume, Modulation: initialState.Modulation, Aftertouch: initialState.Aftertouch,
+                ReleaseVelocity: item.Note.OffVelocity,
+                ControllerChanges: item.Automation.Select(x => new ControllerPoint(Scale(x.Time, ppq), x.State.Volume, x.State.Expression, x.State.Pan, x.State.Modulation, x.State.Aftertouch)).ToArray()) };
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
 
-        return new Song(result, tempo, new MidiMetadata(names, signatures, keys));
+        var sourceParts = result
+            .Where(x => x.SourceTrack >= 0 && x.SourceChannel >= 0)
+            .GroupBy(x => (x.SourceTrack, x.SourceChannel, x.Program, x.Bank))
+            .Select(group => new MidiSourcePart(
+                group.Key.SourceTrack, group.Key.SourceChannel, group.Key.Program, group.Key.Bank,
+                names.GetValueOrDefault(group.Key.SourceTrack, $"Track {group.Key.SourceTrack + 1}"),
+                group.First().Role, group.Count(), PeakOverlap(group)))
+            .OrderBy(x => x.Track).ThenBy(x => x.Channel).ThenBy(x => x.Program)
+            .ToArray();
+        return new Song(result, tempo, new MidiMetadata(names, signatures, keys, sourceParts));
     }
 
     private static long Scale(long tick, int ppq) => checked(tick * TempoMap.Ppq / ppq);
     private static long Quantize(long tick, long grid) => grid <= 0 ? Math.Max(0, tick) : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
     private static bool IsLeadProgram(int program) => program is >= 80 and <= 87 or >= 56 and <= 63 or >= 64 and <= 71;
     private static bool IsBassProgram(int program) => program is >= 32 and <= 39;
+
+    private static int PeakOverlap(IEnumerable<NoteEvent> notes)
+    {
+        var active = 0;
+        var peak = 0;
+        foreach (var point in notes.SelectMany(x => new[]
+                     { (Tick: x.StartTick, Delta: 1), (Tick: x.EndTick, Delta: -1) })
+                 .OrderBy(x => x.Tick).ThenBy(x => x.Delta))
+        {
+            active += point.Delta;
+            peak = Math.Max(peak, active);
+        }
+        return peak;
+    }
 
     private sealed record ImportedNote(int Track, Note Note, ChannelSnapshot State, long End,
         IReadOnlyList<PitchBendEventData> Bends, IReadOnlyList<AutomationPoint> Automation);
@@ -159,12 +177,18 @@ internal static class DryWetMidiImporter
 
         public long SustainExtension(int channel, long end)
         {
-            var down = _states.GetValueOrDefault(channel)?.Sustain ?? false;
-            foreach (var timed in _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time >= end))
+            // Sustain is evaluated at key release, not at key attack. A
+            // pianist commonly presses the pedal after the note starts.
+            var channelEvents = _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel).ToArray();
+            var down = channelEvents
+                .Where(x => x.Time <= end && x.Event is ControlChangeEvent cc && cc.ControlNumber == 64)
+                .Select(x => ((ControlChangeEvent)x.Event).ControlValue >= 64)
+                .LastOrDefault();
+            if (!down) return end;
+            foreach (var timed in channelEvents.Where(x => x.Time > end))
             {
                 if (timed.Event is not ControlChangeEvent cc || cc.ControlNumber != 64) continue;
-                if (cc.ControlValue >= 64) down = true;
-                else if (down) return timed.Time;
+                if (cc.ControlValue < 64) return timed.Time;
             }
             return end;
         }
