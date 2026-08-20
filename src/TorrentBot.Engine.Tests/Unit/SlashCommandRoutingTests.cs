@@ -34,6 +34,20 @@ public sealed class SlashCommandRoutingTests
         Assert.Equal("128", parameters["quality"]);
     }
 
+    [Fact]
+    public void ParseParameters_download_media_accepts_key_value_options()
+    {
+        var parameters = SlashCommandRouting.ParseParameters(
+            "/download_media",
+            "https://youtu.be/example format=mp3 quality=128k clip=00:01,00:03");
+
+        Assert.NotNull(parameters);
+        Assert.Equal("mp3", parameters!["format"]);
+        Assert.Equal("128", parameters["quality"]);
+        Assert.Equal("00:01", parameters["clipStart"]);
+        Assert.Equal("00:03", parameters["clipEnd"]);
+    }
+
     [Theory]
     [InlineData("https://youtu.be/example mp4 720 clip 00:22 00:33", "00:22", "00:33")]
     [InlineData("https://youtu.be/example mp4 720 00:22-00:33", "00:22", "00:33")]

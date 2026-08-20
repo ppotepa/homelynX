@@ -129,10 +129,22 @@ public static class SlashCommandRouting
 
         foreach (var token in tokens.Skip(1))
         {
-            var value = token.Trim().ToLowerInvariant();
-            if (value is "mp3" or "mp4")
+            var raw = token.Trim();
+            var separator = raw.IndexOf('=');
+            var key = separator > 0 ? raw[..separator].Trim().ToLowerInvariant() : string.Empty;
+            var value = (separator > 0 ? raw[(separator + 1)..] : raw).Trim().ToLowerInvariant();
+            if ((key is "format" or "type")
+                && (value is "mp3" or "mp4" or "subtitles" or "subs"))
+            {
+                result["format"] = value is "subs" ? "subtitles" : value;
+            }
+            else if (value is "mp3" or "mp4")
             {
                 result["format"] = value;
+            }
+            else if (key is "quality" or "bitrate" or "height")
+            {
+                result["quality"] = value.TrimEnd('k', 'p');
             }
             else if ((value.EndsWith('k') || value.EndsWith('p'))
                 && int.TryParse(value[..^1], out _))
@@ -176,6 +188,7 @@ public static class SlashCommandRouting
         var patterns = new[]
         {
             @"\bclip\s*\(\s*(?<start>\d{1,2}(?::\d{2}){0,2})\s*,\s*(?<end>\d{1,2}(?::\d{2}){0,2})\s*\)",
+            @"\bclip\s*=\s*(?<start>\d{1,2}(?::\d{2}){0,2})\s*[,\-]\s*(?<end>\d{1,2}(?::\d{2}){0,2})",
             @"\bclip\s+(?<start>\d{1,2}(?::\d{2}){0,2})\s+(?<end>\d{1,2}(?::\d{2}){0,2})",
             @"(?<start>\d{1,2}(?::\d{2}){0,2})\s*-\s*(?<end>\d{1,2}(?::\d{2}){0,2})"
         };
