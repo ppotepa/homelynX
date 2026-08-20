@@ -4,9 +4,9 @@ internal static class InstrumentCatalog
 {
     private static readonly IReadOnlyDictionary<string, int> PatchIds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
-        ["lead"] = 0, ["soft_lead"] = 1, ["pluck"] = 2, ["bass"] = 3,
+        ["lead"] = 0, ["soft_lead"] = 1, ["pluck"] = 2, ["arp"] = 2, ["bass"] = 3,
         ["strings"] = 4, ["brass"] = 5, ["reed"] = 6, ["pad"] = 7,
-        ["bell"] = 8, ["organ"] = 9, ["epiano"] = 10, ["flute"] = 11, ["arp"] = 12,
+        ["bell"] = 8, ["organ"] = 9, ["epiano"] = 10, ["flute"] = 11,
         ["kick"] = 16, ["snare"] = 17, ["hat"] = 18, ["open_hat"] = 19,
         ["tom"] = 20, ["crash"] = 21, ["ride"] = 22, ["drums"] = 23
     };
