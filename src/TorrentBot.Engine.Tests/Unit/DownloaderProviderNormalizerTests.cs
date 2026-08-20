@@ -12,6 +12,10 @@ public sealed class DownloaderProviderNormalizerTests
     [InlineData("all", "torrent")]
     [InlineData("torrent", "torrent")]
     [InlineData("media", "media")]
+    [InlineData("youtube", "media")]
+    [InlineData("facebook", "media")]
+    [InlineData("tiktok", "media")]
+    [InlineData("dailymotion", "media")]
     public void Normalize_maps_to_registered_providers(string? input, string expected) =>
         Assert.Equal(expected, DownloaderProviderNormalizer.Normalize(input));
 }

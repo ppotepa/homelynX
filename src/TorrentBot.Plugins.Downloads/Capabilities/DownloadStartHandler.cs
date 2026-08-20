@@ -2,6 +2,7 @@ using TorrentBot.Contracts.Capabilities;
 using TorrentBot.Contracts.Context;
 using TorrentBot.Contracts.Jobs;
 using TorrentBot.Contracts.ProcessManagers;
+using TorrentBot.Plugins.Downloads;
 
 namespace TorrentBot.Plugins.Downloads.Capabilities;
 
@@ -14,7 +15,10 @@ public sealed class DownloadStartHandler : ICapabilityHandler
     {
         var url = GetString(parameters, "url");
         var magnet = GetString(parameters, "magnet");
-        var provider = GetString(parameters, "provider") ?? DetectProvider(url, magnet);
+        var requestedProvider = GetString(parameters, "provider");
+        var provider = requestedProvider is null
+            ? DetectProvider(url, magnet)
+            : DownloaderProviderNormalizer.Normalize(requestedProvider);
         var startRequest = new DownloadStartRequest(
             Provider: provider,
             Url: url,

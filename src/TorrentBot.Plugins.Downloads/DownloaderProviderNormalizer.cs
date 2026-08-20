@@ -5,11 +5,18 @@ internal static class DownloaderProviderNormalizer
     private static readonly HashSet<string> KnownProviders = new(StringComparer.OrdinalIgnoreCase)
     {
         "torrent",
-        "media"
+        "media",
+        "youtube",
+        "facebook",
+        "fb",
+        "dailymotion",
+        "vimeo",
+        "instagram",
+        "tiktok"
     };
 
     /// <summary>
-    /// Maps LLM/user provider values to registered downloader types (torrent, url).
+    /// Maps LLM/user provider values to registered downloader types (torrent, media).
     /// Jackett indexer names, "all", empty strings, etc. fall back to torrent search.
     /// </summary>
     public static string Normalize(string? provider)
@@ -22,7 +29,7 @@ internal static class DownloaderProviderNormalizer
         var trimmed = provider.Trim();
         if (KnownProviders.Contains(trimmed))
         {
-            return trimmed.Equals("media", StringComparison.OrdinalIgnoreCase) ? "media" : "torrent";
+            return trimmed.Equals("torrent", StringComparison.OrdinalIgnoreCase) ? "torrent" : "media";
         }
 
         return "torrent";
