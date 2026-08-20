@@ -30,14 +30,14 @@ internal static class DryWetMidiImporter
         var names = new Dictionary<int, string>();
         var signatures = new List<TimeSignaturePoint>();
         var keys = new List<KeySignaturePoint>();
-        foreach (var events in timedByTrack)
+        for (var trackIndex = 0; trackIndex < timedByTrack.Length; trackIndex++)
         {
-            foreach (var timed in events)
+            foreach (var timed in timedByTrack[trackIndex])
             {
                 switch (timed.Event)
                 {
                     case SequenceTrackNameEvent name when !string.IsNullOrWhiteSpace(name.Text):
-                        names.TryAdd(Array.IndexOf(timedByTrack, events), name.Text.Trim());
+                        names.TryAdd(trackIndex, name.Text.Trim());
                         break;
                     case TimeSignatureEvent signature:
                         signatures.Add(new TimeSignaturePoint(Scale(timed.Time, ppq), signature.Numerator, signature.Denominator));
@@ -54,31 +54,64 @@ internal static class DryWetMidiImporter
         {
             var events = timedByTrack[trackIndex];
             var notes = tracks[trackIndex].GetNotes().OrderBy(x => x.Time).ToArray();
+            var trackEnd = Math.Max(
+                events.Length == 0 ? 0 : events.Max(x => x.Time),
+                notes.Length == 0 ? 0 : notes.Max(x => x.Time + x.Length));
             var state = new StateTable(events);
             foreach (var note in notes)
             {
                 state.AdvanceTo(note.Time);
-                var end = note.Time + note.Length;
-                var sustainedEnd = state.SustainExtension(note.Channel, end);
-                var bends = state.Bends(note.Channel, note.Time, end);
-                var automation = state.Automation(note.Channel, note.Time, end);
-                completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), sustainedEnd, bends, automation));
+                var keyRelease = note.Time + note.Length;
+                var soundingEnd = state.SustainExtension(note.Channel, keyRelease, trackEnd);
+                var bends = state.Bends(note.Channel, note.Time, soundingEnd);
+                var automation = state.Automation(note.Channel, note.NoteNumber, note.Time, soundingEnd);
+                completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), soundingEnd, bends, automation));
             }
         }
 
         if (completed.Count == 0) throw new InvalidDataException("MIDI file contains no notes.");
-        var stats = completed.GroupBy(x => (x.Track, Channel: (int)x.Note.Channel)).Select(group => new
-        {
-            group.Key,
-            Median = group.Select(x => (int)x.Note.NoteNumber).Order().ElementAt(group.Count() / 2),
-            Count = group.Count(),
-            Program = group.Select(x => x.State.Program).GroupBy(x => x).OrderByDescending(x => x.Count()).First().Key
-        }).ToArray();
+
+        // Program changes can split one MIDI channel into several semantic parts.
+        // Role analysis therefore happens per track/channel/program/bank instead
+        // of collapsing the whole channel to its most common program.
+        var stats = completed
+            .GroupBy(x => (x.Track, Channel: (int)x.Note.Channel, x.State.Program, x.State.Bank))
+            .Select(group => new
+            {
+                group.Key,
+                Median = group.Select(x => (int)x.Note.NoteNumber).Order().ElementAt(group.Count() / 2),
+                Count = group.Count(),
+                Name = names.GetValueOrDefault(group.Key.Track, string.Empty)
+            })
+            .ToArray();
         var melodic = stats.Where(x => x.Key.Channel != 9).ToArray();
-        var lead = melodic.OrderByDescending(x => IsLeadProgram(x.Program)).ThenByDescending(x => x.Median).ThenByDescending(x => x.Count).FirstOrDefault()?.Key;
+        var lead = melodic
+            .OrderByDescending(x => IsLeadName(x.Name))
+            .ThenByDescending(x => IsLeadProgram(x.Key.Program))
+            .ThenByDescending(x => x.Median)
+            .ThenByDescending(x => x.Count)
+            .FirstOrDefault()?.Key;
         var bass = melodic.Length > 1
-            ? melodic.OrderByDescending(x => IsBassProgram(x.Program)).ThenBy(x => x.Median).ThenByDescending(x => x.Count).First().Key
-            : ((int Track, int Channel)?)null;
+            ? melodic
+                .OrderByDescending(x => IsBassName(x.Name))
+                .ThenByDescending(x => IsBassProgram(x.Key.Program))
+                .ThenBy(x => x.Median)
+                .ThenByDescending(x => x.Count)
+                .First().Key
+            : ((int Track, int Channel, int Program, int Bank)?)null;
+
+        // Do not let fallback register analysis call the same part both lead and
+        // bass unless there is literally no alternative melodic part.
+        if (bass is not null && lead is not null && bass.Value == lead.Value && melodic.Length > 1)
+        {
+            bass = melodic
+                .Where(x => x.Key != lead.Value)
+                .OrderByDescending(x => IsBassName(x.Name))
+                .ThenByDescending(x => IsBassProgram(x.Key.Program))
+                .ThenBy(x => x.Median)
+                .First().Key;
+        }
+
         var grid = spec.Quantize switch
         {
             "off" => 0L,
@@ -89,29 +122,33 @@ internal static class DryWetMidiImporter
             _ => TempoMap.Ppq / 4
         };
 
-        var result = completed.SelectMany(item =>
+        var result = completed.Select(item =>
         {
             var rawStart = Scale(item.Note.Time, ppq);
             var rawEnd = Scale(item.End, ppq);
-            var start = Quantize(rawStart, grid);
-            var end = Math.Max(start + Math.Max(1, grid), Quantize(rawEnd, grid));
-            var key = (item.Track, Channel: (int)item.Note.Channel);
-            var role = item.Note.Channel == 9 ? TrackRole.Drums : key == bass ? TrackRole.Bass : key == lead ? TrackRole.Lead : TrackRole.Harmony;
-            // Keep the note as one Note On. Controller and pitch automation is
-            // emitted as tracker effects later; splitting it here retriggered
-            // the chip envelope and destroyed sustained instruments.
+            var key = (item.Track, Channel: (int)item.Note.Channel, item.State.Program, item.State.Bank);
+            var role = item.Note.Channel == 9
+                ? TrackRole.Drums
+                : key == bass
+                    ? TrackRole.Bass
+                    : key == lead
+                        ? TrackRole.Lead
+                        : TrackRole.Harmony;
+
+            // Keep each physical key press as one Note On. Performance curves
+            // remain attached and are translated into tracker effects later.
             var initialState = item.State;
             var pitch = Math.Clamp((int)item.Note.NoteNumber + (item.Note.Channel == 9 ? 0 : spec.Transpose) +
                 (int)Math.Round((initialState.PitchBend - 8192) / 8192d * initialState.PitchBendRange, MidpointRounding.AwayFromZero), 0, 127);
             var startTick = Quantize(rawStart, grid);
             var endTick = Math.Max(startTick + Math.Max(1, grid), Quantize(rawEnd, grid));
-            return new[] { new NoteEvent(startTick, endTick - startTick, pitch, item.Note.Velocity, role,
+            return new NoteEvent(startTick, endTick - startTick, pitch, item.Note.Velocity, role,
                 item.Track, item.Note.Channel, initialState.Program, initialState.Bank, initialState.Pan, initialState.Expression,
                 initialState.PitchBend, initialState.PitchBendRange,
                 item.Bends.Count == 0 ? null : item.Bends.Select(x => new PitchBendPoint(Scale(x.Time, ppq), x.Value)).ToArray(),
                 Volume: initialState.Volume, Modulation: initialState.Modulation, Aftertouch: initialState.Aftertouch,
                 ReleaseVelocity: item.Note.OffVelocity,
-                ControllerChanges: item.Automation.Select(x => new ControllerPoint(Scale(x.Time, ppq), x.State.Volume, x.State.Expression, x.State.Pan, x.State.Modulation, x.State.Aftertouch)).ToArray()) };
+                ControllerChanges: item.Automation.Select(x => new ControllerPoint(Scale(x.Time, ppq), x.State.Volume, x.State.Expression, x.State.Pan, x.State.Modulation, x.State.Aftertouch)).ToArray());
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
 
         var sourceParts = result
@@ -128,8 +165,14 @@ internal static class DryWetMidiImporter
 
     private static long Scale(long tick, int ppq) => checked(tick * TempoMap.Ppq / ppq);
     private static long Quantize(long tick, long grid) => grid <= 0 ? Math.Max(0, tick) : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
-    private static bool IsLeadProgram(int program) => program is >= 80 and <= 87 or >= 56 and <= 63 or >= 64 and <= 71;
+    private static bool IsLeadProgram(int program) => program is >= 56 and <= 87;
     private static bool IsBassProgram(int program) => program is >= 32 and <= 39;
+    private static bool IsLeadName(string name)
+    {
+        name = name.ToLowerInvariant();
+        return name.Contains("lead") || name.Contains("melody") || name.Contains("solo") || name.Contains("theme");
+    }
+    private static bool IsBassName(string name) => name.Contains("bass", StringComparison.OrdinalIgnoreCase);
 
     private static int PeakOverlap(IEnumerable<NoteEvent> notes)
     {
@@ -171,14 +214,11 @@ internal static class DryWetMidiImporter
         public ChannelSnapshot Snapshot(int channel)
         {
             var state = _states.GetValueOrDefault(channel) ?? new MutableState();
-            return new(state.Program, state.Bank, state.Pan, state.Expression, state.PitchBend, state.PitchBendRange,
-                state.Volume, state.Modulation, state.Aftertouch);
+            return Snapshot(state);
         }
 
-        public long SustainExtension(int channel, long end)
+        public long SustainExtension(int channel, long end, long trackEnd)
         {
-            // Sustain is evaluated at key release, not at key attack. A
-            // pianist commonly presses the pedal after the note starts.
             var channelEvents = _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel).ToArray();
             var down = channelEvents
                 .Where(x => x.Time <= end && x.Event is ControlChangeEvent cc && cc.ControlNumber == 64)
@@ -187,30 +227,45 @@ internal static class DryWetMidiImporter
             if (!down) return end;
             foreach (var timed in channelEvents.Where(x => x.Time > end))
             {
-                if (timed.Event is not ControlChangeEvent cc || cc.ControlNumber != 64) continue;
-                if (cc.ControlValue < 64) return timed.Time;
+                if (timed.Event is ControlChangeEvent cc && cc.ControlNumber == 64 && cc.ControlValue < 64)
+                    return timed.Time;
             }
-            return end;
+            return Math.Max(end, trackEnd);
         }
 
         public IReadOnlyList<PitchBendEventData> Bends(int channel, long start, long end) => _channelEvents
             .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end && x.Event is PitchBendEvent)
             .Select(x => new PitchBendEventData(x.Time, ((PitchBendEvent)x.Event).PitchValue)).ToArray();
 
-        public IReadOnlyList<AutomationPoint> Automation(int channel, long start, long end) => _channelEvents
+        public IReadOnlyList<AutomationPoint> Automation(int channel, int noteNumber, long start, long end) => _channelEvents
             .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end &&
-                x.Event is ControlChangeEvent or ChannelAftertouchEvent or NoteAftertouchEvent)
-            .GroupBy(x => x.Time).OrderBy(x => x.Key)
-            .Select(x => new AutomationPoint(x.Key, SnapshotAt(channel, x.Key))).ToArray();
+                (x.Event is ControlChangeEvent or ChannelAftertouchEvent ||
+                 x.Event is NoteAftertouchEvent noteAftertouch && noteAftertouch.NoteNumber == noteNumber))
+            .GroupBy(x => x.Time)
+            .OrderBy(x => x.Key)
+            .Select(group =>
+            {
+                var state = SnapshotAt(channel, group.Key);
+                var polyAftertouch = group
+                    .Select(x => x.Event)
+                    .OfType<NoteAftertouchEvent>()
+                    .Where(x => x.NoteNumber == noteNumber)
+                    .Select(x => (int)x.AftertouchValue)
+                    .LastOrDefault(state.Aftertouch);
+                return new AutomationPoint(group.Key, state with { Aftertouch = polyAftertouch });
+            }).ToArray();
 
         private ChannelSnapshot SnapshotAt(int channel, long time)
         {
             var state = new MutableState();
             foreach (var timed in _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time <= time))
                 Apply(state, timed.Event);
-            return new(state.Program, state.Bank, state.Pan, state.Expression, state.PitchBend, state.PitchBendRange,
-                state.Volume, state.Modulation, state.Aftertouch);
+            return Snapshot(state);
         }
+
+        private static ChannelSnapshot Snapshot(MutableState state) =>
+            new(state.Program, state.Bank, state.Pan, state.Expression, state.PitchBend, state.PitchBendRange,
+                state.Volume, state.Modulation, state.Aftertouch);
 
         private void Apply(int channel, MidiEvent midiEvent)
         {
@@ -233,10 +288,24 @@ internal static class DryWetMidiImporter
                 case ControlChangeEvent cc when cc.ControlNumber == 7: state.Volume = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 64: state.Sustain = cc.ControlValue >= 64; break;
                 case ChannelAftertouchEvent aftertouch: state.Aftertouch = aftertouch.AftertouchValue; break;
-                case NoteAftertouchEvent aftertouch: state.Aftertouch = aftertouch.AftertouchValue; break;
+                // Polyphonic aftertouch belongs to a specific key and is applied
+                // in Automation(), not to the whole channel state.
                 case ControlChangeEvent cc when cc.ControlNumber == 101: state.RpnMsb = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 100: state.RpnLsb = cc.ControlValue; break;
-                case ControlChangeEvent cc when cc.ControlNumber == 6 && state.RpnMsb == 0 && state.RpnLsb == 0: state.PitchBendRange = Math.Clamp((int)cc.ControlValue, 0, 24); break;
+                case ControlChangeEvent cc when cc.ControlNumber == 6 && state.RpnMsb == 0 && state.RpnLsb == 0:
+                    state.PitchBendRange = Math.Clamp((int)cc.ControlValue, 0, 24);
+                    break;
+                case ControlChangeEvent cc when cc.ControlNumber == 121:
+                    state.Pan = 64;
+                    state.Expression = 127;
+                    state.Modulation = 0;
+                    state.Aftertouch = 0;
+                    state.PitchBend = 8192;
+                    state.PitchBendRange = 2;
+                    state.RpnMsb = 127;
+                    state.RpnLsb = 127;
+                    state.Sustain = false;
+                    break;
             }
         }
 
