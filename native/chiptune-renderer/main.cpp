@@ -30,6 +30,11 @@ template<typename T> static T bounded(T value, T low, T high) {
   return value < low ? low : (value > high ? high : value);
 }
 
+static bool isPercussionPatch(const std::string& patch) {
+  return patch == "drums" || patch == "kick" || patch == "snare" || patch == "hat" ||
+         patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride";
+}
+
 static DivSystem systemFor(const std::string& chip) {
   if (chip == "gb" || chip == "gbc" || chip == "gameboy") return DIV_SYSTEM_GB;
   if (chip == "nes") return DIV_SYSTEM_NES;
@@ -46,13 +51,33 @@ static DivSystem systemFor(const std::string& chip) {
   throw std::runtime_error("unsupported chip: " + chip);
 }
 
+static DivInstrumentType instrumentTypeFor(const std::string& chip, const std::string& voiceClass) {
+  if (chip == "gb" || chip == "gbc" || chip == "gameboy") return DIV_INS_GB;
+  if (chip == "nes") return DIV_INS_NES;
+  if (chip == "snes") return DIV_INS_SNES;
+  if (chip == "sms") return DIV_INS_STD;
+  if (chip == "c64_6581" || chip == "c64_8580") return DIV_INS_C64;
+  if (chip == "genesis") return voiceClass == "psg" || voiceClass == "noise" ? DIV_INS_STD : DIV_INS_FM;
+  if (chip == "pce") return DIV_INS_PCE;
+  if (chip == "atari2600") return DIV_INS_TIA;
+  if (chip == "pokey") return DIV_INS_POKEY;
+  if (chip == "pcspeaker" || chip == "zx_spectrum") return DIV_INS_BEEPER;
+  return DIV_INS_STD;
+}
+
 static DivSample* makeSample(int voice, const std::string& patch) {
-  const int count = patch == "kick" || patch == "snare" || patch == "hat" ? 384 : 1024;
+  const bool percussion = isPercussionPatch(patch);
+  const int count = percussion
+    ? (patch == "kick" ? 512 : patch == "hat" ? 384 : patch == "snare" ? 768 : 1024)
+    : 64;
   DivSample* sample = new DivSample();
   sample->name = "Homelynx SNES patch " + patch;
   sample->depth = DIV_SAMPLE_DEPTH_16BIT;
-  sample->centerRate = 16726;
-  sample->loop = patch != "kick" && patch != "snare" && patch != "hat";
+  // Furnace's SNES documentation recommends ~16.744 kHz and a 64-sample
+  // single-cycle waveform so C-4 is tuned as middle C. The former 1024-sample
+  // tonal cycle was about four octaves too low.
+  sample->centerRate = 16744;
+  sample->loop = !percussion;
   sample->loopStart = 0;
   sample->loopEnd = count;
   if (!sample->init(count)) throw std::runtime_error("could not allocate SNES sample");
@@ -60,29 +85,46 @@ static DivSample* makeSample(int voice, const std::string& patch) {
   for (int i = 0; i < count; ++i) {
     double phase = (double)i / count;
     double value;
-    if (patch == "drums" || patch == "snare" || patch == "hat" || patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride") {
+    if (patch == "kick") {
+      // Fast low-frequency transient with a falling envelope.
+      double envelope = std::pow(1.0 - phase, 2.5);
+      double cycles = 5.0 * phase - 2.5 * phase * phase;
+      value = std::sin(cycles * 2.0 * M_PI) * envelope;
+    } else if (percussion) {
       uint32_t bit = ((noise >> 0) ^ (noise >> 1)) & 1U;
       noise = (noise >> 1) | (bit << 14);
-      double envelope = 1.0 - phase;
+      double decayPower = patch == "open_hat" || patch == "crash" || patch == "ride" ? 1.3 : 2.5;
+      double envelope = std::pow(1.0 - phase, decayPower);
       value = (noise & 1U) ? .65 * envelope : -.65 * envelope;
-    } else if (patch == "kick") {
-      value = std::sin((phase * 1.8 + phase * phase * 12.0) * 2.0 * M_PI) * (1.0 - phase);
     } else if (patch == "bass") {
-      value = (1.0 - 2.0 * phase) * .8 + std::sin(phase * 2.0 * M_PI) * .2;
+      value = (1.0 - 2.0 * phase) * .65 + std::sin(phase * 2.0 * M_PI) * .25;
     } else if (patch == "bell") {
-      value = (std::sin(phase * 2.0 * M_PI) * .7 + std::sin(phase * 5.01 * 2.0 * M_PI) * .3) * (1.0 - phase);
+      value = std::sin(phase * 2.0 * M_PI) * .62 +
+              std::sin(phase * 3.0 * 2.0 * M_PI) * .23 +
+              std::sin(phase * 5.0 * 2.0 * M_PI) * .15;
     } else if (patch == "strings" || patch == "pad") {
-      value = std::sin(phase * 2.0 * M_PI) * .65 + std::sin(phase * 3.0 * 2.0 * M_PI) * .2 + std::sin(phase * 5.0 * 2.0 * M_PI) * .15;
+      value = std::sin(phase * 2.0 * M_PI) * .70 +
+              std::sin(phase * 2.0 * 2.0 * M_PI) * .18 +
+              std::sin(phase * 3.0 * 2.0 * M_PI) * .10;
     } else if (patch == "brass") {
-      value = (1.0 - 2.0 * phase) * .5 + std::sin(phase * 2.0 * M_PI) * .5;
+      value = (1.0 - 2.0 * phase) * .42 + std::sin(phase * 2.0 * M_PI) * .48;
     } else if (patch == "flute" || patch == "reed") {
-      value = std::sin(phase * 2.0 * M_PI) * .85 + std::sin(phase * 2.0 * 2.0 * M_PI) * .15;
+      value = std::sin(phase * 2.0 * M_PI) * .88 + std::sin(phase * 2.0 * 2.0 * M_PI) * .10;
     } else if (patch == "epiano") {
-      value = std::sin(phase * 2.0 * M_PI) * .7 + std::sin(phase * 4.0 * 2.0 * M_PI) * .3;
-    } else if (voice == 2) value = std::sin(phase * 2.0 * M_PI);
-    else if (voice == 7) value = 1.0 - 2.0 * phase;
-    else value = phase < .5 ? .72 : -.72;
-    sample->data16[i] = (short)(value * 30000.0);
+      value = std::sin(phase * 2.0 * M_PI) * .72 + std::sin(phase * 4.0 * 2.0 * M_PI) * .22;
+    } else if (patch == "organ") {
+      value = std::sin(phase * 2.0 * M_PI) * .60 +
+              std::sin(phase * 2.0 * 2.0 * M_PI) * .25 +
+              std::sin(phase * 4.0 * 2.0 * M_PI) * .12;
+    } else if (patch == "soft_lead") {
+      value = std::sin(phase * 2.0 * M_PI) * .90;
+    } else if (patch == "pluck") {
+      value = (phase < .5 ? .55 : -.55) + std::sin(phase * 2.0 * M_PI) * .15;
+    } else {
+      value = phase < .5 ? .68 : -.68;
+    }
+    value = std::clamp(value, -1.0, 1.0);
+    sample->data16[i] = (short)std::lround(value * 28000.0);
   }
   return sample;
 }
@@ -94,10 +136,13 @@ static int makeWave(DivEngine& engine, int voice, const std::string& patch) {
   wave->max = 31;
   for (int i = 0; i < wave->len; ++i) {
     double phase = (double)i / wave->len;
-    double value = patch == "bass" ? 1.0 - phase :
-      (patch == "bell" || patch == "strings" || patch == "epiano") ? (std::sin(phase * 2.0 * M_PI) * .5 + .5) :
-      (phase < .5 ? 1.0 : 0.0);
-    wave->data[i] = bounded((int)std::lround(value * 31.0), 0, 31);
+    double normalized;
+    if (patch == "bass") normalized = 1.0 - phase;
+    else if (patch == "bell") normalized = .5 + .32 * std::sin(phase * 2.0 * M_PI) + .16 * std::sin(phase * 3.0 * 2.0 * M_PI);
+    else if (patch == "strings" || patch == "pad" || patch == "epiano") normalized = std::sin(phase * 2.0 * M_PI) * .5 + .5;
+    else if (patch == "soft_lead" || patch == "flute" || patch == "reed") normalized = std::sin(phase * 2.0 * M_PI) * .45 + .5;
+    else normalized = phase < .5 ? .85 : .15;
+    wave->data[i] = bounded((int)std::lround(normalized * 31.0), 0, 31);
   }
   return engine.addWavePtr(wave);
 }
@@ -111,17 +156,20 @@ static void configureStandardMacros(DivInstrument* instrument, const std::string
   if (chip == "sms") {
     instrument->std.dutyMacro.open = true;
     instrument->std.dutyMacro.len = 1;
-    instrument->std.dutyMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 3 : 0;
+    // Sega PSG noise modes: 0/1 are short/long preset-frequency noise and
+    // 2/3 tie noise frequency to tone channel 3. Keep normal percussion on
+    // preset noise so a bass line on tone 3 cannot retune the drums.
+    instrument->std.dutyMacro.val[0] = patch == "hat" ? 0 : isPercussionPatch(patch) ? 1 : 0;
     instrument->std.waveMacro.val[0] = 0;
   } else if (chip == "pokey") {
     instrument->std.dutyMacro.open = true;
     instrument->std.dutyMacro.len = 1;
     instrument->std.dutyMacro.val[0] = patch == "bass" ? 0x04 : 0x00;
-    instrument->std.waveMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 0x08 : patch == "bass" ? 0x0A : 0x00;
+    instrument->std.waveMacro.val[0] = isPercussionPatch(patch) ? 0x08 : patch == "bass" ? 0x0A : 0x00;
   } else if (chip == "atari2600") {
-    instrument->std.waveMacro.val[0] = patch == "bass" ? 0x08 : patch == "drums" ? 0x06 : patch == "snare" ? 0x04 : 0x00;
+    instrument->std.waveMacro.val[0] = patch == "bass" ? 0x08 : isPercussionPatch(patch) ? 0x06 : 0x00;
   } else {
-    instrument->std.waveMacro.val[0] = patch == "bass" ? 1 : patch == "drums" ? 2 : 0;
+    instrument->std.waveMacro.val[0] = patch == "bass" ? 1 : isPercussionPatch(patch) ? 2 : 0;
   }
 }
 
@@ -159,86 +207,110 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
     voiceClasses[item.value("instrumentId", 0)] = item.value("voiceClass", "pulse");
   }
   for (const auto& item : request.at("notes")) instruments = std::max(instruments, item.value("instrumentId", 0) + 1);
-  for (int voice = 0; voice < instruments; ++voice) {
-    const auto patch = patches.count(voice) ? patches[voice] : (voice == 2 ? "bass" : voice == 3 ? "drums" : "lead");
+
+  for (int instrumentId = 0; instrumentId < instruments; ++instrumentId) {
+    const auto patch = patches.count(instrumentId) ? patches[instrumentId] : (instrumentId == 2 ? "bass" : instrumentId == 3 ? "drums" : "lead");
+    const auto voiceClass = voiceClasses.count(instrumentId) ? voiceClasses[instrumentId] : "pulse";
+    const auto instrumentType = instrumentTypeFor(chip, voiceClass);
     int sampleIndex = -1;
-    if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(voice, patch));
+    int waveIndex = -1;
+    if (chip == "snes") sampleIndex = engine.addSamplePtr(makeSample(instrumentId, patch));
     if (chip == "nes" && (patch == "kick" || patch == "snare")) sampleIndex = engine.addSamplePtr(makeDpcmSample(patch));
-    int instrumentIndex = engine.addInstrument(voice);
-    if (instrumentIndex < 0) throw std::runtime_error("could not create instrument");
-    DivInstrument* instrument = engine.song.ins[instrumentIndex];
-    instrument->name = "Homelynx voice " + std::to_string(voice + 1);
+    if (chip == "gb" || chip == "gbc" || chip == "gameboy") waveIndex = makeWave(engine, instrumentId, patch);
+
+    // InstrumentId is a catalog key, not a channel number. Let Furnace create
+    // the correct null/default instrument from an explicit type instead of
+    // incorrectly treating InstrumentId as refChan.
+    int created = engine.addInstrument(-1, instrumentType);
+    if (created < 0) throw std::runtime_error("could not create instrument");
+    DivInstrument* instrument = engine.song.ins[created];
+    instrument->type = instrumentType;
+    instrument->name = "Homelynx " + patch + " " + std::to_string(instrumentId);
+
     if (chip == "gb" || chip == "gbc" || chip == "gameboy") {
-      instrument->type = DIV_INS_GB;
       instrument->gb.envVol = 15;
       instrument->gb.envDir = 0;
-      instrument->gb.envLen = patch == "pluck" || patch == "kick" || patch == "hat" || patch == "open_hat" ? 1 : patch == "snare" ? 2 : patch == "soft_lead" ? 3 : patch == "strings" || patch == "pad" ? 5 : 4;
+      instrument->gb.envLen = patch == "pluck" || isPercussionPatch(patch) ? 1 : patch == "soft_lead" ? 3 : patch == "strings" || patch == "pad" ? 5 : 4;
       instrument->gb.soundLen = 64;
       instrument->gb.softEnv = patch == "soft_lead" || patch == "strings" || patch == "pad";
       instrument->gb.alwaysInit = true;
-    } else if (chip == "genesis" && (voiceClasses[voice] == "psg" || voiceClasses[voice] == "noise")) {
-      instrument->type = DIV_INS_STD;
+      // Every GB instrument gets a valid 32-sample wavetable. Pulse/noise
+      // channels ignore this macro; the Wave channel no longer reads nullWave.
+      instrument->std.waveMacro.open = true;
+      instrument->std.waveMacro.len = 1;
+      instrument->std.waveMacro.loop = 0;
+      instrument->std.waveMacro.val[0] = waveIndex;
+    } else if (chip == "genesis" && (voiceClass == "psg" || voiceClass == "noise")) {
+      configureStandardMacros(instrument, "sms", patch);
     } else if (chip == "genesis") {
-      instrument->type = DIV_INS_FM;
-      instrument->fm.alg = patch == "epiano" || patch == "bell" ? 4 : patch == "brass" ? 1 : wave == "fm" ? (voice % 3 == 0 ? 4 : 0) : 0;
+      instrument->fm.alg = patch == "epiano" || patch == "bell" ? 4 : patch == "brass" ? 1 : wave == "fm" ? (instrumentId % 3 == 0 ? 4 : 0) : 0;
       instrument->fm.fb = 4;
       instrument->fm.op[0].ar = 31; instrument->fm.op[0].dr = 8; instrument->fm.op[0].rr = 5; instrument->fm.op[0].tl = 18; instrument->fm.op[0].mult = 1;
       instrument->fm.op[1].ar = 31; instrument->fm.op[1].dr = 12; instrument->fm.op[1].rr = 6; instrument->fm.op[1].tl = 32; instrument->fm.op[1].mult = 2;
       instrument->fm.op[2].ar = 31; instrument->fm.op[2].dr = 10; instrument->fm.op[2].rr = 5; instrument->fm.op[2].tl = 42; instrument->fm.op[2].mult = 1;
       instrument->fm.op[3].ar = 31; instrument->fm.op[3].dr = 8; instrument->fm.op[3].rr = 5; instrument->fm.op[3].tl = 8; instrument->fm.op[3].mult = 1;
     } else if (chip == "c64_6581" || chip == "c64_8580") {
-      instrument->type = DIV_INS_C64;
-      instrument->c64.triOn = patch == "bell" || patch == "strings" || patch == "flute" || wave == "triangle" || (wave == "square" && voice % 3 == 1);
-      instrument->c64.sawOn = patch == "bass" || patch == "brass" || patch == "organ" || patch == "pad" || wave == "saw" || (wave == "square" && voice % 3 != 1);
+      instrument->c64.triOn = patch == "bell" || patch == "strings" || patch == "flute" || patch == "reed" || wave == "triangle";
+      instrument->c64.sawOn = patch == "bass" || patch == "brass" || patch == "organ" || patch == "pad" || wave == "saw";
       instrument->c64.pulseOn = patch == "lead" || patch == "soft_lead" || patch == "pluck" || patch == "epiano" || wave == "square" || wave == "fm";
-      instrument->c64.noiseOn = patch == "drums" || patch == "snare" || patch == "hat";
-      instrument->c64.a = (unsigned char)(patch == "pad" || patch == "strings" ? 12 : patch == "brass" ? 3 : attack);
-      instrument->c64.d = (unsigned char)(patch == "bell" || patch == "epiano" ? 18 : decay);
-      instrument->c64.s = (unsigned char)(patch == "drums" || patch == "snare" || patch == "hat" ? 0 : patch == "pad" || patch == "strings" ? 14 : sustain);
-      instrument->c64.r = (unsigned char)(patch == "bell" || patch == "strings" || patch == "pad" ? 15 : release);
+      instrument->c64.noiseOn = isPercussionPatch(patch) || wave == "noise";
+      if (!instrument->c64.triOn && !instrument->c64.sawOn && !instrument->c64.pulseOn && !instrument->c64.noiseOn)
+        instrument->c64.pulseOn = true;
+      int patchAttack = patch == "pad" || patch == "strings" ? 10 : patch == "brass" ? 3 : attack;
+      int patchDecay = patch == "bell" || patch == "epiano" ? 12 : decay;
+      int patchSustain = isPercussionPatch(patch) ? 0 : patch == "pad" || patch == "strings" ? 12 : sustain;
+      int patchRelease = patch == "bell" || patch == "strings" || patch == "pad" ? 12 : release;
+      instrument->c64.a = (unsigned char)bounded(patchAttack, 0, 15);
+      instrument->c64.d = (unsigned char)bounded(patchDecay, 0, 15);
+      instrument->c64.s = (unsigned char)bounded(patchSustain, 0, 15);
+      instrument->c64.r = (unsigned char)bounded(patchRelease, 0, 15);
       instrument->c64.duty = (unsigned short)((patch == "soft_lead" ? 12 : duty) * 4095 / 100);
-      instrument->c64.toFilter = patch == "bass" || patch == "pad" || patch == "strings" || voice == 1;
+      instrument->c64.toFilter = patch == "bass" || patch == "pad" || patch == "strings";
       instrument->c64.lp = true;
       int requestedCutoff = bounded(request.value("filter", 0), 0, 2047);
       instrument->c64.cut = requestedCutoff > 0 ? requestedCutoff : patch == "bass" ? 650 : patch == "pad" ? 1200 : 900;
       instrument->c64.res = patch == "bell" || patch == "pad" ? 8 : 5;
     } else if (chip == "nes") {
-      instrument->type = DIV_INS_NES;
       if (sampleIndex >= 0) {
         instrument->amiga.useSample = true;
         instrument->amiga.initSample = sampleIndex;
       }
     } else if (chip == "snes") {
-      instrument->type = DIV_INS_SNES;
       instrument->amiga.useSample = true;
       instrument->amiga.initSample = sampleIndex;
       instrument->snes.useEnv = true;
-      int patchAttack = patch == "strings" || patch == "pad" ? 12 : patch == "brass" ? 3 : attack;
-      int patchDecay = patch == "bell" || patch == "epiano" ? 18 : decay;
-      int patchSustain = patch == "kick" || patch == "snare" || patch == "hat" ? 0 : patch == "strings" || patch == "pad" ? 15 : sustain;
-      int patchRelease = patch == "bell" || patch == "strings" || patch == "pad" ? 15 : release;
-      instrument->snes.a = (unsigned char)bounded(patchAttack, 0, 31);
-      instrument->snes.d = (unsigned char)bounded(patchDecay, 0, 31);
-      instrument->snes.s = (unsigned char)bounded(patchSustain, 0, 31);
-      instrument->snes.r = (unsigned char)bounded(patchRelease, 0, 31);
+      // SNES ADSR fields have different hardware ranges: A 0..15, D 0..7,
+      // S 0..7 and R 0..31. Generic command defaults are translated to
+      // musical patch defaults instead of using A=0 (a ~4.1 s attack).
+      int patchAttack = attack == 0
+        ? (patch == "pad" ? 9 : patch == "strings" ? 11 : patch == "brass" ? 13 : 15)
+        : bounded(attack, 0, 15);
+      int patchDecay = decay == 8
+        ? (patch == "bell" || patch == "epiano" ? 4 : 3)
+        : bounded(decay, 0, 7);
+      int patchSustain = sustain == 12
+        ? (isPercussionPatch(patch) ? 0 : patch == "strings" || patch == "pad" ? 6 : patch == "bell" || patch == "epiano" ? 3 : 5)
+        : bounded(sustain, 0, 7);
+      int patchRelease = release == 8
+        ? (isPercussionPatch(patch) ? 3 : patch == "strings" || patch == "pad" ? 12 : patch == "bell" ? 10 : 6)
+        : bounded(release, 0, 31);
+      instrument->snes.a = (unsigned char)patchAttack;
+      instrument->snes.d = (unsigned char)patchDecay;
+      instrument->snes.s = (unsigned char)patchSustain;
+      instrument->snes.r = (unsigned char)patchRelease;
     } else if (chip == "pce") {
-      instrument->type = DIV_INS_PCE;
-      int waveIndex = makeWave(engine, voice, patch);
+      int pceWave = makeWave(engine, instrumentId, patch);
       instrument->std.waveMacro.len = 1;
-      instrument->std.waveMacro.val[0] = waveIndex;
+      instrument->std.waveMacro.val[0] = pceWave;
       instrument->std.waveMacro.loop = 0;
       instrument->std.waveMacro.open = true;
     } else if (chip == "pokey") {
-      instrument->type = DIV_INS_POKEY;
       configureStandardMacros(instrument, chip, patch);
     } else if (chip == "pcspeaker" || chip == "zx_spectrum") {
-      instrument->type = DIV_INS_BEEPER;
       configureStandardMacros(instrument, chip, patch);
     } else if (chip == "atari2600") {
-      instrument->type = DIV_INS_TIA;
       configureStandardMacros(instrument, chip, patch);
     } else if (chip == "sms") {
-      instrument->type = DIV_INS_STD;
       configureStandardMacros(instrument, chip, patch);
     }
   }
@@ -263,9 +335,6 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
   int bpm = bounded(request.value("bpm", 140), 40, 300);
   long endTick = request.value("endTick", 960L);
   constexpr int maxRows = 255 * 256;
-  // Use the finest row grid that fits Furnace's order capacity. Typical MIDI
-  // files end up at 1-10 internal PPQ ticks per row instead of a hard 15-tick
-  // floor, which substantially reduces micro-timing collisions.
   int ticksPerRow = std::max(1, (int)std::ceil(endTick / (double)maxRows));
   sub->hz = (float)bpm * 16.0f / ticksPerRow;
   sub->speeds.len = 1;
@@ -284,8 +353,6 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
   std::map<int, int> lastStartRow;
   const auto& notes = request.at("notes");
 
-  // Pass 1: place every Note On. Releases are deliberately deferred so an
-  // old Note Off can never occupy the same tracker cell as the next Note On.
   for (const auto& item : notes) {
     stats.notesReceived++;
     int voice = item.value("voice", 0);
@@ -382,9 +449,6 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     stats.notesWritten++;
   }
 
-  // Pass 2: place releases only when there is a genuine gap before the next
-  // note on the same hardware voice. A contiguous Note On naturally replaces
-  // the previous note and must take precedence over an OFF at the same row.
   for (int voice = 0; voice < engine.song.chans; ++voice) {
     std::vector<CompiledNote> lane;
     for (const auto& note : compiled) if (note.voice == voice) lane.push_back(note);
@@ -406,9 +470,6 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     }
   }
 
-  // Apply pitch-bend points without a new Note On. Ignore stale automation
-  // outside the note span; the C# arranger also trims these when stealing a
-  // hardware voice, and this check keeps the native boundary defensive.
   for (const auto& item : notes) {
     int voice = item.value("voice", 0);
     if (voice < 0 || voice >= engine.song.chans) continue;
