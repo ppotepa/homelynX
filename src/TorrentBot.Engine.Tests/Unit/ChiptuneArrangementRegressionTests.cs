@@ -51,4 +51,31 @@ public sealed class ChiptuneArrangementRegressionTests
         Assert.True(ranking[0].Score > ranking.Single(x => x.Chip == "nes").Score);
         Assert.True(ranking[0].Score > ranking.Single(x => x.Chip == "gbc").Score);
     }
+
+    [Fact]
+    public void Generated_song_without_explicit_chip_resolves_to_top_ranked_target()
+    {
+        var spec = ChiptuneParser.Parse("generate=song style=happy key=D scale=major bpm=164 bars=8 seed=42 format=wav");
+        var song = ChiptuneParser.Compose(spec);
+
+        var ranking = AutoProfileResolver.Rank(spec, song);
+        var resolved = AutoProfileResolver.Resolve(spec, song);
+
+        Assert.False(spec.ChipExplicit);
+        Assert.NotEmpty(ranking);
+        Assert.Equal(ranking[0].Chip, resolved.Chip);
+        Assert.Contains(resolved.Chip, new[] { "snes", "genesis", "pce", "nes", "gbc", "sms", "c64_8580" });
+    }
+
+    [Fact]
+    public void Explicit_generated_chip_is_never_replaced_by_auto_resolver()
+    {
+        var spec = ChiptuneParser.Parse("generate=song chip=nes style=happy bars=8 seed=42 format=wav");
+        var song = ChiptuneParser.Compose(spec);
+
+        var resolved = AutoProfileResolver.Resolve(spec, song);
+
+        Assert.True(spec.ChipExplicit);
+        Assert.Equal("nes", resolved.Chip);
+    }
 }
