@@ -85,6 +85,45 @@ public sealed class ChiptuneTests
     }
 
     [Fact]
+    public void Voice_steal_trims_automation_after_the_reassigned_span()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 60, 90, TrackRole.Harmony,
+                PitchBends: [new PitchBendPoint(600, 12288)],
+                ControllerChanges: [new ControllerPoint(600, Volume: 32, Expression: 40)]),
+            new NoteEvent(240, 480, 72, 110, TrackRole.Lead)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=recognizable format=wav");
+        var hardware = VoiceAllocator.Allocate(song, spec);
+
+        var stolen = hardware.Notes.Single(x => x.Role == TrackRole.Harmony);
+        Assert.Equal(240, stolen.DurationTick);
+        Assert.Empty(stolen.PitchBends ?? Array.Empty<PitchBendPoint>());
+        Assert.Empty(stolen.ControllerChanges ?? Array.Empty<ControllerPoint>());
+    }
+
+    [Fact]
+    public void Preserve_chord_arpeggiation_is_monophonic_and_keeps_all_notes()
+    {
+        var song = new Song(
+        [
+            new NoteEvent(0, 960, 60, 100, TrackRole.Lead),
+            new NoteEvent(0, 960, 64, 100, TrackRole.Lead),
+            new NoteEvent(0, 960, 67, 100, TrackRole.Lead)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=preserve format=wav");
+        var hardware = VoiceAllocator.Allocate(song, spec);
+        var notes = hardware.Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal(3, notes.Length);
+        Assert.Equal(0, hardware.DroppedNotes);
+        Assert.True(hardware.ArpeggiatedNotes >= 2);
+        for (var i = 1; i < notes.Length; i++)
+            Assert.True(notes[i].StartTick >= notes[i - 1].StartTick + notes[i - 1].DurationTick);
+    }
+
+    [Fact]
     public void Tracker_articulation_options_reach_hardware_notes()
     {
         var spec = ChiptuneParser.Parse("notes=C4/4 chip=nes note_cut=120 note_delay=15 retrigger=3 pitch_slide=4 volume_slide=-2");
@@ -178,8 +217,6 @@ public sealed class ChiptuneTests
 
         var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
 
-        // NES now uses both pulse channels for melodic parts, so the second
-        // note no longer steals and truncates the first one.
         Assert.Equal(960, notes[0].DurationTick);
         Assert.Equal(960, notes[1].DurationTick);
         Assert.NotEqual(notes[0].Voice, notes[1].Voice);
