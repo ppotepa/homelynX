@@ -62,4 +62,24 @@ internal static class DownloadContracts
         Risk: RiskLevel.ConfirmationRequired,
         UserInteractions: new UserInteractionSpec(RequiresConfirmation: true),
         ResponseSpec: new ResponseConstructionSpec("download_started"));
+
+    public static readonly CapabilityContract StartMedia = new(
+        Name: "download.start_media",
+        ExactSemantics: "Download public media from a supported URL with optional format, quality, subtitles, and clip range.",
+        Parameters:
+        [
+            new ParameterSpec("url", "string", "Public media URL", Required: true),
+            new ParameterSpec("provider", "string", "Media provider", DefaultValue: "media"),
+            new ParameterSpec("format", "string", "mp3, mp4, or subtitles", DefaultValue: "mp4"),
+            new ParameterSpec("quality", "string", "Audio bitrate or video height"),
+            new ParameterSpec("clipStart", "string", "Clip start timestamp"),
+            new ParameterSpec("clipEnd", "string", "Clip end timestamp"),
+            new ParameterSpec("subtitles", "string", "Subtitle language codes")
+        ],
+        Risk: RiskLevel.ConfirmationRequired,
+        UserInteractions: new UserInteractionSpec(
+            RequiresConfirmation: true,
+            ConfirmationMessage: "Start this media download?",
+            ExpectedResponseTypes: ["confirm", "cancel"]),
+        ResponseSpec: new ResponseConstructionSpec("download_started"));
 }

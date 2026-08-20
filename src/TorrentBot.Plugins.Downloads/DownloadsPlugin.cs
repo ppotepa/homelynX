@@ -42,6 +42,7 @@ public sealed class DownloadsPlugin : IPlugin
         context.RegisterCapability(DownloadContracts.List, new DownloadListHandler(), "/downloads");
         context.RegisterCapability(DownloadContracts.Search, new DownloadSearchHandler(), "/download_search");
         context.RegisterCapability(DownloadContracts.Start, new DownloadStartHandler(), "/download");
+        context.RegisterCapability(DownloadContracts.StartMedia, new DownloadStartHandler(), "/download_media");
         context.RegisterCapability(DownloadContracts.Pause, new DownloadPauseHandler(), "/pause");
         context.RegisterCapability(DownloadContracts.Resume, new DownloadResumeHandler(), "/resume");
         context.RegisterCapability(DownloadContracts.Cancel, new DownloadCancelHandler(), "/cancel");
