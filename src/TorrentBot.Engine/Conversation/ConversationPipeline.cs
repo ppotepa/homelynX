@@ -59,11 +59,13 @@ public sealed class ConversationPipeline : IConversationPipeline
         Invocation baseInvocation,
         CancellationToken ct = default)
     {
+        var requestContext = baseInvocation.RequestContext
+            ?? throw new InvalidOperationException("Invocation request context is required.");
         _bus.Publish(new UserResponseReceivedEvent(
             response.Token,
             response.UserId,
             response.ResponseType,
-            response.RawValue), baseInvocation.RequestContext);
+            response.RawValue), requestContext);
 
         var resolution = context.ResolvePendingAction(response.Token, response);
         if (!resolution.Resolved || resolution.Action is null)
@@ -77,7 +79,7 @@ public sealed class ConversationPipeline : IConversationPipeline
                 context.SessionId,
                 context.UserId,
                 context.PendingActions.Count,
-                "user_response_cancelled"), baseInvocation.RequestContext);
+                "user_response_cancelled"), requestContext);
 
             return new PipelineResult(
                 false,
@@ -90,7 +92,7 @@ public sealed class ConversationPipeline : IConversationPipeline
             IsExplicit = true,
             CapabilityName = resolution.Action.CapabilityName,
             Parameters = resolution.Parameters,
-            RequestContext = baseInvocation.RequestContext,
+            RequestContext = requestContext,
             User = baseInvocation.User,
             IsDryRun = baseInvocation.IsDryRun,
             ProgressReporter = baseInvocation.ProgressReporter
@@ -100,7 +102,7 @@ public sealed class ConversationPipeline : IConversationPipeline
             context.SessionId,
             context.UserId,
             context.PendingActions.Count,
-            "user_response_resolved"), baseInvocation.RequestContext);
+            "user_response_resolved"), requestContext);
 
         return await _invocationPipeline.RunAsync(invocation, ct).ConfigureAwait(false);
     }
@@ -111,18 +113,20 @@ public sealed class ConversationPipeline : IConversationPipeline
         Invocation baseInvocation,
         CancellationToken ct = default)
     {
+        var requestContext = baseInvocation.RequestContext
+            ?? throw new InvalidOperationException("Invocation request context is required.");
         _bus.Publish(new UserResponseReceivedEvent(
             $"direct:{capabilityName}",
             baseInvocation.User.UserId,
             "direct",
-            capabilityName), baseInvocation.RequestContext);
+            capabilityName), requestContext);
 
         var invocation = new Invocation
         {
             IsExplicit = true,
             CapabilityName = capabilityName,
             Parameters = parameters,
-            RequestContext = baseInvocation.RequestContext,
+            RequestContext = requestContext,
             User = baseInvocation.User,
             IsDryRun = baseInvocation.IsDryRun,
             ProgressReporter = baseInvocation.ProgressReporter
@@ -130,10 +134,10 @@ public sealed class ConversationPipeline : IConversationPipeline
 
         var result = await _invocationPipeline.RunAsync(invocation, ct).ConfigureAwait(false);
         _bus.Publish(new ConversationStateChangedEvent(
-            baseInvocation.RequestContext?.ChatId ?? "default",
+            requestContext.ChatId ?? "default",
             baseInvocation.User.UserId,
             0,
-            "direct_capability_executed"), baseInvocation.RequestContext);
+            "direct_capability_executed"), requestContext);
 
         return result;
     }

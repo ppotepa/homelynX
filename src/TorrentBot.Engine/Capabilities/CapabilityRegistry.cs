@@ -92,7 +92,9 @@ public sealed class CapabilityRegistry
     {
         capabilityName = string.Empty;
         var normalized = NormalizeCommand(command);
-        return normalized.Length > 0 && _byCommand.TryGetValue(normalized, out capabilityName);
+        return normalized.Length > 0
+            && _byCommand.TryGetValue(normalized, out var resolved)
+            && (capabilityName = resolved) is not null;
     }
 
     private static string NormalizeCommand(string command)

@@ -54,10 +54,10 @@ public sealed class ConversationPipelineTests
     }
 
     [Fact]
-    public void RegisterPendingFromResult_adds_index_pending_after_search_results()
+    public async Task RegisterPendingFromResult_adds_index_pending_after_search_results()
     {
         var engine = EngineBootstrap.Create();
-        engine.StartAsync().GetAwaiter().GetResult();
+        await engine.StartAsync();
         try
         {
             var services = PipelineBootstrap.Create(engine);
@@ -83,7 +83,7 @@ public sealed class ConversationPipelineTests
         }
         finally
         {
-            engine.StopAsync().GetAwaiter().GetResult();
+            await engine.StopAsync();
         }
     }
 

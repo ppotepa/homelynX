@@ -101,7 +101,7 @@ public sealed class ChiptunePerformanceRegressionTests
         var notes = ChiptuneParser.Compose(spec).Notes.OrderBy(x => x.Pitch).ToArray();
         Assert.Equal(2, notes.Length);
         Assert.Contains(notes[0].ControllerChanges!, x => x.Aftertouch == 80);
-        Assert.True(notes[1].ControllerChanges is null || notes[1].ControllerChanges.All(x => x.Aftertouch == 0));
+        Assert.True(notes[1].ControllerChanges?.All(x => x.Aftertouch == 0) != false);
     }
 
     [Fact]

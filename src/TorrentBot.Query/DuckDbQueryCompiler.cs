@@ -46,7 +46,10 @@ public sealed class DuckDbQueryCompiler
         var select = new List<string>();
         if (raw.TryGetValue("select", out var selectValue) && selectValue is IEnumerable<object> selectItems)
         {
-            select.AddRange(selectItems.Select(s => s?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s) && fields.ContainsKey(s!))!);
+            select.AddRange(selectItems
+                .Select(s => s?.ToString())
+                .OfType<string>()
+                .Where(s => !string.IsNullOrWhiteSpace(s) && fields.ContainsKey(s)));
         }
 
         if (select.Count == 0)
@@ -88,18 +91,18 @@ public sealed class DuckDbQueryCompiler
     public (string Sql, List<object?> Parameters) CompileSelect(QuerySpec spec)
     {
         var parameters = new List<object?>();
-        var selectClause = string.Join(", ", spec.Select.Select(Quote));
-        var whereClause = CompileWhere(spec.Where, parameters);
+        var selectClause = string.Join(", ", (spec.Select ?? []).Select(Quote));
+        var whereClause = CompileWhere(spec.Where ?? [], parameters);
         var sql = $"SELECT {selectClause} FROM query_rows";
         if (!string.IsNullOrWhiteSpace(whereClause))
         {
             sql += $" WHERE {whereClause}";
         }
 
-        if (spec.OrderBy.Count > 0)
+        if (spec.OrderBy is { Count: > 0 })
         {
             sql += " ORDER BY " + string.Join(", ",
-                spec.OrderBy.Select(o => $"{Quote(o.Field)} {(o.Descending ? "DESC" : "ASC")}"));
+                spec.OrderBy!.Select(o => $"{Quote(o.Field)} {(o.Descending ? "DESC" : "ASC")}"));
         }
 
         sql += " LIMIT ?";
@@ -158,19 +161,19 @@ public sealed class DuckDbQueryCompiler
                     parameters.Add(item.Value);
                     break;
                 case "in":
-                    var values = item.Value as IEnumerable<object> ?? [item.Value];
+                    var values = item.Value as IEnumerable<object?> ?? new object?[] { item.Value };
                     var list = values.ToList();
                     parts.Add($"{field} IN ({string.Join(", ", Enumerable.Repeat("?", list.Count))})");
                     parameters.AddRange(list);
                     break;
                 case "not_in":
-                    var excluded = item.Value as IEnumerable<object> ?? [item.Value];
+                    var excluded = item.Value as IEnumerable<object?> ?? new object?[] { item.Value };
                     var excludedList = excluded.ToList();
                     parts.Add($"{field} NOT IN ({string.Join(", ", Enumerable.Repeat("?", excludedList.Count))})");
                     parameters.AddRange(excludedList);
                     break;
                 case "between":
-                    var bounds = item.Value as IEnumerable<object> ?? [];
+                    var bounds = item.Value as IEnumerable<object?> ?? [];
                     var boundList = bounds.ToList();
                     if (boundList.Count >= 2)
                     {

@@ -35,7 +35,7 @@ public sealed class DuckDbQueryEngine
                 insert.CommandText = $"INSERT INTO query_rows ({string.Join(", ", columns.Select(Quote))}) VALUES ({string.Join(", ", paramNames)})";
                 foreach (var column in columns)
                 {
-                    insert.Parameters.Add(new DuckDBParameter(row.TryGetValue(column, out var value) ? value : null));
+                    insert.Parameters.Add(new DuckDBParameter(row.TryGetValue(column, out var value) ? value ?? DBNull.Value : DBNull.Value));
                 }
 
                 insert.ExecuteNonQuery();
@@ -55,7 +55,7 @@ public sealed class DuckDbQueryEngine
         command.CommandText = sql;
         foreach (var parameter in parameters)
         {
-            command.Parameters.Add(new DuckDBParameter(parameter));
+            command.Parameters.Add(new DuckDBParameter(parameter ?? DBNull.Value));
         }
 
         var items = new List<Dictionary<string, object?>>();
