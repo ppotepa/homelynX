@@ -57,3 +57,6 @@ jobs:
 
       - name: Verify dense MIDI automation
         run: bash scripts/verify-chiptune-dense-automation.sh /tmp/homelynx-chiptune-renderer
+
+      - name: Verify semantic instrument bank
+        run: bash scripts/verify-chiptune-instrument-bank.sh /tmp/homelynx-chiptune-renderer
