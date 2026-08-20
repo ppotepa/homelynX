@@ -43,12 +43,13 @@ public sealed class ChiptuneOrchestrationPlannerTests
     }
 
     [Fact]
-    public void Happy_nes_auto_palette_assigns_distinct_musical_roles()
+    public void Happy_nes_auto_palette_assigns_distinct_musical_roles_and_section_timbres()
     {
         var spec = ChiptuneParser.Parse("generate=song chip=nes style=happy bars=8 seed=7 format=wav");
         var planned = ArrangementPlanner.Plan(ChiptuneParser.Compose(spec), spec);
 
-        Assert.Contains(planned.Notes, x => x.Role == TrackRole.Lead && x.Patch == "lead");
+        Assert.Contains(planned.Notes, x => x.Role == TrackRole.Lead && x.Section == "verse" && x.Patch == "soft_lead");
+        Assert.Contains(planned.Notes, x => x.Role == TrackRole.Lead && x.Section == "chorus" && x.Patch == "lead");
         Assert.Contains(planned.Notes, x => x.Role == TrackRole.CounterLead && x.Patch == "bell");
         Assert.All(planned.Notes.Where(x => x.Role == TrackRole.Bass), x => Assert.Equal("bass", x.Patch));
         Assert.All(planned.Notes.Where(x => x.Role == TrackRole.Arp), x => Assert.Equal("pluck", x.Patch));
@@ -110,5 +111,37 @@ public sealed class ChiptuneOrchestrationPlannerTests
 
         Assert.True(planned[0].Pitch >= 60);
         Assert.Equal(4, planned[1].Pitch - planned[0].Pitch);
+    }
+
+    [Fact]
+    public void Auto_register_preserves_in_range_midi_verse_register()
+    {
+        var spec = ChiptuneParser.Parse("midi_base64=AQ== chip=nes register=auto format=wav");
+        var song = new Song([
+            new NoteEvent(0, 480, 60, 105, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "verse", SectionIntensity: .55),
+            new NoteEvent(480, 480, 64, 105, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "verse", SectionIntensity: .55),
+            new NoteEvent(960, 480, 67, 105, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "verse", SectionIntensity: .55)
+        ], TempoMap.Fixed(120));
+
+        var planned = ArrangementPlanner.Plan(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal([60, 64, 67], planned.Select(x => x.Pitch).ToArray());
+    }
+
+    [Fact]
+    public void Auto_register_does_not_retranspose_an_already_high_midi_chorus()
+    {
+        var spec = ChiptuneParser.Parse("midi_base64=AQ== chip=nes register=auto chorus_lift=12 format=wav");
+        var song = new Song([
+            new NoteEvent(0, 480, 60, 100, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "verse", SectionIntensity: .55),
+            new NoteEvent(480, 480, 64, 100, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "verse", SectionIntensity: .55),
+            new NoteEvent(TempoMap.Ppq * 4, 480, 72, 112, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "chorus", SectionIntensity: .95),
+            new NoteEvent(TempoMap.Ppq * 4 + 480, 480, 76, 112, TrackRole.Lead, SourceTrack: 0, SourceChannel: 0, Program: 80, Section: "chorus", SectionIntensity: .95)
+        ], TempoMap.Fixed(120));
+
+        var planned = ArrangementPlanner.Plan(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
+        var chorus = planned.Where(x => x.Section == "chorus").ToArray();
+
+        Assert.Equal([72, 76], chorus.Select(x => x.Pitch).ToArray());
     }
 }
