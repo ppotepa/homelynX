@@ -31,6 +31,7 @@ public sealed class MediaDownloader : IDownloader
     private readonly int _maxConcurrency;
     private readonly int _maxPerUser;
     private readonly int _timeoutSeconds;
+    private readonly bool _enabled;
 
     public MediaDownloader(
         string? ytDlpPath = null,
@@ -40,7 +41,8 @@ public sealed class MediaDownloader : IDownloader
         int? maxDurationSeconds = null,
         int? maxConcurrency = null,
         int? maxPerUser = null,
-        int? timeoutSeconds = null)
+        int? timeoutSeconds = null,
+        bool? enabled = null)
     {
         _ytDlpPath = ytDlpPath ?? Environment.GetEnvironmentVariable("YTDLP_PATH") ?? "yt-dlp";
         _ffmpegPath = ffmpegPath ?? Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
@@ -65,6 +67,7 @@ public sealed class MediaDownloader : IDownloader
         _maxConcurrency = ReadPositiveSetting(maxConcurrency, "MEDIA_DOWNLOAD_MAX_CONCURRENCY", 4);
         _maxPerUser = ReadPositiveSetting(maxPerUser, "MEDIA_DOWNLOAD_MAX_PER_USER", 2);
         _timeoutSeconds = ReadPositiveSetting(timeoutSeconds, "MEDIA_DOWNLOAD_TIMEOUT_SECONDS", 1_200);
+        _enabled = ReadBooleanSetting(enabled, "MEDIA_DOWNLOAD_ENABLED", true);
         _downloadGate = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
     }
 
@@ -76,6 +79,11 @@ public sealed class MediaDownloader : IDownloader
 
     public async Task<DownloadTicket> StartAsync(DownloadStartRequest request, CancellationToken ct = default)
     {
+        if (!_enabled)
+        {
+            throw new InvalidOperationException("Pobieranie mediów jest wyłączone konfiguracją MEDIA_DOWNLOAD_ENABLED=false.");
+        }
+
         var url = ValidateUrl(request.Url);
         var format = ParseFormat(request.MediaFormat);
         var quality = ParseQuality(format, request.MediaQuality);
@@ -639,6 +647,18 @@ public sealed class MediaDownloader : IDownloader
         var value = explicitValue
             ?? (int.TryParse(Environment.GetEnvironmentVariable(variable), out var configured) ? configured : fallback);
         return value > 0 ? value : fallback;
+    }
+
+    private static bool ReadBooleanSetting(bool? explicitValue, string variable, bool fallback)
+    {
+        if (explicitValue.HasValue)
+        {
+            return explicitValue.Value;
+        }
+
+        return bool.TryParse(Environment.GetEnvironmentVariable(variable), out var configured)
+            ? configured
+            : fallback;
     }
 
     private static string SanitizeFileName(string name)
