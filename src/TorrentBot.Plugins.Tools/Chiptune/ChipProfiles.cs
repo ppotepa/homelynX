@@ -43,12 +43,17 @@ internal sealed class ChipProfile
         var melodic = Voices.Where(x => x.Melodic).OrderByDescending(x => x.Priority).Select(x => x.Index).ToArray();
         var percussion = Voices.Where(x => x.Percussion).OrderByDescending(x => x.Priority).Select(x => x.Index).ToArray();
         if (note.Role == TrackRole.Drums)
-            return Id == "nes" ? (note.Pitch is >= 35 and <= 40 ? [4, 3] : [3]) : percussion;
+        {
+            if (Id == "nes")
+                return note.Pitch is >= 35 and <= 40 ? [4, 3] : [3];
+            if (Id == "genesis")
+            {
+                var tonalDrum = note.Pitch is 35 or 36 or 41 or 43 or 45 or 47 or 48 or 50;
+                return tonalDrum ? [5, 9] : [9, 5];
+            }
+            return percussion;
+        }
 
-        // Program identity is stronger than the coarse Lead/Harmony role for
-        // obvious GM bass families. Multiple bass tracks can therefore still
-        // reach triangle/wave/FM voices even if only one was labeled Bass by
-        // the source-part classifier.
         var bassLike = note.Role == TrackRole.Bass ||
                        (note.SourceTrack >= 0 && note.Program is >= 32 and <= 39);
 
@@ -95,7 +100,7 @@ internal sealed class ChipProfile
         "genesis" => new("genesis", [
             new(0, ChipVoiceClass.Fm, true, false, 110), new(1, ChipVoiceClass.Fm, true, false, 105),
             new(2, ChipVoiceClass.Fm, true, false, 100), new(3, ChipVoiceClass.Fm, true, false, 95),
-            new(4, ChipVoiceClass.Fm, true, false, 90), new(5, ChipVoiceClass.Fm, true, false, 85),
+            new(4, ChipVoiceClass.Fm, true, false, 90), new(5, ChipVoiceClass.Fm, true, true, 85),
             new(6, ChipVoiceClass.Psg, true, false, 70), new(7, ChipVoiceClass.Psg, true, false, 65),
             new(8, ChipVoiceClass.Psg, true, false, 60), new(9, ChipVoiceClass.Noise, false, true, 100)]),
         "c64_6581" or "c64_8580" => new(chip, Enumerable.Range(0, 3).Select(x => new ChipVoiceProfile(x, ChipVoiceClass.Pulse, true, true, 100 - x)).ToArray()),
