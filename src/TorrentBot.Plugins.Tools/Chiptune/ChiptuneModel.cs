@@ -45,9 +45,11 @@ internal sealed record NoteEvent(long StartTick, long DurationTick, int Pitch, i
     int NoteCutTicks = -1, int NoteDelayTicks = 0, int Retrigger = 0,
     int PitchSlide = 0, int VolumeSlide = 0, int Volume = 127,
     int Modulation = 0, int Aftertouch = 0, int ReleaseVelocity = 0,
-    IReadOnlyList<ControllerPoint>? ControllerChanges = null)
+    IReadOnlyList<ControllerPoint>? ControllerChanges = null,
+    long KeyDurationTick = -1)
 {
     public long EndTick => StartTick + DurationTick;
+    public long KeyEndTick => StartTick + (KeyDurationTick >= 0 ? Math.Clamp(KeyDurationTick, 1, DurationTick) : DurationTick);
 }
 
 internal sealed record PitchBendPoint(long Tick, int Value);
