@@ -61,11 +61,13 @@ internal static class DryWetMidiImporter
             foreach (var note in notes)
             {
                 state.AdvanceTo(note.Time);
-                var keyRelease = note.Time + note.Length;
+                var naturalKeyRelease = note.Time + note.Length;
+                var keyRelease = state.ChannelModeKeyRelease(note.Channel, note.Time, naturalKeyRelease);
                 var soundingEnd = state.SustainExtension(note.Channel, keyRelease, trackEnd);
+                soundingEnd = state.AllSoundOff(note.Channel, note.Time, soundingEnd);
                 var bends = state.Bends(note.Channel, note.Time, soundingEnd);
                 var automation = state.Automation(note.Channel, (int)note.NoteNumber, note.Time, soundingEnd);
-                completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), soundingEnd, bends, automation));
+                completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), keyRelease, soundingEnd, bends, automation));
             }
         }
 
@@ -120,7 +122,7 @@ internal static class DryWetMidiImporter
         var result = completed.Select(item =>
         {
             var rawStart = Scale(item.Note.Time, ppq);
-            var rawKeyEnd = Scale(item.Note.Time + item.Note.Length, ppq);
+            var rawKeyEnd = Scale(item.KeyRelease, ppq);
             var rawEnd = Scale(item.End, ppq);
             var key = (item.Track, Channel: (int)item.Note.Channel, item.State.Program, item.State.Bank);
             var role = item.Note.Channel == 9
@@ -185,7 +187,7 @@ internal static class DryWetMidiImporter
         return peak;
     }
 
-    private sealed record ImportedNote(int Track, Note Note, ChannelSnapshot State, long End,
+    private sealed record ImportedNote(int Track, Note Note, ChannelSnapshot State, long KeyRelease, long End,
         IReadOnlyList<PitchBendEventData> Bends, IReadOnlyList<AutomationPoint> Automation);
     private sealed record PitchBendEventData(long Time, int Value);
     private sealed record AutomationPoint(long Time, ChannelSnapshot State);
@@ -214,13 +216,26 @@ internal static class DryWetMidiImporter
             return Snapshot(state);
         }
 
+        public long ChannelModeKeyRelease(int channel, long start, long naturalEnd)
+        {
+            foreach (var timed in _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < naturalEnd))
+            {
+                if (timed.Event is ControlChangeEvent cc && (int)cc.ControlNumber is >= 123 and <= 127)
+                    return timed.Time;
+            }
+            return naturalEnd;
+        }
+
         public long SustainExtension(int channel, long end, long trackEnd)
         {
             var channelEvents = _channelEvents.Where(x => ((ChannelEvent)x.Event).Channel == channel).ToArray();
-            var down = channelEvents
-                .Where(x => x.Time <= end && x.Event is ControlChangeEvent cc && cc.ControlNumber == 64)
-                .Select(x => ((ControlChangeEvent)x.Event).ControlValue >= 64)
-                .LastOrDefault();
+            var down = false;
+            foreach (var timed in channelEvents.Where(x => x.Time <= end))
+            {
+                if (timed.Event is not ControlChangeEvent cc) continue;
+                if (cc.ControlNumber == 64) down = cc.ControlValue >= 64;
+                else if (cc.ControlNumber == 121) down = false;
+            }
             if (!down) return end;
             foreach (var timed in channelEvents.Where(x => x.Time > end))
             {
@@ -229,6 +244,16 @@ internal static class DryWetMidiImporter
                     return timed.Time;
             }
             return Math.Max(end, trackEnd);
+        }
+
+        public long AllSoundOff(int channel, long start, long end)
+        {
+            var eventTime = _channelEvents
+                .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end &&
+                            x.Event is ControlChangeEvent cc && cc.ControlNumber == 120)
+                .Select(x => (long?)x.Time)
+                .FirstOrDefault();
+            return eventTime ?? end;
         }
 
         public IReadOnlyList<PitchBendEventData> Bends(int channel, long start, long end) => _channelEvents
