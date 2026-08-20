@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 
 MARKERS = ("Γ", "≡ƒ", "∩╕", "ΓÇ")
@@ -51,11 +52,25 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.root).resolve()
 
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout.decode("utf-8", errors="replace").split("\0")
+    except (OSError, subprocess.CalledProcessError):
+        tracked = [path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()]
+
     offenders: list[str] = []
-    for path in root.rglob("*"):
-        if not path.is_file() or should_skip(path.relative_to(root)):
+    for rel in tracked:
+        if not rel:
             continue
-        rel = path.relative_to(root).as_posix()
+        relative = Path(rel)
+        if should_skip(relative):
+            continue
+        path = root / relative
+        if not path.is_file():
+            continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except Exception:

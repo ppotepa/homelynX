@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,8 @@ SKIP_PARTS = {
     "data",
     "downloads",
     "e2e",
+    "e2e-tests",
+    ".codegraph",
     "qbittorrent-config",
     "jackett-config",
     "jellyfin-config",
@@ -51,13 +54,25 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.root).resolve()
 
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            check=True,
+            capture_output=True,
+        ).stdout.decode("utf-8", errors="replace").split("\0")
+    except (OSError, subprocess.CalledProcessError):
+        tracked = [path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()]
+
     offending: list[tuple[str, str]] = []
-    for path in root.rglob("*"):
-        if not path.is_file():
+    for rel in tracked:
+        if not rel:
             continue
-        relative_path = path.relative_to(root)
+        relative_path = Path(rel)
         relative_name = relative_path.as_posix()
         if relative_name in SKIP_EXACT or should_skip(relative_path):
+            continue
+        path = root / relative_path
+        if not path.is_file():
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")

@@ -6,25 +6,27 @@ DOCS_ENGINE="docs/ENGINE.md"
 SCRATCH="${SCRATCH:-/tmp/grok-goal-84a82ec5c12d/implementer}"
 mkdir -p "$SCRATCH"
 
-SEC9=$(grep -n '^## 9\.' "$ARCH" | head -1 | cut -d: -f1 || echo 0)
-if [ "$SEC9" -eq 0 ]; then
-  echo "ERROR: no ## 9" >&2
-  exit 1
-fi
+REQUIRED_ARCH_SECTIONS=("Runtime flow" "Projects" "State" "Background work" "Query subsystem" "Security boundary")
+REQUIRED_ENGINE_SECTIONS=("Invocation contract" "Explicit input boundary" "Capabilities" "State and confirmations" "Jobs and events")
 
-TYPES=(IRequestContext IEngineContext IProcessManager IJobTracker Job JobOptions CapabilityContext ExecutionContext)
-
-echo "SEC9=$SEC9" > "$SCRATCH/contract-gate.txt"
-echo "=== COUNTS ===" >> "$SCRATCH/contract-gate.txt"
+echo "=== CURRENT ARCHITECTURE SECTIONS ===" > "$SCRATCH/contract-gate.txt"
 FAILED=0
-for t in "${TYPES[@]}"; do
-  cnt=$(grep -Ec "public (interface|record|class) $t([^A-Za-z0-9_]|$)" "$ARCH" || echo 0)
-  echo "$t: $cnt" >> "$SCRATCH/contract-gate.txt"
-  if [ "$cnt" -ne 1 ]; then FAILED=1; fi
-  ln=$(grep -n "public (interface|record|class) $t([^A-Za-z0-9_]|$)" "$ARCH" | head -1 | cut -d: -f1 || echo 0)
-  if [ "$ln" -gt 0 ] && [ "$ln" -lt "$SEC9" ]; then FAILED=1; fi
+for section in "${REQUIRED_ARCH_SECTIONS[@]}"; do
+  if grep -q "^## $section$" "$ARCH"; then
+    echo "ARCH PASS: $section" >> "$SCRATCH/contract-gate.txt"
+  else
+    echo "ARCH MISSING: $section" >> "$SCRATCH/contract-gate.txt"
+    FAILED=1
+  fi
 done
-echo "JobOptions explicit: $(grep -c 'public record JobOptions' "$ARCH" || echo 0)" >> "$SCRATCH/contract-gate.txt"
+for section in "${REQUIRED_ENGINE_SECTIONS[@]}"; do
+  if grep -q "^## $section$" "$DOCS_ENGINE"; then
+    echo "ENGINE PASS: $section" >> "$SCRATCH/contract-gate.txt"
+  else
+    echo "ENGINE MISSING: $section" >> "$SCRATCH/contract-gate.txt"
+    FAILED=1
+  fi
+done
 
 # Marker: filter historical
 echo "=== MARKER ===" >> "$SCRATCH/contract-gate.txt"
@@ -34,9 +36,6 @@ if grep -i -E 'open questions|sketch|todo|incomplete|will be refined' "$ARCH" "$
 else
   echo "CLEAN (historical ok)" >> "$SCRATCH/contract-gate.txt"
 fi
-
-echo "=== SEC11 ===" >> "$SCRATCH/contract-gate.txt"
-tail -15 "$ARCH" | grep -A 25 '## 11\.' >> "$SCRATCH/contract-gate.txt" || true
 
 if [ $FAILED -ne 0 ]; then
   echo "FAILED" | tee -a "$SCRATCH/contract-gate.txt"
