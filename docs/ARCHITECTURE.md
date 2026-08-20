@@ -19,7 +19,7 @@ CapabilityRegistry + ACL + confirmation
     ↓
 capability handler
     ↓
-Jackett / qBittorrent / filesystem media / TTS / DuckDB
+    Jackett / qBittorrent / filesystem media / optional TTS / DuckDB
     ↓
 response artifacts + presenter
     ↓
@@ -38,7 +38,7 @@ There is no planner and no free-form language-to-command inference.
 - `TorrentBot.Contracts` — public records/interfaces shared between projects.
 - `TorrentBot.Plugins.*` — capability implementations grouped by domain.
 - `TorrentBot.Query` — validated DuckDB query compilation/execution.
-- `TorrentBot.Integrations` — Jackett, qBittorrent, media and TTS clients.
+- `TorrentBot.Integrations` — Jackett, qBittorrent, media and optional TTS clients.
 - `TorrentBot.Presentation` — channel-specific response rendering.
 
 ## State

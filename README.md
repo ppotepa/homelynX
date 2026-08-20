@@ -10,7 +10,7 @@ There is no natural-language command planner. User actions are explicit commands
 
 ## Services
 
-The Docker stack contains the Homelynx bot plus the services it integrates with: qBittorrent, Jackett, FlareSolverr, Jellyfin, portal and TTS.
+The Docker stack contains the Homelynx bot plus qBittorrent, Jackett, FlareSolverr and Jellyfin. TTS is optional and can be provided by an external HTTP service through `TORRENTBOT_TTS_URL`; it is not started by the default compose stack.
 
 ## Install
 
@@ -46,7 +46,7 @@ docker compose logs -f homelynx-bot
 - torrent search, selection and torrent control
 - download start/list/cancel
 - jobs and download completion tracking
-- media listing and TTS
+- media listing and optional TTS integration
 - system status, health, metrics and capability help
 - read-only structured queries through DuckDB
 - ACL and confirmation checks for protected operations

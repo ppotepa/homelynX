@@ -7,7 +7,7 @@ Plugins register capability metadata, capability contracts and handlers with the
 - **Torrent** — search, list, pause, resume, delete/control, result selection and pagination.
 - **Downloads** — search/start/start URL/list/cancel and downloader orchestration.
 - **Jobs** — job listing and related runtime state.
-- **Media** — media listing and TTS.
+- **Media** — media listing and optional TTS integration.
 - **Query** — `query.execute` over structured snapshot sources.
 - **System** — health, ping, status, help/capabilities, metrics and events.
 - **BotControl** — bot lifecycle/control capabilities where configured.

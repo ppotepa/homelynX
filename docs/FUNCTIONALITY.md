@@ -20,7 +20,7 @@ System capabilities include help/capability listing, health, ping, status, metri
 
 ## Media
 
-Media capabilities provide media-library listing and TTS through the configured filesystem/media and TTS integrations.
+Media capabilities provide media-library listing through the configured filesystem and optional TTS through an externally configured HTTP integration. The default compose stack does not start a TTS service.
 
 ## Query
 
