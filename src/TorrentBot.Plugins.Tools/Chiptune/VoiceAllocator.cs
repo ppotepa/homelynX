@@ -25,15 +25,25 @@ internal static class VoiceAllocator
                     : voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
                 if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
                 {
-                    // A full hardware chord cannot occupy one tracker cell.
-                    // Spread the colliding note over the same compatible voice
-                    // instead of letting native Furnace overwrite a note.
+                    // A hardware voice is monophonic. Schedule an arpeggio only
+                    // after the selected voice is actually free; never overlap an
+                    // existing note and hope the tracker will resolve it later.
                     var slice = Math.Max(60, note.DurationTick / Math.Max(1, group.Count()));
-                    var arpVoice = voices.OrderBy(x => allocated.Count(y => y.StartTick == note.StartTick && y.Voice == x)).First();
-                    var arpStart = note.StartTick + allocated.Count(x => x.StartTick >= note.StartTick && x.Voice == arpVoice) * slice;
-                    var arp = ToHardware(note, arpVoice, spec);
-                    allocated.Add(arp with { StartTick = arpStart, DurationTick = Math.Min(slice, note.DurationTick) });
-                    voiceUntil[arpVoice] = Math.Max(voiceUntil.GetValueOrDefault(arpVoice), arpStart + Math.Min(slice, note.DurationTick));
+                    var arpVoice = voices
+                        .OrderBy(x => voiceUntil.GetValueOrDefault(x))
+                        .ThenBy(x => allocated.Count(y => y.StartTick == note.StartTick && y.Voice == x))
+                        .First();
+                    var arpStart = Math.Max(note.StartTick, voiceUntil.GetValueOrDefault(arpVoice));
+                    var available = note.EndTick - arpStart;
+                    if (available <= 0)
+                    {
+                        dropped++;
+                        continue;
+                    }
+                    var duration = Math.Min(slice, available);
+                    var arp = TrimToSpan(ToHardware(note, arpVoice, spec), arpStart, duration);
+                    allocated.Add(arp);
+                    voiceUntil[arpVoice] = arpStart + duration;
                     lastOnVoice[arpVoice] = allocated.Count - 1;
                     preferredVoice[part] = arpVoice;
                     if (spec.Fidelity == "preserve") arpeggiated++;
@@ -44,7 +54,9 @@ internal static class VoiceAllocator
                 {
                     if (spec.Fidelity == "strict") { dropped++; continue; }
                     // Stateful voice stealing: shorten only the note that is
-                    // actually being replaced, never a later note by accident.
+                    // actually being replaced. Any automation after the new end
+                    // belongs to the old source note and must not leak onto the
+                    // replacement now playing on this hardware voice.
                     voice = voices.OrderBy(x => voiceUntil.GetValueOrDefault(x)).First();
                     if (lastOnVoice.TryGetValue(voice, out var previousIndex))
                     {
@@ -55,7 +67,10 @@ internal static class VoiceAllocator
                             continue;
                         }
                         if (previous.StartTick < note.StartTick)
-                            allocated[previousIndex] = previous with { DurationTick = Math.Max(1, note.StartTick - previous.StartTick) };
+                        {
+                            var duration = Math.Max(1, note.StartTick - previous.StartTick);
+                            allocated[previousIndex] = TrimToSpan(previous, previous.StartTick, duration);
+                        }
                     }
                     revoiced++;
                 }
@@ -66,9 +81,50 @@ internal static class VoiceAllocator
                 voiceUntil[voice] = note.EndTick;
             }
         }
-        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, allocated.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray(), song.EndTick,
+
+        EnsureMonophonicTimelines(allocated);
+        var ordered = allocated.OrderBy(x => x.StartTick).ThenBy(x => x.Voice).ToArray();
+        var endTick = ordered.Length == 0 ? song.EndTick : Math.Max(song.EndTick, ordered.Max(x => x.StartTick + x.DurationTick));
+        return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, ordered, endTick,
             spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter,
             song.Notes.Count, revoiced, arpeggiated, dropped, spec.Fidelity);
+    }
+
+    private static HardwareNote TrimToSpan(HardwareNote note, long startTick, long durationTick)
+    {
+        durationTick = Math.Max(1, durationTick);
+        var endTick = startTick + durationTick;
+        var bends = note.PitchBends?
+            .Where(x => x.Tick > startTick && x.Tick < endTick)
+            .ToArray();
+        var controllers = note.ControllerChanges?
+            .Where(x => x.Tick > startTick && x.Tick < endTick)
+            .ToArray();
+        var noteCut = note.NoteCutTicks < 0
+            ? -1
+            : Math.Min(note.NoteCutTicks, Math.Max(0, (int)Math.Min(int.MaxValue, durationTick - 1)));
+        return note with
+        {
+            StartTick = startTick,
+            DurationTick = durationTick,
+            PitchBends = bends,
+            ControllerChanges = controllers,
+            NoteCutTicks = noteCut
+        };
+    }
+
+    private static void EnsureMonophonicTimelines(IReadOnlyList<HardwareNote> notes)
+    {
+        foreach (var voice in notes.GroupBy(x => x.Voice))
+        {
+            HardwareNote? previous = null;
+            foreach (var current in voice.OrderBy(x => x.StartTick).ThenBy(x => x.DurationTick))
+            {
+                if (previous is not null && current.StartTick < previous.StartTick + previous.DurationTick)
+                    throw new InvalidOperationException($"Chiptune arranger produced overlapping notes on hardware voice {voice.Key}.");
+                previous = current;
+            }
+        }
     }
 
     private static HardwareNote ToHardware(NoteEvent note, int voice, ChiptuneSpec spec)
