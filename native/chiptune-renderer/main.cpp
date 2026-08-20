@@ -194,7 +194,9 @@ static DivSample* makeSample(int voice, const std::string& patch) {
     } else {
       value = phase < .5 ? .66 : -.66;
     }
-    value = std::clamp(value, -1.0, 1.0);
+    // Furnace's standalone build currently compiles this adapter as C++14;
+    // keep the renderer compatible instead of relying on std::clamp (C++17).
+    value = bounded(value, -1.0, 1.0);
     sample->data16[i] = (short)std::lround(value * 28000.0);
   }
   return sample;

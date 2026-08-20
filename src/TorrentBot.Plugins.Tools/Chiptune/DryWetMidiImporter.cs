@@ -19,6 +19,7 @@ internal static class DryWetMidiImporter
         var ppq = division.TicksPerQuarterNote;
         var tracks = file.GetTrackChunks().ToArray();
         var timedByTrack = tracks.Select(track => track.GetTimedEvents().ToArray()).ToArray();
+        var rawTrackEnds = ReadTrackEnds(bytes);
         var tempoEvents = timedByTrack.SelectMany(events => events)
             .Where(x => x.Event is SetTempoEvent)
             .Select(x => new TempoPoint(Scale(x.Time, ppq), checked((int)((SetTempoEvent)x.Event).MicrosecondsPerQuarterNote)))
@@ -57,6 +58,8 @@ internal static class DryWetMidiImporter
             var trackEnd = Math.Max(
                 events.Length == 0 ? 0 : events.Max(x => x.Time),
                 notes.Length == 0 ? 0 : notes.Max(x => x.Time + x.Length));
+            if (trackIndex < rawTrackEnds.Count)
+                trackEnd = Math.Max(trackEnd, rawTrackEnds[trackIndex]);
             var state = new StateTable(events);
             foreach (var note in notes)
             {
@@ -165,6 +168,87 @@ internal static class DryWetMidiImporter
     }
 
     private static long Scale(long tick, int ppq) => checked(tick * TempoMap.Ppq / ppq);
+
+    // DryWetMIDI intentionally exposes EndOfTrack as track structure rather
+    // than a timed event. Its delta-time is still musically meaningful when a
+    // sustain pedal remains down, so retain the exact SMF track end here.
+    private static IReadOnlyList<long> ReadTrackEnds(byte[] bytes)
+    {
+        var ends = new List<long>();
+        var offset = bytes.Length >= 14 ? 14 : bytes.Length;
+        while (offset + 8 <= bytes.Length)
+        {
+            if (bytes[offset] != 'M' || bytes[offset + 1] != 'T' || bytes[offset + 2] != 'r' || bytes[offset + 3] != 'k')
+                break;
+            var length = ReadBigEndianInt32(bytes, offset + 4);
+            offset += 8;
+            if (length < 0 || offset + length > bytes.Length) break;
+            ends.Add(ReadTrackEnd(bytes, offset, length));
+            offset += length;
+        }
+        return ends;
+    }
+
+    private static long ReadTrackEnd(byte[] bytes, int offset, int length)
+    {
+        var end = offset + length;
+        long tick = 0;
+        var runningStatus = 0;
+        while (offset < end)
+        {
+            tick += ReadVariableLength(bytes, ref offset, end);
+            if (offset >= end) break;
+            var status = (int)bytes[offset++];
+            if (status < 0x80)
+            {
+                if (runningStatus == 0) break;
+                offset--;
+                status = runningStatus;
+            }
+            else if (status < 0xF0)
+            {
+                runningStatus = status;
+            }
+            else if (status is 0xF0 or 0xF7)
+            {
+                var sysexLength = ReadVariableLength(bytes, ref offset, end);
+                offset = Math.Min(end, offset + sysexLength);
+                runningStatus = 0;
+                continue;
+            }
+
+            if (status == 0xFF)
+            {
+                if (offset >= end) break;
+                var metaType = bytes[offset++];
+                var metaLength = ReadVariableLength(bytes, ref offset, end);
+                if (metaType == 0x2F) return tick;
+                offset = Math.Min(end, offset + metaLength);
+                runningStatus = 0;
+                continue;
+            }
+
+            var dataBytes = (status >> 4) is 0xC or 0xD ? 1 : 2;
+            offset = Math.Min(end, offset + dataBytes);
+        }
+        return tick;
+    }
+
+    private static int ReadVariableLength(byte[] bytes, ref int offset, int end)
+    {
+        var value = 0;
+        for (var i = 0; i < 4 && offset < end; i++)
+        {
+            var current = bytes[offset++];
+            value = (value << 7) | (current & 0x7F);
+            if ((current & 0x80) == 0) break;
+        }
+        return value;
+    }
+
+    private static int ReadBigEndianInt32(byte[] bytes, int offset) =>
+        (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+
     private static long Quantize(long tick, long grid) => grid <= 0 ? Math.Max(0, tick) : Math.Max(0, (long)Math.Round(tick / (double)grid, MidpointRounding.AwayFromZero) * grid);
     private static bool IsLeadProgram(int program) => program is >= 56 and <= 87;
     private static bool IsBassProgram(int program) => program is >= 32 and <= 39;

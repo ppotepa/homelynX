@@ -91,7 +91,7 @@ internal static class ManagedChipRenderer
     {
         if (percussion)
         {
-            var decay = instrument switch
+            var percussionDecay = instrument switch
             {
                 "kick" => 12d,
                 "snare" => 18d,
@@ -102,7 +102,7 @@ internal static class ManagedChipRenderer
                 "ride" => 4d,
                 _ => 12d
             };
-            return Math.Exp(-age * decay) * Math.Min(1, remain / .006);
+            return Math.Exp(-age * percussionDecay) * Math.Min(1, remain / .006);
         }
 
         var attackTime = instrument switch

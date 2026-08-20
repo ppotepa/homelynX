@@ -114,6 +114,16 @@ internal static class VoiceAllocator
                         {
                             var previous = allocated[previousIndex];
                             var previousPriority = allocatedPriority[previousIndex];
+                            // A tracker cell cannot contain two attacks at the
+                            // same time on one voice. This is common for GM
+                            // drum hits (kick + snare/hat) and must be treated
+                            // as an intentional drop, not as a zero-length
+                            // steal that leaves overlapping spans behind.
+                            if (previous.StartTick >= note.StartTick)
+                            {
+                                dropped++;
+                                continue;
+                            }
                             if (spec.Fidelity == "recognizable" && previousPriority >= notePriority)
                             {
                                 dropped++;
