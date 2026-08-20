@@ -29,24 +29,26 @@ internal static class AutoProfileResolver
         try
         {
             var candidate = spec with { Chip = chip, ChipExplicit = true };
-            var hardware = VoiceAllocator.Allocate(song, candidate);
-            var sourceCount = Math.Max(1, song.Notes.Count);
-            var peak = PeakOverlap(song.Notes);
+            var planned = ArrangementPlanner.Plan(song, candidate);
+            var hardware = VoiceAllocator.Allocate(planned, candidate);
+            var sourceCount = Math.Max(1, planned.Notes.Count);
+            var peak = PeakOverlap(planned.Notes);
             var voices = ChipProfile.For(chip).Voices.Count;
             var programs = song.Notes
                 .Where(x => x.SourceChannel >= 0 && x.SourceChannel != 9)
                 .Select(x => x.Program)
                 .Distinct()
                 .ToArray();
-            var hasDrums = song.Notes.Any(x => x.Role == TrackRole.Drums);
+            var hasDrums = planned.Notes.Any(x => x.Role == TrackRole.Drums);
+            var hooks = planned.Notes.Count(x => x.Role is TrackRole.Lead or TrackRole.CounterLead);
 
             var score = 10_000;
             score -= hardware.DroppedNotes * 6_000 / sourceCount;
             score -= hardware.RevoicedNotes * 900 / sourceCount;
             score -= hardware.ArpeggiatedNotes * 500 / sourceCount;
-
             score += Math.Min(peak, voices) * 20;
             if (voices >= peak) score += 120;
+            score += Math.Min(120, hooks * 2);
 
             var diversity = programs.Length;
             score += chip switch
@@ -61,13 +63,9 @@ internal static class AutoProfileResolver
                 _ => 0
             };
 
-            var fmFriendly = programs.Count(program =>
-                program is >= 0 and <= 39 or >= 56 and <= 87);
+            var fmFriendly = programs.Count(program => program is >= 0 and <= 39 or >= 56 and <= 87);
             if (chip == "genesis") score += fmFriendly * 5;
 
-            // When all candidates preserve a tiny score equally well, choose
-            // the simpler characteristic hardware instead of defaulting to
-            // SNES solely because it has more sample voices.
             if (peak <= 2 && diversity <= 2)
             {
                 score += chip switch

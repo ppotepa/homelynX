@@ -114,11 +114,6 @@ internal static class VoiceAllocator
                         {
                             var previous = allocated[previousIndex];
                             var previousPriority = allocatedPriority[previousIndex];
-                            // A tracker cell cannot contain two attacks at the
-                            // same time on one voice. This is common for GM
-                            // drum hits (kick + snare/hat) and must be treated
-                            // as an intentional drop, not as a zero-length
-                            // steal that leaves overlapping spans behind.
                             if (previous.StartTick >= note.StartTick)
                             {
                                 dropped++;
@@ -256,10 +251,7 @@ internal static class VoiceAllocator
         return result;
     }
 
-    private static int PriorityOf(
-        NoteEvent note,
-        IReadOnlyDictionary<PartKey, PartInfo> parts,
-        IReadOnlyDictionary<NoteEvent, LaneInfo> lanes)
+    private static int PriorityOf(NoteEvent note, IReadOnlyDictionary<PartKey, PartInfo> parts, IReadOnlyDictionary<NoteEvent, LaneInfo> lanes)
         => Math.Clamp(parts[KeyOf(note)].Priority + lanes[note].PriorityBonus, 1, 240);
 
     private static PartKey KeyOf(NoteEvent note)
@@ -269,6 +261,7 @@ internal static class VoiceAllocator
     {
         TrackRole.Lead => 100,
         TrackRole.Bass => 95,
+        TrackRole.CounterLead => 90,
         TrackRole.Drums => 85,
         TrackRole.Arp => 60,
         _ => 45
@@ -302,6 +295,7 @@ internal static class VoiceAllocator
         name = name.ToLowerInvariant();
         var score = 0;
         if (name.Contains("lead") || name.Contains("melody") || name.Contains("solo") || name.Contains("theme")) score += 30;
+        if (name.Contains("counter")) score += role == TrackRole.CounterLead ? 35 : 12;
         if (name.Contains("bass")) score += 24;
         if (name.Contains("drum") || name.Contains("perc")) score += role == TrackRole.Drums ? 20 : 5;
         if (name.Contains("pad") || name.Contains("chord") || name.Contains("ambience")) score -= 10;
@@ -327,12 +321,8 @@ internal static class VoiceAllocator
     {
         durationTick = Math.Max(1, durationTick);
         var endTick = startTick + durationTick;
-        var bends = note.PitchBends?
-            .Where(x => x.Tick > startTick && x.Tick < endTick)
-            .ToArray();
-        var controllers = note.ControllerChanges?
-            .Where(x => x.Tick > startTick && x.Tick < endTick)
-            .ToArray();
+        var bends = note.PitchBends?.Where(x => x.Tick > startTick && x.Tick < endTick).ToArray();
+        var controllers = note.ControllerChanges?.Where(x => x.Tick > startTick && x.Tick < endTick).ToArray();
         var noteCut = note.NoteCutTicks < 0
             ? -1
             : Math.Min(note.NoteCutTicks, Math.Max(0, (int)Math.Min(int.MaxValue, durationTick - 1)));
@@ -364,13 +354,13 @@ internal static class VoiceAllocator
     {
         var profile = ChipProfile.For(spec.Chip);
         var voiceClass = profile.Voice(voice).Class;
-        var patch = InstrumentFor(note, spec.Instrument);
+        var patch = !IsAuto(note.Patch) ? NormalizePatch(note.Patch) : InstrumentFor(note, spec.Instrument);
         return new(voice, note.StartTick, note.DurationTick, Math.Clamp(note.Pitch, 0, 127), note.Velocity,
             patch, note.Role, InstrumentCatalog.Id(patch, voiceClass),
             note.Pan, note.Expression, note.PitchBend, note.PitchBendRange, note.Program,
             note.NoteCutTicks, note.NoteDelayTicks, note.Retrigger, note.PitchSlide, note.VolumeSlide,
             note.Volume, note.Modulation, note.Aftertouch, note.ReleaseVelocity, note.PitchBends, note.ControllerChanges,
-            voiceClass.ToString().ToLowerInvariant());
+            voiceClass.ToString().ToLowerInvariant(), note.Section, note.SectionIntensity);
     }
 
     private static int PercussionFamily(int pitch) => pitch switch
@@ -389,11 +379,15 @@ internal static class VoiceAllocator
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
         if (note.Role == TrackRole.Bass || note.Program is >= 32 and <= 39) return "bass";
-        if (note.Role == TrackRole.Arp &&
-            (requested.Equals("lead", StringComparison.OrdinalIgnoreCase) || requested.Equals("arp", StringComparison.OrdinalIgnoreCase)))
-            return "pluck";
-        if (note.SourceTrack < 0 && note.Program == 0)
-            return requested.Equals("arp", StringComparison.OrdinalIgnoreCase) ? "pluck" : requested;
+        if (!IsAuto(requested)) return NormalizePatch(requested);
+        if (note.SourceTrack < 0)
+            return note.Role switch
+            {
+                TrackRole.CounterLead => "pluck",
+                TrackRole.Arp => "pluck",
+                TrackRole.Harmony => "soft_lead",
+                _ => "lead"
+            };
         return note.Program switch
         {
             >= 0 and <= 7 => "epiano",
@@ -414,9 +408,12 @@ internal static class VoiceAllocator
             >= 112 and <= 114 => "bell",
             >= 115 and <= 119 => "pluck",
             >= 120 and <= 127 => "pad",
-            _ => requested
+            _ => note.Role == TrackRole.CounterLead ? "pluck" : "lead"
         };
     }
+
+    private static string NormalizePatch(string patch) => patch.Equals("arp", StringComparison.OrdinalIgnoreCase) ? "pluck" : patch.ToLowerInvariant();
+    private static bool IsAuto(string? patch) => string.IsNullOrWhiteSpace(patch) || patch.Equals("auto", StringComparison.OrdinalIgnoreCase);
 
     private static string PercussionName(int pitch) => pitch switch
     {
