@@ -73,9 +73,6 @@ static DivSample* makeSample(int voice, const std::string& patch) {
   DivSample* sample = new DivSample();
   sample->name = "Homelynx SNES patch " + patch;
   sample->depth = DIV_SAMPLE_DEPTH_16BIT;
-  // Furnace's SNES documentation recommends ~16.744 kHz and a 64-sample
-  // single-cycle waveform so C-4 is tuned as middle C. The former 1024-sample
-  // tonal cycle was about four octaves too low.
   sample->centerRate = 16744;
   sample->loop = !percussion;
   sample->loopStart = 0;
@@ -86,7 +83,6 @@ static DivSample* makeSample(int voice, const std::string& patch) {
     double phase = (double)i / count;
     double value;
     if (patch == "kick") {
-      // Fast low-frequency transient with a falling envelope.
       double envelope = std::pow(1.0 - phase, 2.5);
       double cycles = 5.0 * phase - 2.5 * phase * phase;
       value = std::sin(cycles * 2.0 * M_PI) * envelope;
@@ -156,9 +152,6 @@ static void configureStandardMacros(DivInstrument* instrument, const std::string
   if (chip == "sms") {
     instrument->std.dutyMacro.open = true;
     instrument->std.dutyMacro.len = 1;
-    // Sega PSG noise modes: 0/1 are short/long preset-frequency noise and
-    // 2/3 tie noise frequency to tone channel 3. Keep normal percussion on
-    // preset noise so a bass line on tone 3 cannot retune the drums.
     instrument->std.dutyMacro.val[0] = patch == "hat" ? 0 : isPercussionPatch(patch) ? 1 : 0;
     instrument->std.waveMacro.val[0] = 0;
   } else if (chip == "pokey") {
@@ -218,11 +211,9 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
     if (chip == "nes" && (patch == "kick" || patch == "snare")) sampleIndex = engine.addSamplePtr(makeDpcmSample(patch));
     if (chip == "gb" || chip == "gbc" || chip == "gameboy") waveIndex = makeWave(engine, instrumentId, patch);
 
-    // InstrumentId is a catalog key, not a channel number. Let Furnace create
-    // the correct null/default instrument from an explicit type instead of
-    // incorrectly treating InstrumentId as refChan.
     int created = engine.addInstrument(-1, instrumentType);
     if (created < 0) throw std::runtime_error("could not create instrument");
+    if (created != instrumentId) throw std::runtime_error("Furnace instrument catalog index is not dense");
     DivInstrument* instrument = engine.song.ins[created];
     instrument->type = instrumentType;
     instrument->name = "Homelynx " + patch + " " + std::to_string(instrumentId);
@@ -234,8 +225,6 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->gb.soundLen = 64;
       instrument->gb.softEnv = patch == "soft_lead" || patch == "strings" || patch == "pad";
       instrument->gb.alwaysInit = true;
-      // Every GB instrument gets a valid 32-sample wavetable. Pulse/noise
-      // channels ignore this macro; the Wave channel no longer reads nullWave.
       instrument->std.waveMacro.open = true;
       instrument->std.waveMacro.len = 1;
       instrument->std.waveMacro.loop = 0;
@@ -279,9 +268,6 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->amiga.useSample = true;
       instrument->amiga.initSample = sampleIndex;
       instrument->snes.useEnv = true;
-      // SNES ADSR fields have different hardware ranges: A 0..15, D 0..7,
-      // S 0..7 and R 0..31. Generic command defaults are translated to
-      // musical patch defaults instead of using A=0 (a ~4.1 s attack).
       int patchAttack = attack == 0
         ? (patch == "pad" ? 9 : patch == "strings" ? 11 : patch == "brass" ? 13 : 15)
         : bounded(attack, 0, 15);
@@ -329,6 +315,12 @@ struct CompiledNote {
   int startRow;
   int endRow;
 };
+
+static int nextEffectSlot(DivPattern* pattern) {
+  for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot)
+    if (pattern->newData[0][DIV_PAT_FX(slot)] == -1) return slot;
+  return -1;
+}
 
 static CompileStats fillSong(DivEngine& engine, const json& request) {
   DivSubSong* sub = engine.song.subsong.at(0);
@@ -393,7 +385,7 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     if (pan != 64) {
       int left = bounded((127 - pan) * 15 / 127, 0, 15);
       int right = bounded(pan * 15 / 127, 0, 15);
-      pattern->newData[row][DIV_PAT_FX(0)] = 0x88;
+      pattern->newData[row][DIV_PAT_FX(0)] = 0x08;
       pattern->newData[row][DIV_PAT_FXVAL(0)] = (short)((left << 4) | right);
       nextEffect = 1;
     }
@@ -438,9 +430,12 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)ticksToRows(noteCut);
       nextEffect++;
     }
+    // Furnace E5xx is absolute fine pitch (-1..+1 semitone) and persists on
+    // the channel. Emit it for every Note On, including neutral 0x80, so a
+    // previous bend cannot leak into the next note.
     double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
     double residual = bendSemitones - std::round(bendSemitones);
-    if (std::abs(residual) >= 0.01 && nextEffect < DIV_MAX_EFFECTS) {
+    if (nextEffect < DIV_MAX_EFFECTS) {
       pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE5;
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
     }
@@ -476,6 +471,8 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     long noteStart = item.value("startTick", 0L);
     long noteEnd = noteStart + std::max(1L, item.value("durationTick", 240L));
     int bendRange = bounded(item.value("pitchBendRange", 2), 0, 24);
+    double initialSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * bendRange;
+    int coarse = (int)std::lround(initialSemitones);
     for (const auto& bend : item.value("pitchBends", json::array())) {
       long tick = bend.value("tick", noteStart);
       if (tick <= noteStart || tick >= noteEnd) continue;
@@ -483,15 +480,32 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
       if (rowIndex >= rowCapacity) continue;
       int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
       DivPattern* pattern = sub->pat[voice].getPattern(order, true);
+
+      double semitones = (bend.value("value", 8192) - 8192) / 8192.0 * bendRange;
+      int targetCoarse = (int)std::lround(semitones);
+      int delta = targetCoarse - coarse;
+      while (delta != 0) {
+        int effect = -1;
+        for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot) {
+          if (pattern->newData[row][DIV_PAT_FX(slot)] == -1) { effect = slot; break; }
+        }
+        if (effect < 0) break;
+        int amount = std::min(std::abs(delta), 15);
+        pattern->newData[row][DIV_PAT_FX(effect)] = delta > 0 ? 0xE8 : 0xE9;
+        pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)amount; // x=0 ticks, y=semitones
+        coarse += delta > 0 ? amount : -amount;
+        delta = targetCoarse - coarse;
+      }
+
       int effect = -1;
       for (int slot = 0; slot < DIV_MAX_EFFECTS; ++slot) {
         if (pattern->newData[row][DIV_PAT_FX(slot)] == -1) { effect = slot; break; }
       }
-      if (effect < 0) continue;
-      double semitones = (bend.value("value", 8192) - 8192) / 8192.0 * bendRange;
-      double residualPoint = semitones - std::round(semitones);
-      pattern->newData[row][DIV_PAT_FX(effect)] = 0xE5;
-      pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255);
+      if (effect >= 0) {
+        double residualPoint = semitones - targetCoarse;
+        pattern->newData[row][DIV_PAT_FX(effect)] = 0xE5;
+        pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255);
+      }
     }
   }
 
@@ -521,7 +535,7 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
       if (pan != 64 && effect >= 0) {
         int left = bounded((127 - pan) * 15 / 127, 0, 15);
         int right = bounded(pan * 15 / 127, 0, 15);
-        pattern->newData[row][DIV_PAT_FX(effect)] = 0x88;
+        pattern->newData[row][DIV_PAT_FX(effect)] = 0x08;
         pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)((left << 4) | right);
         effect++;
       }
