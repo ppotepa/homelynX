@@ -180,6 +180,11 @@ internal static class ArrangementPlanner
     }
 
     private static NoteEvent[] NormalizeRegisters(NoteEvent[] notes, ChiptuneSpec spec)
+        => spec.Mode == ChiptuneMode.Midi
+            ? NormalizeMidiRegisters(notes, spec)
+            : NormalizeGeneratedRegisters(notes, spec);
+
+    private static NoteEvent[] NormalizeGeneratedRegisters(NoteEvent[] notes, ChiptuneSpec spec)
     {
         var result = notes.ToArray();
         var indexed = result.Select((note, index) => (note, index))
@@ -189,7 +194,6 @@ internal static class ArrangementPlanner
         foreach (var group in indexed)
         {
             var items = group.ToArray();
-            if (items.Length == 0) continue;
             var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
             var median = pitches[pitches.Length / 2];
             var (low, high, target) = PreferredRange(spec.Chip, group.Key.Role, group.Key.Section, spec.ChorusLift);
@@ -200,15 +204,74 @@ internal static class ArrangementPlanner
             var shift = validShifts.Length > 0
                 ? validShifts.OrderBy(x => Math.Abs((median + x) - target)).ThenBy(x => Math.Abs(x)).First()
                 : (int)Math.Round((target - median) / 12d) * 12;
-            foreach (var item in items)
+            ApplyShift(result, items, shift, low, high);
+        }
+        return result;
+    }
+
+    private static NoteEvent[] NormalizeMidiRegisters(NoteEvent[] notes, ChiptuneSpec spec)
+    {
+        var result = notes.ToArray();
+        var indexed = result.Select((note, index) => (note, index))
+            .Where(x => x.note.Role != TrackRole.Drums)
+            .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Bank, x.note.Role));
+
+        foreach (var part in indexed)
+        {
+            var partItems = part.ToArray();
+            var referenceItems = partItems.Where(x => !x.note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (referenceItems.Length == 0) referenceItems = partItems;
+            var referencePitch = Median(referenceItems.Select(x => x.note.Pitch));
+
+            foreach (var section in partItems.GroupBy(x => x.note.Section, StringComparer.OrdinalIgnoreCase))
             {
-                var pitch = item.note.Pitch + shift;
-                while (pitch < low && pitch + 12 <= high) pitch += 12;
-                while (pitch > high && pitch - 12 >= low) pitch -= 12;
-                result[item.index] = item.note with { Pitch = Math.Clamp(pitch, Math.Max(0, low), Math.Min(127, high)) };
+                var items = section.ToArray();
+                var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
+                var median = pitches[pitches.Length / 2];
+                var (low, high, _) = PreferredRange(spec.Chip, part.Key.Role, section.Key, spec.ChorusLift);
+                var shift = RangeCorrection(pitches[0], pitches[^1], median, low, high);
+
+                // Preserve a musically sensible source register. Only create a
+                // deliberate octave contrast when the detected hook/refren sits
+                // no higher than the surrounding material.
+                if (section.Key.Equals("chorus", StringComparison.OrdinalIgnoreCase) &&
+                    part.Key.Role is TrackRole.Lead or TrackRole.CounterLead or TrackRole.Arp &&
+                    spec.ChorusLift > 0 && median + shift <= referencePitch + 2 && median + shift + 12 <= high)
+                {
+                    shift += 12;
+                }
+
+                ApplyShift(result, items, shift, low, high);
             }
         }
         return result;
+    }
+
+    private static int RangeCorrection(int minPitch, int maxPitch, int median, int low, int high)
+    {
+        if (minPitch >= low && maxPitch <= high) return 0;
+        var candidates = Enumerable.Range(-4, 9).Select(x => x * 12).ToArray();
+        var fitting = candidates.Where(shift => minPitch + shift >= low && maxPitch + shift <= high).ToArray();
+        if (fitting.Length > 0) return fitting.OrderBy(x => Math.Abs(x)).First();
+        var target = (low + high) / 2;
+        return candidates.OrderBy(x => Math.Abs(median + x - target)).First();
+    }
+
+    private static void ApplyShift(NoteEvent[] result, IEnumerable<(NoteEvent note, int index)> items, int shift, int low, int high)
+    {
+        foreach (var item in items)
+        {
+            var pitch = item.note.Pitch + shift;
+            while (pitch < low && pitch + 12 <= high) pitch += 12;
+            while (pitch > high && pitch - 12 >= low) pitch -= 12;
+            result[item.index] = item.note with { Pitch = Math.Clamp(pitch, Math.Max(0, low), Math.Min(127, high)) };
+        }
+    }
+
+    private static int Median(IEnumerable<int> values)
+    {
+        var data = values.Order().ToArray();
+        return data.Length == 0 ? 60 : data[data.Length / 2];
     }
 
     private static (int Low, int High, int Target) PreferredRange(string chip, TrackRole role, string section, int chorusLift)
@@ -252,10 +315,10 @@ internal static class ArrangementPlanner
             ? ProgramPatch(note.Program)
             : "auto";
         if (patch == "auto") patch = palette.GetValueOrDefault(note.Role, "lead");
-        return AdaptAutoPatchForSection(patch, note, palette);
+        return AdaptAutoPatchForSection(patch, note, palette, spec);
     }
 
-    private static string AdaptAutoPatchForSection(string patch, NoteEvent note, IReadOnlyDictionary<TrackRole,string> palette)
+    private static string AdaptAutoPatchForSection(string patch, NoteEvent note, IReadOnlyDictionary<TrackRole,string> palette, ChiptuneSpec spec)
     {
         if (note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase))
         {
@@ -266,6 +329,9 @@ internal static class ArrangementPlanner
             if (note.Role == TrackRole.Arp && patch is "pad" or "strings" or "organ")
                 return palette.GetValueOrDefault(TrackRole.Arp, "pluck");
         }
+        if (note.Section.Equals("verse", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead &&
+            spec.Style.Equals("happy", StringComparison.OrdinalIgnoreCase) && patch == "lead")
+            return "soft_lead";
         if (note.Section.Equals("intro", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && patch is "lead" or "brass")
             return "soft_lead";
         return patch;
