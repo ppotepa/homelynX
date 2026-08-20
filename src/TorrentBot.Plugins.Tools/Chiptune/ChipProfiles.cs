@@ -65,11 +65,11 @@ internal sealed class ChipProfile
                 .OrderByDescending(x => x.Class is ChipVoiceClass.Triangle or ChipVoiceClass.Wave ? 120 : x.Priority)
                 .Select(x => x.Index);
         }
-        else if (note.Role == TrackRole.Arp)
+        else if (note.Role is TrackRole.Arp or TrackRole.CounterLead)
         {
             preferred = Voices
                 .Where(x => x.Class is ChipVoiceClass.Psg or ChipVoiceClass.Pulse or ChipVoiceClass.Wavetable or ChipVoiceClass.Sample)
-                .OrderByDescending(x => x.Class is ChipVoiceClass.Psg ? 120 : x.Priority)
+                .OrderByDescending(x => x.Class is ChipVoiceClass.Psg ? 130 : x.Class is ChipVoiceClass.Pulse ? 120 : x.Priority)
                 .Select(x => x.Index);
         }
         else

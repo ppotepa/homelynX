@@ -3,7 +3,8 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 internal static class ArrangementPlanner
 {
     private readonly record struct SourcePartKey(int Track, int Channel, int Program, int Bank, TrackRole Role);
-    private sealed record WindowScore(int Index, double Score);
+    private sealed record WindowData(int Index, double BaseScore, string Fingerprint, int HookCount);
+    private sealed record WindowScore(int Index, double Score, int Recurrence, int HookCount);
 
     public static Song Plan(Song song, ChiptuneSpec spec)
     {
@@ -43,8 +44,6 @@ internal static class ArrangementPlanner
             _ => Palette("lead", "pluck", "bass", "soft_lead", "pluck")
         };
 
-        // Constrain richer semantic families to characteristic patches on the
-        // smallest chips. Richer targets keep the semantic palette intact.
         if (chip is "gb" or "gbc" or "nes" or "sms" or "pcspeaker" or "zx_spectrum")
         {
             palette[TrackRole.Harmony] = palette[TrackRole.Harmony] is "strings" or "pad" ? "soft_lead" : palette[TrackRole.Harmony];
@@ -110,18 +109,31 @@ internal static class ArrangementPlanner
         var windowCount = Math.Max(1, (int)Math.Ceiling(endTick / (double)window));
         if (windowCount == 1) return notes.Select(x => x with { Section = "body", SectionIntensity = .6 }).ToArray();
 
-        var scores = Enumerable.Range(0, windowCount).Select(index =>
+        var windows = Enumerable.Range(0, windowCount).Select(index =>
         {
             var start = index * window; var end = start + window;
             var items = notes.Where(x => x.StartTick >= start && x.StartTick < end).ToArray();
-            if (items.Length == 0) return new WindowScore(index, 0);
+            if (items.Length == 0) return new WindowData(index, 0, string.Empty, 0);
             var avgVelocity = items.Average(x => x.Velocity);
             var melodic = items.Where(x => x.Role != TrackRole.Drums).ToArray();
             var avgPitch = melodic.Length == 0 ? 48 : melodic.Average(x => x.Pitch);
             var parts = items.Select(x => (x.SourceTrack, x.SourceChannel, x.Program)).Distinct().Count();
             var hooks = items.Count(x => x.Role is TrackRole.Lead or TrackRole.CounterLead);
             var drums = items.Count(x => x.Role == TrackRole.Drums);
-            return new WindowScore(index, items.Length * 4 + avgVelocity / 4 + avgPitch / 7 + parts * 8 + hooks * 3 + drums * 1.5);
+            var fingerprint = HookFingerprint(items, start);
+            var baseScore = items.Length * 4 + avgVelocity / 4 + avgPitch / 7 + parts * 8 + hooks * 3 + drums * 1.5;
+            return new WindowData(index, baseScore, fingerprint, hooks);
+        }).ToArray();
+
+        var recurrences = windows
+            .Where(x => x.Fingerprint.Length > 0)
+            .GroupBy(x => x.Fingerprint, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        var scores = windows.Select(windowData =>
+        {
+            var recurrence = windowData.Fingerprint.Length == 0 ? 0 : recurrences.GetValueOrDefault(windowData.Fingerprint, 1);
+            var recurrenceBonus = recurrence >= 2 && windowData.HookCount >= 2 ? Math.Min(65, (recurrence - 1) * 28) : 0;
+            return new WindowScore(windowData.Index, windowData.BaseScore + recurrenceBonus, recurrence, windowData.HookCount);
         }).ToArray();
 
         var nonZero = scores.Where(x => x.Score > 0).Select(x => x.Score).Order().ToArray();
@@ -132,9 +144,11 @@ internal static class ArrangementPlanner
         var labels = scores.ToDictionary(x => x.Index, x =>
         {
             var normalized = max <= min ? .65 : .38 + .62 * ((x.Score - min) / (max - min));
-            var section = x.Score >= threshold && x.Score >= average * 1.03 ? "chorus" : "verse";
+            var repeatedHook = x.Recurrence >= 2 && x.HookCount >= 2 && x.Score >= average * .86;
+            var section = repeatedHook || (x.Score >= threshold && x.Score >= average * 1.03) ? "chorus" : "verse";
             if (x.Index == 0 && x.Score < average * .78) section = "intro";
             if (x.Index == windowCount - 1 && x.Score < average * .82) section = "outro";
+            if (section == "chorus") normalized = Math.Max(normalized, .84);
             return (Section: section, Intensity: Math.Clamp(normalized, .3, 1.0));
         });
 
@@ -144,6 +158,25 @@ internal static class ArrangementPlanner
             var label = labels[index];
             return note with { Section = label.Section, SectionIntensity = label.Intensity };
         }).ToArray();
+    }
+
+    private static string HookFingerprint(NoteEvent[] items, long windowStart)
+    {
+        var hook = items
+            .Where(x => x.Role is TrackRole.Lead or TrackRole.CounterLead)
+            .OrderBy(x => x.StartTick).ThenByDescending(x => x.Role == TrackRole.Lead).ThenByDescending(x => x.Pitch)
+            .Take(16)
+            .ToArray();
+        if (hook.Length < 3) return string.Empty;
+        var basePitch = hook[0].Pitch;
+        var grid = Math.Max(1L, TempoMap.Ppq / 4);
+        return string.Join(";", hook.Select(note =>
+        {
+            var position = (int)Math.Round((note.StartTick - windowStart) / (double)grid);
+            var duration = Math.Max(1, (int)Math.Round(note.DurationTick / (double)grid));
+            var relativePitch = note.Pitch - basePitch;
+            return $"{position}:{relativePitch}:{duration}:{(note.Role == TrackRole.Lead ? 'L' : 'C')}";
+        }));
     }
 
     private static NoteEvent[] NormalizeRegisters(NoteEvent[] notes, ChiptuneSpec spec)
@@ -214,18 +247,27 @@ internal static class ArrangementPlanner
         if (!IsAuto(note.Patch)) return NormalizePatch(note.Patch);
         if (note.Role == TrackRole.Drums) return PercussionPatch(note.Pitch);
 
-        if (spec.Mode == ChiptuneMode.Midi && note.SourceTrack >= 0)
-        {
-            var programPatch = ProgramPatch(note.Program);
-            if (programPatch != "auto") return programPatch;
-        }
-
         var palette = PaletteFor(spec.Chip, spec.Style);
-        var patch = palette.GetValueOrDefault(note.Role, "lead");
-        if (note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead)
-            patch = patch is "soft_lead" or "epiano" ? "lead" : patch;
-        if (note.Section.Equals("intro", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && patch == "lead")
-            patch = "soft_lead";
+        var patch = spec.Mode == ChiptuneMode.Midi && note.SourceTrack >= 0
+            ? ProgramPatch(note.Program)
+            : "auto";
+        if (patch == "auto") patch = palette.GetValueOrDefault(note.Role, "lead");
+        return AdaptAutoPatchForSection(patch, note, palette);
+    }
+
+    private static string AdaptAutoPatchForSection(string patch, NoteEvent note, IReadOnlyDictionary<TrackRole,string> palette)
+    {
+        if (note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase))
+        {
+            if (note.Role == TrackRole.Lead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead")
+                return palette.GetValueOrDefault(TrackRole.Lead, "lead");
+            if (note.Role == TrackRole.CounterLead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead")
+                return palette.GetValueOrDefault(TrackRole.CounterLead, "bell");
+            if (note.Role == TrackRole.Arp && patch is "pad" or "strings" or "organ")
+                return palette.GetValueOrDefault(TrackRole.Arp, "pluck");
+        }
+        if (note.Section.Equals("intro", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && patch is "lead" or "brass")
+            return "soft_lead";
         return patch;
     }
 
