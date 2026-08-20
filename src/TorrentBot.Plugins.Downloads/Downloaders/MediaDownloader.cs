@@ -370,7 +370,6 @@ public sealed class MediaDownloader : IDownloader
     {
         if (IsYoutubeUrl(url))
             args.AddRange([
-                "--extractor-args", "youtube:player_client=android",
                 "--remote-components", "ejs:github"
             ]);
     }
