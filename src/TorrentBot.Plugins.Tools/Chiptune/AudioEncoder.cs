@@ -9,22 +9,23 @@ internal static class AudioEncoder
         if (format == "wav") return wav;
         var (codec, muxer, args) = format switch
         {
-            "mp3" => ("libmp3lame", "mp3", new[] { "-b:a", "192k" }),
-            "ogg" => ("libvorbis", "ogg", new[] { "-q:a", "5" }),
-            "flac" => ("flac", "flac", Array.Empty<string>()),
+            // Prefer quality-targeted VBR to a fixed 192 kb/s ceiling. Chiptune
+            // transients and bright pulse/noise spectra expose codec artifacts
+            // particularly easily at fixed medium bitrates.
+            "mp3" => ("libmp3lame", "mp3", new[] { "-q:a", "0" }),
+            "ogg" => ("libvorbis", "ogg", new[] { "-q:a", "7" }),
+            "flac" => ("flac", "flac", new[] { "-compression_level", "8" }),
             _ => throw new FormatException($"Unknown format '{format}'. Available: wav, mp3, ogg, flac.")
         };
         var path = Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
         var start = new ProcessStartInfo(path) { RedirectStandardInput=true, RedirectStandardOutput=true, RedirectStandardError=true, UseShellExecute=false, CreateNoWindow=true };
-        foreach(var arg in new[]{"-hide_banner","-loglevel","error","-f","wav","-i","pipe:0","-c:a",codec}.Concat(args).Concat(["-f",muxer,"pipe:1"])) start.ArgumentList.Add(arg);
+        foreach(var arg in new[]{"-hide_banner","-loglevel","error","-f","wav","-i","pipe:0","-vn","-map_metadata","-1","-c:a",codec}.Concat(args).Concat(["-f",muxer,"pipe:1"])) start.ArgumentList.Add(arg);
         using var process=Process.Start(start)??throw new InvalidOperationException("ffmpeg is not installed.");
         using var output=new MemoryStream();
         var copyOutput=process.StandardOutput.BaseStream.CopyToAsync(output,ct);
         var readError=process.StandardError.ReadToEndAsync(ct);
         try
         {
-            // ffmpeg reads WAV and writes the encoded stream concurrently. Reading
-            // stdout only after writing all input deadlocks once either OS pipe fills.
             var writeInput=WriteInputAsync(process.StandardInput.BaseStream,wav,ct);
             await Task.WhenAll(writeInput,copyOutput,readError,process.WaitForExitAsync(ct));
         }
