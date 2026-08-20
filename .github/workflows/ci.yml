@@ -32,6 +32,20 @@ jobs:
       - name: Test
         run: dotnet test src/TorrentBot2.sln --configuration Release --no-build --verbosity normal
 
+      - name: Repository hygiene
+        run: |
+          python3 -m py_compile scripts/media_organizer.py
+          python3 scripts/check_encoding.py
+          python3 scripts/check_file_limits.py
+          python3 scripts/check_no_default_secrets.py
+          python3 scripts/check_no_runtime_data.py
+          bash scripts/verify-arch-docs.sh
+          if rg -n -i 'services/portal|portal\.sh|smoke_imports|llm_prompt|ollama|LlmUsage|LLM_URL|LLM_HOST' \
+            README.md docs scripts e2e-tests src Dockerfile docker-compose.yaml docker-compose.dev.yaml docker-compose.e2e.yaml install.sh; then
+            echo 'Removed legacy portal/LLM references found.' >&2
+            exit 1
+          fi
+
   native-chiptune:
     runs-on: ubuntu-latest
     timeout-minutes: 40
