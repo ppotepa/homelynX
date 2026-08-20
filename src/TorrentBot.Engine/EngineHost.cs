@@ -247,6 +247,13 @@ public sealed class EngineHost : IEngine
         var registered = _capabilities.Get(capabilityName);
         if (registered is null)
         {
+            _loggerFactory.CreateLogger("engine").LogError(
+                "Capability {Capability} was not found. TraceId={TraceId} InvocationId={InvocationId} UserId={UserId} RegisteredCount={RegisteredCount}",
+                capabilityName,
+                invocation.RequestContext.TraceId,
+                invocation.RequestContext.InvocationId,
+                invocation.RequestContext.UserId,
+                _capabilities.GetAllMetadata().Count);
             return new ExecutionResult(Success: false, Error: $"Capability '{capabilityName}' was not found.");
         }
 

@@ -77,6 +77,34 @@ public sealed class TelegramSdkAdapterIntegrationTests
     }
 
     [Fact]
+    public async Task Telegram_production_adapter_routes_media_url_to_registered_media_capability()
+    {
+        var messenger = new RecordingTelegramMessenger();
+        var engine = EngineBootstrap.Create();
+        await engine.StartAsync();
+        try
+        {
+            var adapter = new TelegramProductionAdapter(engine, messenger);
+            var response = await adapter.HandleMappedUpdateAsync(
+                new TelegramUpdate(
+                    42,
+                    "1001",
+                    "https://www.youtube.com/watch?v=dQw4w9WgXcQ mp4 360",
+                    MessageId: 99),
+                progressMessageId: 99);
+
+            Assert.DoesNotContain("download.start_media was not found", response, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(messenger.Sent, message =>
+                message.Text.Contains("Start this media download", StringComparison.OrdinalIgnoreCase)
+                || message.Text.Contains("media", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            await engine.StopAsync();
+        }
+    }
+
+    [Fact]
     public async Task Telegram_production_adapter_sends_bot_owned_progress_message_for_user_commands()
     {
         var messenger = new RecordingTelegramMessenger();
