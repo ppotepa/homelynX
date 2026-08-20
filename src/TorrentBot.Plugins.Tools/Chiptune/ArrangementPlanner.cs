@@ -10,22 +10,18 @@ internal static class ArrangementPlanner
     {
         var notes = song.Notes.ToArray();
         if (notes.Length == 0) return song;
-
         if (spec.Mode == ChiptuneMode.Midi)
         {
             notes = PromoteCounterLead(notes, song.MidiMetadata);
             notes = LabelMidiSections(notes);
         }
-
         if (spec.RegisterMode == "auto" && spec.Mode is ChiptuneMode.Midi or ChiptuneMode.Generate)
             notes = NormalizeRegisters(notes, spec);
-
         notes = notes.Select(note => note with
         {
             Patch = ResolvePatch(note, spec),
             Velocity = Math.Clamp(note.Velocity + (int)Math.Round((note.SectionIntensity - .55) * 14), 1, 127)
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ThenBy(x => x.Pitch).ToArray();
-
         return song with { Notes = notes };
     }
 
@@ -43,7 +39,6 @@ internal static class ArrangementPlanner
             "minimal" => Palette("soft_lead", "pluck", "bass", "pad", "pluck"),
             _ => Palette("lead", "pluck", "bass", "soft_lead", "pluck")
         };
-
         if (chip is "gb" or "gbc" or "nes" or "sms" or "pcspeaker" or "zx_spectrum")
         {
             palette[TrackRole.Harmony] = palette[TrackRole.Harmony] is "strings" or "pad" ? "soft_lead" : palette[TrackRole.Harmony];
@@ -61,25 +56,19 @@ internal static class ArrangementPlanner
 
     private static Dictionary<TrackRole,string> Palette(string lead, string counter, string bass, string harmony, string arp) => new()
     {
-        [TrackRole.Lead] = lead,
-        [TrackRole.CounterLead] = counter,
-        [TrackRole.Bass] = bass,
-        [TrackRole.Harmony] = harmony,
-        [TrackRole.Arp] = arp,
-        [TrackRole.Drums] = "auto"
+        [TrackRole.Lead] = lead, [TrackRole.CounterLead] = counter, [TrackRole.Bass] = bass,
+        [TrackRole.Harmony] = harmony, [TrackRole.Arp] = arp, [TrackRole.Drums] = "auto"
     };
 
     private static NoteEvent[] PromoteCounterLead(NoteEvent[] notes, MidiMetadata? metadata)
     {
         if (notes.Any(x => x.Role == TrackRole.CounterLead)) return notes;
         var names = metadata?.TrackNames ?? new Dictionary<int,string>();
-        var candidates = notes
-            .Where(x => x.Role == TrackRole.Harmony && x.SourceTrack >= 0 && x.SourceChannel != 9)
+        var candidates = notes.Where(x => x.Role == TrackRole.Harmony && x.SourceTrack >= 0 && x.SourceChannel != 9)
             .GroupBy(x => new SourcePartKey(x.SourceTrack, x.SourceChannel, x.Program, x.Bank, x.Role))
             .Select(group =>
             {
-                var items = group.ToArray();
-                var peak = PeakOverlap(items);
+                var items = group.ToArray(); var peak = PeakOverlap(items);
                 var median = items.Select(x => x.Pitch).Order().ElementAt(items.Length / 2);
                 var name = names.GetValueOrDefault(group.Key.Track, string.Empty).ToLowerInvariant();
                 var score = (peak <= 1 ? 34 : peak == 2 ? 12 : -20) + Math.Clamp(median - 55, -10, 24);
@@ -90,25 +79,20 @@ internal static class ArrangementPlanner
                 if (name.Contains("melody") || name.Contains("lead") || name.Contains("solo") || name.Contains("theme")) score += 28;
                 if (name.Contains("pad") || name.Contains("chord") || name.Contains("string")) score -= 20;
                 return (group.Key, Score: score);
-            })
-            .OrderByDescending(x => x.Score)
-            .ToArray();
+            }).OrderByDescending(x => x.Score).ToArray();
         if (candidates.Length == 0 || candidates[0].Score < 25) return notes;
         var selected = candidates[0].Key;
         return notes.Select(note => note.SourceTrack == selected.Track && note.SourceChannel == selected.Channel &&
                                          note.Program == selected.Program && note.Bank == selected.Bank && note.Role == TrackRole.Harmony
-            ? note with { Role = TrackRole.CounterLead }
-            : note).ToArray();
+            ? note with { Role = TrackRole.CounterLead } : note).ToArray();
     }
 
     private static NoteEvent[] LabelMidiSections(NoteEvent[] notes)
     {
         if (notes.Any(x => !string.Equals(x.Section, "body", StringComparison.OrdinalIgnoreCase))) return notes;
-        var endTick = notes.Max(x => x.EndTick);
-        var window = TempoMap.Ppq * 4L;
+        var endTick = notes.Max(x => x.EndTick); var window = TempoMap.Ppq * 4L;
         var windowCount = Math.Max(1, (int)Math.Ceiling(endTick / (double)window));
         if (windowCount == 1) return notes.Select(x => x with { Section = "body", SectionIntensity = .6 }).ToArray();
-
         var windows = Enumerable.Range(0, windowCount).Select(index =>
         {
             var start = index * window; var end = start + window;
@@ -120,26 +104,20 @@ internal static class ArrangementPlanner
             var parts = items.Select(x => (x.SourceTrack, x.SourceChannel, x.Program)).Distinct().Count();
             var hooks = items.Count(x => x.Role is TrackRole.Lead or TrackRole.CounterLead);
             var drums = items.Count(x => x.Role == TrackRole.Drums);
-            var fingerprint = HookFingerprint(items, start);
-            var baseScore = items.Length * 4 + avgVelocity / 4 + avgPitch / 7 + parts * 8 + hooks * 3 + drums * 1.5;
-            return new WindowData(index, baseScore, fingerprint, hooks);
+            return new WindowData(index, items.Length * 4 + avgVelocity / 4 + avgPitch / 7 + parts * 8 + hooks * 3 + drums * 1.5,
+                HookFingerprint(items, start), hooks);
         }).ToArray();
-
-        var recurrences = windows
-            .Where(x => x.Fingerprint.Length > 0)
-            .GroupBy(x => x.Fingerprint, StringComparer.Ordinal)
+        var recurrences = windows.Where(x => x.Fingerprint.Length > 0).GroupBy(x => x.Fingerprint, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
-        var scores = windows.Select(windowData =>
+        var scores = windows.Select(data =>
         {
-            var recurrence = windowData.Fingerprint.Length == 0 ? 0 : recurrences.GetValueOrDefault(windowData.Fingerprint, 1);
-            var recurrenceBonus = recurrence >= 2 && windowData.HookCount >= 2 ? Math.Min(65, (recurrence - 1) * 28) : 0;
-            return new WindowScore(windowData.Index, windowData.BaseScore + recurrenceBonus, recurrence, windowData.HookCount);
+            var recurrence = data.Fingerprint.Length == 0 ? 0 : recurrences.GetValueOrDefault(data.Fingerprint, 1);
+            var recurrenceBonus = recurrence >= 2 && data.HookCount >= 2 ? Math.Min(65, (recurrence - 1) * 28) : 0;
+            return new WindowScore(data.Index, data.BaseScore + recurrenceBonus, recurrence, data.HookCount);
         }).ToArray();
-
         var nonZero = scores.Where(x => x.Score > 0).Select(x => x.Score).Order().ToArray();
         if (nonZero.Length == 0) return notes;
-        var average = nonZero.Average();
-        var threshold = nonZero[(int)Math.Floor((nonZero.Length - 1) * .72)];
+        var average = nonZero.Average(); var threshold = nonZero[(int)Math.Floor((nonZero.Length - 1) * .72)];
         var min = nonZero[0]; var max = nonZero[^1];
         var labels = scores.ToDictionary(x => x.Index, x =>
         {
@@ -151,58 +129,37 @@ internal static class ArrangementPlanner
             if (section == "chorus") normalized = Math.Max(normalized, .84);
             return (Section: section, Intensity: Math.Clamp(normalized, .3, 1.0));
         });
-
         return notes.Select(note =>
         {
-            var index = Math.Clamp((int)(note.StartTick / window), 0, windowCount - 1);
-            var label = labels[index];
+            var label = labels[Math.Clamp((int)(note.StartTick / window), 0, windowCount - 1)];
             return note with { Section = label.Section, SectionIntensity = label.Intensity };
         }).ToArray();
     }
 
     private static string HookFingerprint(NoteEvent[] items, long windowStart)
     {
-        var hook = items
-            .Where(x => x.Role is TrackRole.Lead or TrackRole.CounterLead)
-            .OrderBy(x => x.StartTick).ThenByDescending(x => x.Role == TrackRole.Lead).ThenByDescending(x => x.Pitch)
-            .Take(16)
-            .ToArray();
+        var hook = items.Where(x => x.Role is TrackRole.Lead or TrackRole.CounterLead)
+            .OrderBy(x => x.StartTick).ThenByDescending(x => x.Role == TrackRole.Lead).ThenByDescending(x => x.Pitch).Take(16).ToArray();
         if (hook.Length < 3) return string.Empty;
-        var basePitch = hook[0].Pitch;
-        var grid = Math.Max(1L, TempoMap.Ppq / 4);
+        var basePitch = hook[0].Pitch; var grid = Math.Max(1L, TempoMap.Ppq / 4);
         return string.Join(";", hook.Select(note =>
-        {
-            var position = (int)Math.Round((note.StartTick - windowStart) / (double)grid);
-            var duration = Math.Max(1, (int)Math.Round(note.DurationTick / (double)grid));
-            var relativePitch = note.Pitch - basePitch;
-            return $"{position}:{relativePitch}:{duration}:{(note.Role == TrackRole.Lead ? 'L' : 'C')}";
-        }));
+            $"{(int)Math.Round((note.StartTick - windowStart) / (double)grid)}:{note.Pitch - basePitch}:{Math.Max(1, (int)Math.Round(note.DurationTick / (double)grid))}:{(note.Role == TrackRole.Lead ? 'L' : 'C')}"));
     }
 
     private static NoteEvent[] NormalizeRegisters(NoteEvent[] notes, ChiptuneSpec spec)
-        => spec.Mode == ChiptuneMode.Midi
-            ? NormalizeMidiRegisters(notes, spec)
-            : NormalizeGeneratedRegisters(notes, spec);
+        => spec.Mode == ChiptuneMode.Midi ? NormalizeMidiRegisters(notes, spec) : NormalizeGeneratedRegisters(notes, spec);
 
     private static NoteEvent[] NormalizeGeneratedRegisters(NoteEvent[] notes, ChiptuneSpec spec)
     {
         var result = notes.ToArray();
-        var indexed = result.Select((note, index) => (note, index))
-            .Where(x => x.note.Role != TrackRole.Drums)
-            .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Role, x.note.Section));
-
-        foreach (var group in indexed)
+        foreach (var group in result.Select((note, index) => (note, index)).Where(x => x.note.Role != TrackRole.Drums)
+                     .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Role, x.note.Section)))
         {
-            var items = group.ToArray();
-            var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
+            var items = group.ToArray(); var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
             var median = pitches[pitches.Length / 2];
             var (low, high, target) = PreferredRange(spec.Chip, group.Key.Role, group.Key.Section, spec.ChorusLift);
-            var minPitch = pitches[0]; var maxPitch = pitches[^1];
-            var validShifts = Enumerable.Range(-3, 7).Select(x => x * 12)
-                .Where(shift => minPitch + shift >= low && maxPitch + shift <= high)
-                .ToArray();
-            var shift = validShifts.Length > 0
-                ? validShifts.OrderBy(x => Math.Abs((median + x) - target)).ThenBy(x => Math.Abs(x)).First()
+            var validShifts = Enumerable.Range(-3, 7).Select(x => x * 12).Where(shift => pitches[0] + shift >= low && pitches[^1] + shift <= high).ToArray();
+            var shift = validShifts.Length > 0 ? validShifts.OrderBy(x => Math.Abs((median + x) - target)).ThenBy(x => Math.Abs(x)).First()
                 : (int)Math.Round((target - median) / 12d) * 12;
             ApplyShift(result, items, shift, low, high);
         }
@@ -212,35 +169,23 @@ internal static class ArrangementPlanner
     private static NoteEvent[] NormalizeMidiRegisters(NoteEvent[] notes, ChiptuneSpec spec)
     {
         var result = notes.ToArray();
-        var indexed = result.Select((note, index) => (note, index))
-            .Where(x => x.note.Role != TrackRole.Drums)
-            .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Bank, x.note.Role));
-
-        foreach (var part in indexed)
+        foreach (var part in result.Select((note, index) => (note, index)).Where(x => x.note.Role != TrackRole.Drums)
+                     .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Bank, x.note.Role)))
         {
             var partItems = part.ToArray();
             var referenceItems = partItems.Where(x => !x.note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase)).ToArray();
             if (referenceItems.Length == 0) referenceItems = partItems;
             var referencePitch = Median(referenceItems.Select(x => x.note.Pitch));
-
             foreach (var section in partItems.GroupBy(x => x.note.Section, StringComparer.OrdinalIgnoreCase))
             {
-                var items = section.ToArray();
-                var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
+                var items = section.ToArray(); var pitches = items.Select(x => x.note.Pitch).Order().ToArray();
                 var median = pitches[pitches.Length / 2];
                 var (low, high, _) = PreferredRange(spec.Chip, part.Key.Role, section.Key, spec.ChorusLift);
                 var shift = RangeCorrection(pitches[0], pitches[^1], median, low, high);
-
-                // Preserve a musically sensible source register. Only create a
-                // deliberate octave contrast when the detected hook/refren sits
-                // no higher than the surrounding material.
                 if (section.Key.Equals("chorus", StringComparison.OrdinalIgnoreCase) &&
                     part.Key.Role is TrackRole.Lead or TrackRole.CounterLead or TrackRole.Arp &&
                     spec.ChorusLift > 0 && median + shift <= referencePitch + 2 && median + shift + 12 <= high)
-                {
                     shift += 12;
-                }
-
                 ApplyShift(result, items, shift, low, high);
             }
         }
@@ -295,25 +240,21 @@ internal static class ArrangementPlanner
 
     private static string ResolvePatch(NoteEvent note, ChiptuneSpec spec)
     {
+        var sectionKey = $"{note.Section.ToLowerInvariant()}.{RoleKey(note.Role)}";
+        if (spec.SectionInstruments is not null && spec.SectionInstruments.TryGetValue(sectionKey, out var sectionOverride) && !IsAuto(sectionOverride))
+            return NormalizePatch(sectionOverride);
         var roleOverride = note.Role switch
         {
-            TrackRole.Lead => spec.LeadInstrument,
-            TrackRole.CounterLead => spec.CounterInstrument,
-            TrackRole.Bass => spec.BassInstrument,
-            TrackRole.Harmony => spec.HarmonyInstrument,
-            TrackRole.Arp => spec.ArpInstrument,
-            TrackRole.Drums => spec.DrumsInstrument,
-            _ => "auto"
+            TrackRole.Lead => spec.LeadInstrument, TrackRole.CounterLead => spec.CounterInstrument,
+            TrackRole.Bass => spec.BassInstrument, TrackRole.Harmony => spec.HarmonyInstrument,
+            TrackRole.Arp => spec.ArpInstrument, TrackRole.Drums => spec.DrumsInstrument, _ => "auto"
         };
         if (!IsAuto(roleOverride)) return NormalizePatch(roleOverride);
         if (!IsAuto(spec.Instrument) && note.Role != TrackRole.Drums) return NormalizePatch(spec.Instrument);
         if (!IsAuto(note.Patch)) return NormalizePatch(note.Patch);
         if (note.Role == TrackRole.Drums) return PercussionPatch(note.Pitch);
-
         var palette = PaletteFor(spec.Chip, spec.Style);
-        var patch = spec.Mode == ChiptuneMode.Midi && note.SourceTrack >= 0
-            ? ProgramPatch(note.Program)
-            : "auto";
+        var patch = spec.Mode == ChiptuneMode.Midi && note.SourceTrack >= 0 ? ProgramPatch(note.Program) : "auto";
         if (patch == "auto") patch = palette.GetValueOrDefault(note.Role, "lead");
         return AdaptAutoPatchForSection(patch, note, palette, spec);
     }
@@ -322,67 +263,42 @@ internal static class ArrangementPlanner
     {
         if (note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase))
         {
-            if (note.Role == TrackRole.Lead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead")
-                return palette.GetValueOrDefault(TrackRole.Lead, "lead");
-            if (note.Role == TrackRole.CounterLead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead")
-                return palette.GetValueOrDefault(TrackRole.CounterLead, "bell");
-            if (note.Role == TrackRole.Arp && patch is "pad" or "strings" or "organ")
-                return palette.GetValueOrDefault(TrackRole.Arp, "pluck");
+            if (note.Role == TrackRole.Lead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead") return palette.GetValueOrDefault(TrackRole.Lead, "lead");
+            if (note.Role == TrackRole.CounterLead && patch is "pad" or "strings" or "organ" or "epiano" or "soft_lead") return palette.GetValueOrDefault(TrackRole.CounterLead, "bell");
+            if (note.Role == TrackRole.Arp && patch is "pad" or "strings" or "organ") return palette.GetValueOrDefault(TrackRole.Arp, "pluck");
         }
-        if (note.Section.Equals("verse", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead &&
-            spec.Style.Equals("happy", StringComparison.OrdinalIgnoreCase) && patch == "lead")
-            return "soft_lead";
-        if (note.Section.Equals("intro", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && patch is "lead" or "brass")
-            return "soft_lead";
+        if (note.Section.Equals("verse", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && spec.Style.Equals("happy", StringComparison.OrdinalIgnoreCase) && patch == "lead") return "soft_lead";
+        if (note.Section.Equals("intro", StringComparison.OrdinalIgnoreCase) && note.Role == TrackRole.Lead && patch is "lead" or "brass") return "soft_lead";
         return patch;
     }
 
+    private static string RoleKey(TrackRole role) => role switch
+    {
+        TrackRole.CounterLead => "counter", TrackRole.Bass => "bass", TrackRole.Harmony => "harmony",
+        TrackRole.Arp => "arp", TrackRole.Drums => "drums", _ => "lead"
+    };
+
     private static string ProgramPatch(int program) => program switch
     {
-        >= 0 and <= 7 => "epiano",
-        >= 8 and <= 15 => "bell",
-        >= 16 and <= 23 => "organ",
-        >= 24 and <= 31 => "pluck",
-        >= 32 and <= 39 => "bass",
-        >= 40 and <= 55 => "strings",
-        >= 56 and <= 63 => "brass",
-        >= 64 and <= 71 => "reed",
-        >= 72 and <= 79 => "flute",
-        >= 80 and <= 87 => "lead",
-        >= 88 and <= 103 => "pad",
-        >= 104 and <= 107 => "pluck",
-        108 => "bell",
-        109 => "reed",
-        110 => "strings",
-        111 => "reed",
-        >= 112 and <= 114 => "bell",
-        >= 115 and <= 119 => "pluck",
-        >= 120 and <= 127 => "pad",
-        _ => "auto"
+        >= 0 and <= 7 => "epiano", >= 8 and <= 15 => "bell", >= 16 and <= 23 => "organ", >= 24 and <= 31 => "pluck",
+        >= 32 and <= 39 => "bass", >= 40 and <= 55 => "strings", >= 56 and <= 63 => "brass", >= 64 and <= 71 => "reed",
+        >= 72 and <= 79 => "flute", >= 80 and <= 87 => "lead", >= 88 and <= 103 => "pad", >= 104 and <= 107 => "pluck",
+        108 => "bell", 109 => "reed", 110 => "strings", 111 => "reed", >= 112 and <= 114 => "bell", >= 115 and <= 119 => "pluck",
+        >= 120 and <= 127 => "pad", _ => "auto"
     };
 
     private static string PercussionPatch(int pitch) => pitch switch
     {
-        35 or 36 => "kick",
-        37 or 38 or 39 or 40 => "snare",
-        42 or 44 => "hat",
-        46 => "open_hat",
-        49 or 55 or 57 => "crash",
-        51 or 53 or 59 => "ride",
-        >= 41 and <= 50 => "tom",
-        _ => "drums"
+        35 or 36 => "kick", 37 or 38 or 39 or 40 => "snare", 42 or 44 => "hat", 46 => "open_hat",
+        49 or 55 or 57 => "crash", 51 or 53 or 59 => "ride", >= 41 and <= 50 => "tom", _ => "drums"
     };
-
     private static string NormalizePatch(string patch) => patch.Equals("arp", StringComparison.OrdinalIgnoreCase) ? "pluck" : patch.ToLowerInvariant();
     private static bool IsAuto(string? patch) => string.IsNullOrWhiteSpace(patch) || patch.Equals("auto", StringComparison.OrdinalIgnoreCase);
-
     private static int PeakOverlap(IEnumerable<NoteEvent> notes)
     {
         var active = 0; var peak = 0;
         foreach (var point in notes.SelectMany(x => new[] { (x.StartTick, 1), (x.EndTick, -1) }).OrderBy(x => x.Item1).ThenBy(x => x.Item2))
-        {
-            active += point.Item2; peak = Math.Max(peak, active);
-        }
+        { active += point.Item2; peak = Math.Max(peak, active); }
         return peak;
     }
 }

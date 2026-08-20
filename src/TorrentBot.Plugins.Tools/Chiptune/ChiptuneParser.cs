@@ -10,6 +10,8 @@ internal static partial class ChiptuneParser
     private static readonly string[] Styles = ["arcade", "jrpg", "boss", "dungeon", "menu", "racing", "space", "dark", "happy", "chipbreak", "minimal"];
     private static readonly string[] Formats = ["wav", "mp3", "ogg", "flac"];
     private static readonly string[] GenerateModes = ["scale", "arp", "riff", "melody", "song", "bassline", "drums"];
+    private static readonly string[] InstrumentRoles = ["lead", "counter", "bass", "harmony", "arp", "drums"];
+    private static readonly string[] Sections = ["intro", "verse", "chorus", "outro", "theme", "riff", "body"];
 
     public static ChiptuneSpec Parse(string input)
     {
@@ -33,12 +35,15 @@ internal static partial class ChiptuneParser
 
         var instrument = Instrument(o, "instrument", "auto");
         var map = ParseInstrumentMap(o.GetValueOrDefault("instruments"));
+        AddDirectSectionOverrides(o, map);
         var leadInstrument = Instrument(o, "lead", map.GetValueOrDefault("lead", "auto"));
-        var counterInstrument = Instrument(o, "counter", map.GetValueOrDefault("counter", map.GetValueOrDefault("counterlead", "auto")));
+        var counterInstrument = Instrument(o, "counter", map.GetValueOrDefault("counter", "auto"));
         var bassInstrument = Instrument(o, "bass", map.GetValueOrDefault("bass", "auto"));
         var harmonyInstrument = Instrument(o, "harmony", map.GetValueOrDefault("harmony", "auto"));
         var arpInstrument = Instrument(o, "arp", map.GetValueOrDefault("arp", "auto"));
         var drumsInstrument = Instrument(o, "drums", map.GetValueOrDefault("drums", "auto"));
+        var sectionInstruments = map.Where(x => x.Key.Contains('.'))
+            .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
 
         var style = Get(o, "style", "arcade").ToLowerInvariant(); Ensure(style, Styles, "style");
         var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
@@ -63,6 +68,7 @@ internal static partial class ChiptuneParser
             MidiBase64=o.GetValueOrDefault("midi_base64"), Chip=chip, Instrument=instrument,
             LeadInstrument=leadInstrument, CounterInstrument=counterInstrument, BassInstrument=bassInstrument,
             HarmonyInstrument=harmonyInstrument, ArpInstrument=arpInstrument, DrumsInstrument=drumsInstrument,
+            SectionInstruments=sectionInstruments,
             Style=style, Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode, ChipExplicit=chipExplicit,
             Fidelity=fidelity, RegisterMode=registerMode, ChorusLift=Int(o,"chorus_lift",12,0,24),
             Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
@@ -147,13 +153,39 @@ internal static partial class ChiptuneParser
         {
             var pair = item.Split(':', 2, StringSplitOptions.TrimEntries);
             if (pair.Length != 2 || pair[0].Length == 0 || pair[1].Length == 0)
-                throw new FormatException("instruments must look like lead:soft_lead,bass:bass,arp:bell.");
-            var role = pair[0].ToLowerInvariant();
-            Ensure(role, ["lead", "counter", "counterlead", "bass", "harmony", "arp", "drums"], "instrument role");
-            var value = pair[1].ToLowerInvariant(); Ensure(value, Instruments, $"instrument for {role}");
-            result[role] = value;
+                throw new FormatException("instruments must look like lead:soft_lead,bass:bass,chorus.lead:brass.");
+            var key = NormalizeOverrideKey(pair[0]);
+            var value = pair[1].ToLowerInvariant(); Ensure(value, Instruments, $"instrument for {key}");
+            result[key] = value;
         }
         return result;
+    }
+
+    private static void AddDirectSectionOverrides(IReadOnlyDictionary<string,string> options, IDictionary<string,string> map)
+    {
+        foreach (var section in Sections)
+        foreach (var role in InstrumentRoles)
+        {
+            var option = $"{section}_{role}";
+            if (!options.TryGetValue(option, out var raw)) continue;
+            var value = raw.ToLowerInvariant(); Ensure(value, Instruments, option);
+            map[$"{section}.{role}"] = value;
+        }
+    }
+
+    private static string NormalizeOverrideKey(string raw)
+    {
+        var key = raw.ToLowerInvariant().Replace("counterlead", "counter", StringComparison.OrdinalIgnoreCase);
+        if (!key.Contains('.'))
+        {
+            Ensure(key, InstrumentRoles, "instrument role");
+            return key;
+        }
+        var pair = key.Split('.', 2, StringSplitOptions.TrimEntries);
+        if (pair.Length != 2) throw new FormatException($"Invalid section instrument key '{raw}'.");
+        Ensure(pair[0], Sections, "instrument section");
+        Ensure(pair[1], InstrumentRoles, "instrument role");
+        return $"{pair[0]}.{pair[1]}";
     }
 
     private static string Instrument(IReadOnlyDictionary<string,string> o, string key, string fallback)

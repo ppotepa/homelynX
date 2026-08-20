@@ -97,6 +97,7 @@ internal sealed record ChiptuneSpec
     public string HarmonyInstrument { get; init; } = "auto";
     public string ArpInstrument { get; init; } = "auto";
     public string DrumsInstrument { get; init; } = "auto";
+    public IReadOnlyDictionary<string,string>? SectionInstruments { get; init; }
     public string Style { get; init; } = "arcade";
     public string Key { get; init; } = "C";
     public string Scale { get; init; } = "major";
