@@ -89,9 +89,10 @@ internal static class ChiptuneGenerators
         var startStep = section.StartBar * 16;
         var steps = section.Bars * 16;
         var isChorus = section.Name == "chorus";
+        var isBridge = section.Name == "bridge";
         var isIntro = section.Name == "intro";
         var isOutro = section.Name == "outro";
-        var density = ProfileForStyle(spec.Style).Density * (.72 + section.Intensity * .42);
+        var density = ProfileForStyle(spec.Style).Density * (.72 + section.Intensity * .42) * (isBridge ? .78 : 1.0);
 
         for (var localStep = 0; localStep < steps; localStep++)
         {
@@ -99,6 +100,11 @@ internal static class ChiptuneGenerators
             var motifPosition = localStep % motif.Length;
             var index = motif[motifPosition];
             if (isChorus) index = Math.Clamp(index + 2 + (motifPosition is 4 or 12 ? 1 : 0), 0, all.Length - 1);
+            if (isBridge)
+            {
+                var reversedPosition = motif.Length - 1 - motifPosition;
+                index = Math.Clamp(motif[reversedPosition] - 1 + ((localStep / 4) % 2), 0, all.Length - 1);
+            }
             if (isIntro) index = Math.Max(0, index - 1);
             if (isOutro && localStep >= Math.Max(0, steps - 4)) index = NearestTonicIndex(all, root, index);
             if (motifPosition == 15) index = NearestTonicIndex(all, root, index);
@@ -106,14 +112,14 @@ internal static class ChiptuneGenerators
             var accent = localStep % 4 == 0;
             var phraseAccent = localStep % 16 is 0 or 8;
             if (!accent && random.NextDouble() > density) continue;
-            var duration = phraseAccent ? TempoMap.Ppq / 2 : accent ? TempoMap.Ppq * 3 / 8 : TempoMap.Ppq / 4;
+            var duration = isBridge
+                ? (accent ? TempoMap.Ppq * 3 / 4 : TempoMap.Ppq / 2)
+                : phraseAccent ? TempoMap.Ppq / 2 : accent ? TempoMap.Ppq * 3 / 8 : TempoMap.Ppq / 4;
             var velocity = Math.Clamp((int)Math.Round(94 + section.Intensity * 26 + (phraseAccent ? 5 : 0)), 1, 127);
             notes.Add(new NoteEvent(globalStep * TempoMap.Ppq / 4, duration,
                 ClampPitch(all[index] + spec.Transpose), velocity, TrackRole.Lead,
                 Section: section.Name, SectionIntensity: section.Intensity));
 
-            // A chorus should sound like a real hook: a separate counter-line
-            // answers the lead on off-beats instead of being folded into Harmony.
             if (isChorus && localStep % 4 == 2 && section.Intensity >= .82)
             {
                 var counterIndex = Math.Clamp(index - 2 + ((localStep / 4) % 2), 0, all.Length - 1);
@@ -137,8 +143,14 @@ internal static class ChiptuneGenerators
                 while (pitch < 28) pitch += 12;
                 if (section.Name == "chorus" && beat is 1 or 3)
                     pitch = NearestScalePitch(all, pitch, beat == 1 ? 2 : 4);
+                else if (section.Name == "bridge" && beat == 2)
+                    pitch = NearestScalePitch(all, pitch, 4);
+                // Scale lookup above uses the configured melodic range, so put
+                // the result back into a real bass register afterwards.
+                while (pitch > 52) pitch -= 12;
+                while (pitch < 28) pitch += 12;
                 notes.Add(new NoteEvent((globalBar * 4L + beat) * TempoMap.Ppq,
-                    section.Name == "chorus" ? TempoMap.Ppq * 5 / 8 : TempoMap.Ppq * 3 / 4,
+                    section.Name == "chorus" ? TempoMap.Ppq * 5 / 8 : section.Name == "bridge" ? TempoMap.Ppq * 7 / 8 : TempoMap.Ppq * 3 / 4,
                     ClampPitch(pitch + spec.Transpose), Math.Clamp(92 + (int)(section.Intensity * 24), 1, 122), TrackRole.Bass,
                     Section: section.Name, SectionIntensity: section.Intensity));
             }
@@ -148,7 +160,7 @@ internal static class ChiptuneGenerators
     private static void AddSectionHarmony(List<NoteEvent> notes, ChiptuneSpec spec, int[] all, int[] progression, SectionPlan section)
     {
         if (section.Intensity < .42) return;
-        var arpStride = section.Name == "chorus" ? 2 : 4;
+        var arpStride = section.Name == "chorus" ? 2 : section.Name == "bridge" ? 8 : 4;
         for (var localBar = 0; localBar < section.Bars; localBar++)
         {
             var globalBar = section.StartBar + localBar;
@@ -159,8 +171,9 @@ internal static class ChiptuneGenerators
                 var pitch = chord[(step / arpStride + globalBar) % chord.Length];
                 while (pitch < 52) pitch += 12;
                 while (pitch > 84) pitch -= 12;
+                var duration = section.Name == "bridge" ? TempoMap.Ppq : arpStride == 2 ? TempoMap.Ppq / 4 : TempoMap.Ppq / 2;
                 notes.Add(new NoteEvent((globalBar * 16L + step) * TempoMap.Ppq / 4,
-                    arpStride == 2 ? TempoMap.Ppq / 4 : TempoMap.Ppq / 2,
+                    duration,
                     ClampPitch(pitch + spec.Transpose), Math.Clamp(58 + (int)(section.Intensity * 24), 1, 96), TrackRole.Arp,
                     Section: section.Name, SectionIntensity: section.Intensity));
             }
@@ -171,6 +184,15 @@ internal static class ChiptuneGenerators
                 while (support > 72) support -= 12;
                 notes.Add(new NoteEvent(globalBar * 4L * TempoMap.Ppq, TempoMap.Ppq * 2,
                     ClampPitch(support + spec.Transpose), 68, TrackRole.Harmony,
+                    Section: section.Name, SectionIntensity: section.Intensity));
+            }
+            else if (section.Name == "bridge")
+            {
+                var support = chord.Length > 1 ? chord[1] : chord[0];
+                while (support < 48) support += 12;
+                while (support > 72) support -= 12;
+                notes.Add(new NoteEvent(globalBar * 4L * TempoMap.Ppq, TempoMap.Ppq * 4,
+                    ClampPitch(support + spec.Transpose), 60, TrackRole.Harmony,
                     Section: section.Name, SectionIntensity: section.Intensity));
             }
         }
@@ -187,6 +209,14 @@ internal static class ChiptuneGenerators
             for (var eighth = 0; eighth < 8; eighth++)
             {
                 var tick = (globalBar * 8L + eighth) * TempoMap.Ppq / 2;
+                if (section.Name == "bridge")
+                {
+                    if (eighth == 0)
+                        notes.Add(new NoteEvent(tick, TempoMap.Ppq / 8, 36, 106, TrackRole.Drums, Section: section.Name, SectionIntensity: section.Intensity));
+                    if (eighth == 4)
+                        notes.Add(new NoteEvent(tick, TempoMap.Ppq / 8, 38, 96, TrackRole.Drums, Section: section.Name, SectionIntensity: section.Intensity));
+                    continue;
+                }
                 if (eighth is 0 or 4)
                     notes.Add(new NoteEvent(tick, TempoMap.Ppq / 8, 36, 118, TrackRole.Drums, Section: section.Name, SectionIntensity: section.Intensity));
                 if (eighth is 2 or 6)
@@ -217,9 +247,10 @@ internal static class ChiptuneGenerators
         }
 
         var introBars = Math.Max(1, bars / 8);
+        var bridgeBars = Math.Max(1, bars / 8);
         var outroBars = 1;
-        var remaining = bars - introBars - outroBars;
-        var verse1 = Math.Max(2, remaining / 4);
+        var remaining = bars - introBars - bridgeBars - outroBars;
+        var verse1 = Math.Max(2, (remaining + 3) / 4);
         var chorus1 = Math.Max(2, remaining / 4);
         var verse2 = Math.Max(1, remaining / 6);
         var chorus2 = remaining - verse1 - chorus1 - verse2;
@@ -230,14 +261,12 @@ internal static class ChiptuneGenerators
             chorus2 = remaining - verse1 - chorus1 - verse2;
         }
         var cursor = 0;
-        var result = new List<SectionPlan>
-        {
-            new("intro", cursor, introBars, .35)
-        };
+        var result = new List<SectionPlan> { new("intro", cursor, introBars, .35) };
         cursor += introBars;
         result.Add(new("verse", cursor, verse1, .57)); cursor += verse1;
         result.Add(new("chorus", cursor, chorus1, .90)); cursor += chorus1;
         result.Add(new("verse", cursor, verse2, .64)); cursor += verse2;
+        result.Add(new("bridge", cursor, bridgeBars, .68)); cursor += bridgeBars;
         result.Add(new("chorus", cursor, chorus2, 1.0)); cursor += chorus2;
         result.Add(new("outro", cursor, outroBars, .46));
         return result;
