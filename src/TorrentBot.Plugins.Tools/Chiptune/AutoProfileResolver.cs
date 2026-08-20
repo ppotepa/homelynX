@@ -9,15 +9,8 @@ internal static class AutoProfileResolver
     {
         if (spec.Mode != ChiptuneMode.Midi || spec.ChipExplicit) return spec;
 
-        var scored = AutomaticTargets
-            .Select(chip => TryScore(chip, spec, song))
-            .Where(x => x is not null)
-            .Select(x => x!.Value)
-            .OrderByDescending(x => x.Score)
-            .ThenBy(x => Array.IndexOf(AutomaticTargets, x.Chip))
-            .ToArray();
-
-        if (scored.Length == 0)
+        var scored = Rank(spec, song);
+        if (scored.Count == 0)
             return spec with { Chip = "genesis" };
         return spec with { Chip = scored[0].Chip };
     }
@@ -47,22 +40,14 @@ internal static class AutoProfileResolver
                 .ToArray();
             var hasDrums = song.Notes.Any(x => x.Role == TrackRole.Drums);
 
-            // Retaining recognizable note onsets dominates all secondary
-            // considerations. Revoicing and arpeggiation are smaller penalties:
-            // they preserve musical information but change the source texture.
             var score = 10_000;
             score -= hardware.DroppedNotes * 6_000 / sourceCount;
             score -= hardware.RevoicedNotes * 900 / sourceCount;
             score -= hardware.ArpeggiatedNotes * 500 / sourceCount;
 
-            // Prefer enough native voices for the source's real overlap, but do
-            // not make raw channel count the only criterion.
             score += Math.Min(peak, voices) * 20;
             if (voices >= peak) score += 120;
 
-            // Timbre-fit tie breakers. Sample/FM/wavetable machines can retain a
-            // multi-program GM arrangement more convincingly than pulse-only
-            // targets, while NES gets a useful percussion bonus from DPCM.
             var diversity = programs.Length;
             score += chip switch
             {
@@ -80,17 +65,18 @@ internal static class AutoProfileResolver
                 program is >= 0 and <= 39 or >= 56 and <= 87);
             if (chip == "genesis") score += fmFriendly * 5;
 
-            // For very small monophonic/simple MIDI, avoid automatically using
-            // a heavyweight sample target when a simpler chip preserves the
-            // score equally well.
+            // When all candidates preserve a tiny score equally well, choose
+            // the simpler characteristic hardware instead of defaulting to
+            // SNES solely because it has more sample voices.
             if (peak <= 2 && diversity <= 2)
             {
                 score += chip switch
                 {
-                    "gbc" => 70,
-                    "nes" => 60,
-                    "sms" => 50,
-                    "pce" => 30,
+                    "gbc" => 170,
+                    "nes" => 140,
+                    "sms" => 120,
+                    "pce" => 70,
+                    "genesis" => 20,
                     _ => 0
                 };
             }
@@ -99,9 +85,6 @@ internal static class AutoProfileResolver
         }
         catch
         {
-            // An unsupported arrangement is not a fatal auto-selection error;
-            // it simply removes this target from consideration. Explicit chip
-            // requests still surface their real error through the normal path.
             return null;
         }
     }
