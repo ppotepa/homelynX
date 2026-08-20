@@ -12,7 +12,7 @@ public sealed class AuditPersistenceIntegrationTests
     [Fact]
     public async Task Portal_audit_sink_records_capability_execution()
     {
-        var audit = PortalAuditSink.CreateInMemory();
+        var audit = SqliteAuditSink.CreateInMemory();
         var engine = EngineBootstrap.Create(auditSink: audit);
         await engine.StartAsync();
         try

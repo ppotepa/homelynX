@@ -11,7 +11,6 @@ ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_PATHS = [
     "data/llm-audit",
     "e2e/reports",
-    "portal-data",
     "llm-data",
     "jellyfin-config",
     "zerotier-one",

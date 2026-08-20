@@ -106,7 +106,7 @@ public static class EngineBootstrap
             Directory.CreateDirectory(directory);
         }
 
-        return new PortalAuditSink($"Data Source={sqlitePath}");
+        return new SqliteAuditSink($"Data Source={sqlitePath}");
     }
 
     private static MediaPlugin CreateDefaultMediaPlugin()

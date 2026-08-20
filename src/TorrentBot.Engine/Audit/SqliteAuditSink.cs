@@ -5,27 +5,27 @@ using TorrentBot.Contracts.Context;
 
 namespace TorrentBot.Engine.Audit;
 
-public sealed class PortalAuditSink : IAuditSink, IDisposable
+public sealed class SqliteAuditSink : IAuditSink, IDisposable
 {
     private readonly SqliteConnection _connection;
     private readonly object _gate = new();
 
-    public PortalAuditSink(string connectionString = "Data Source=portal-audit.db")
+    public SqliteAuditSink(string connectionString = "Data Source=audit.db")
     {
         _connection = new SqliteConnection(connectionString);
         _connection.Open();
         EnsureSchema();
     }
 
-    public static PortalAuditSink CreateInMemory()
+    public static SqliteAuditSink CreateInMemory()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
-        var sink = new PortalAuditSink(connection);
+        var sink = new SqliteAuditSink(connection);
         return sink;
     }
 
-    private PortalAuditSink(SqliteConnection connection)
+    private SqliteAuditSink(SqliteConnection connection)
     {
         _connection = connection;
         EnsureSchema();

@@ -22,7 +22,6 @@ SKIP_DIRS = {
     "cookies",
     "tts-data",
     "llm-data",
-    "portal-data",
     "zerotier-one",
     "logs",
 }
