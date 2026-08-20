@@ -64,16 +64,13 @@ internal static class DryWetMidiImporter
                 var keyRelease = note.Time + note.Length;
                 var soundingEnd = state.SustainExtension(note.Channel, keyRelease, trackEnd);
                 var bends = state.Bends(note.Channel, note.Time, soundingEnd);
-                var automation = state.Automation(note.Channel, note.NoteNumber, note.Time, soundingEnd);
+                var automation = state.Automation(note.Channel, (int)note.NoteNumber, note.Time, soundingEnd);
                 completed.Add(new ImportedNote(trackIndex, note, state.Snapshot(note.Channel), soundingEnd, bends, automation));
             }
         }
 
         if (completed.Count == 0) throw new InvalidDataException("MIDI file contains no notes.");
 
-        // Program changes can split one MIDI channel into several semantic parts.
-        // Role analysis therefore happens per track/channel/program/bank instead
-        // of collapsing the whole channel to its most common program.
         var stats = completed
             .GroupBy(x => (x.Track, Channel: (int)x.Note.Channel, x.State.Program, x.State.Bank))
             .Select(group => new
@@ -100,8 +97,6 @@ internal static class DryWetMidiImporter
                 .First().Key
             : ((int Track, int Channel, int Program, int Bank)?)null;
 
-        // Do not let fallback register analysis call the same part both lead and
-        // bass unless there is literally no alternative melodic part.
         if (bass is not null && lead is not null && bass.Value == lead.Value && melodic.Length > 1)
         {
             bass = melodic
@@ -135,8 +130,6 @@ internal static class DryWetMidiImporter
                         ? TrackRole.Lead
                         : TrackRole.Harmony;
 
-            // Keep each physical key press as one Note On. Performance curves
-            // remain attached and are translated into tracker effects later.
             var initialState = item.State;
             var pitch = Math.Clamp((int)item.Note.NoteNumber + (item.Note.Channel == 9 ? 0 : spec.Transpose) +
                 (int)Math.Round((initialState.PitchBend - 8192) / 8192d * initialState.PitchBendRange, MidpointRounding.AwayFromZero), 0, 127);
@@ -227,7 +220,8 @@ internal static class DryWetMidiImporter
             if (!down) return end;
             foreach (var timed in channelEvents.Where(x => x.Time > end))
             {
-                if (timed.Event is ControlChangeEvent cc && cc.ControlNumber == 64 && cc.ControlValue < 64)
+                if (timed.Event is not ControlChangeEvent cc) continue;
+                if (cc.ControlNumber == 121 || cc.ControlNumber == 64 && cc.ControlValue < 64)
                     return timed.Time;
             }
             return Math.Max(end, trackEnd);
@@ -238,9 +232,7 @@ internal static class DryWetMidiImporter
             .Select(x => new PitchBendEventData(x.Time, ((PitchBendEvent)x.Event).PitchValue)).ToArray();
 
         public IReadOnlyList<AutomationPoint> Automation(int channel, int noteNumber, long start, long end) => _channelEvents
-            .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end &&
-                (x.Event is ControlChangeEvent or ChannelAftertouchEvent ||
-                 x.Event is NoteAftertouchEvent noteAftertouch && noteAftertouch.NoteNumber == noteNumber))
+            .Where(x => ((ChannelEvent)x.Event).Channel == channel && x.Time > start && x.Time < end && IsExpressiveEvent(x.Event, noteNumber))
             .GroupBy(x => x.Time)
             .OrderBy(x => x.Key)
             .Select(group =>
@@ -249,11 +241,19 @@ internal static class DryWetMidiImporter
                 var polyAftertouch = group
                     .Select(x => x.Event)
                     .OfType<NoteAftertouchEvent>()
-                    .Where(x => x.NoteNumber == noteNumber)
+                    .Where(x => (int)x.NoteNumber == noteNumber)
                     .Select(x => (int)x.AftertouchValue)
                     .LastOrDefault(state.Aftertouch);
                 return new AutomationPoint(group.Key, state with { Aftertouch = polyAftertouch });
             }).ToArray();
+
+        private static bool IsExpressiveEvent(MidiEvent midiEvent, int noteNumber) => midiEvent switch
+        {
+            ControlChangeEvent cc => (int)cc.ControlNumber is 1 or 7 or 10 or 11 or 121,
+            ChannelAftertouchEvent => true,
+            NoteAftertouchEvent noteAftertouch => (int)noteAftertouch.NoteNumber == noteNumber,
+            _ => false
+        };
 
         private ChannelSnapshot SnapshotAt(int channel, long time)
         {
@@ -288,8 +288,6 @@ internal static class DryWetMidiImporter
                 case ControlChangeEvent cc when cc.ControlNumber == 7: state.Volume = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 64: state.Sustain = cc.ControlValue >= 64; break;
                 case ChannelAftertouchEvent aftertouch: state.Aftertouch = aftertouch.AftertouchValue; break;
-                // Polyphonic aftertouch belongs to a specific key and is applied
-                // in Automation(), not to the whole channel state.
                 case ControlChangeEvent cc when cc.ControlNumber == 101: state.RpnMsb = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 100: state.RpnLsb = cc.ControlValue; break;
                 case ControlChangeEvent cc when cc.ControlNumber == 6 && state.RpnMsb == 0 && state.RpnLsb == 0:
