@@ -15,7 +15,6 @@ ALLOWLIST = {
     "install.sh",
     "src/cli/main.py",
     "src/cli/telegram_history.py",
-    "services/portal/app.py",
     "e2e/wizard.py",
     "plugins/torrent/jackett_client.py",
     "e2e/validate_cases.py",

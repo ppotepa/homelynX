@@ -21,6 +21,28 @@ public sealed class ArchitectureContractTests
     }
 
     [Fact]
+    public async Task Media_download_capability_is_executable_from_the_production_bootstrap()
+    {
+        await using var scope = await StartEngineAsync();
+        var result = await scope.Engine.SubmitAsync(new TorrentBot.Contracts.Invocation.Invocation
+        {
+            IsExplicit = true,
+            IsDryRun = true,
+            CapabilityName = "download.start_media",
+            Parameters = new Dictionary<string, object?>
+            {
+                ["url"] = "https://www.youtube.com/watch?v=example",
+                ["provider"] = "media",
+                ["format"] = "mp4"
+            },
+            RequestContext = new TorrentBot.Contracts.Context.RequestContext("trace", "invocation", "admin", source: "test"),
+            User = new TorrentBot.Acl.AclService().ResolveUser("admin")
+        });
+
+        Assert.True(result.Success, result.Error);
+    }
+
+    [Fact]
     public void ConversationContext_resolve_pending_action_removes_pending_and_builds_parameters()
     {
         var contract = new CapabilityContract(
