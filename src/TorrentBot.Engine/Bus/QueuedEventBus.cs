@@ -110,7 +110,6 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _channel.Writer.TryComplete();
-        _cts.Cancel();
         try
         {
             await _processor.ConfigureAwait(false);
@@ -120,6 +119,7 @@ public sealed class QueuedEventBus : IInternalBus, IAsyncDisposable
             // expected on shutdown
         }
 
+        _cts.Cancel();
         _cts.Dispose();
         if (_outbox is IDisposable disposableOutbox)
         {
