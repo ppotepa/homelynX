@@ -54,3 +54,6 @@ jobs:
 
       - name: Verify native audio profiles
         run: scripts/verify-chiptune-furnace.sh /tmp/homelynx-chiptune-renderer
+
+      - name: Verify dense MIDI automation
+        run: bash scripts/verify-chiptune-dense-automation.sh /tmp/homelynx-chiptune-renderer
