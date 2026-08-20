@@ -2,25 +2,35 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 
 internal static class VoiceAllocator
 {
-    private static readonly IReadOnlyDictionary<TrackRole,int> Priority = new Dictionary<TrackRole,int>
-    { [TrackRole.Lead]=5, [TrackRole.Bass]=4, [TrackRole.Drums]=3, [TrackRole.Arp]=2, [TrackRole.Harmony]=1 };
+    private readonly record struct PartKey(int Track, int Channel, int Program, int Bank, TrackRole Role);
+    private sealed record PartInfo(int Priority, bool Monophonic);
 
     public static HardwareSong Allocate(Song song, ChiptuneSpec spec)
     {
         var profile = ChipProfile.For(spec.Chip);
+        var partInfo = AnalyzeParts(song);
         var allocated = new List<HardwareNote>();
+        var allocatedPriority = new List<int>();
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
-        var preferredVoice = new Dictionary<(int Track, int Channel, int Program, int Bank, TrackRole Role), int>();
+        var preferredVoice = new Dictionary<PartKey, int>();
         var arpCursor = new Dictionary<(long GroupStart, int Voice), long>();
         var revoiced = 0; var arpeggiated = 0; var dropped = 0;
+
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
-            foreach (var note in group.OrderByDescending(x => Priority[x.Role]).ThenByDescending(x => x.Velocity).ThenByDescending(x => x.Pitch))
+            foreach (var note in group
+                         .OrderByDescending(x => PriorityOf(x, partInfo))
+                         .ThenByDescending(x => x.Velocity)
+                         .ThenByDescending(x => x.Pitch))
             {
                 var voices = profile.Candidates(note);
-                var part = (note.SourceTrack, note.SourceChannel, note.Program, note.Bank, note.Role);
-                var preferred = preferredVoice.GetValueOrDefault(part, -1);
+                if (voices.Count == 0) { dropped++; continue; }
+
+                var part = KeyOf(note);
+                var info = partInfo[part];
+                var notePriority = info.Priority;
+                var preferred = info.Monophonic ? preferredVoice.GetValueOrDefault(part, -1) : -1;
                 var voice = preferred >= 0 && voices.Contains(preferred) && voiceUntil.GetValueOrDefault(preferred) <= note.StartTick
                     ? preferred
                     : voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
@@ -29,8 +39,8 @@ internal static class VoiceAllocator
                 {
                     // If this hardware voice already contains another note from
                     // the same simultaneous chord, turn the chord into a real
-                    // non-overlapping arpeggio. The first chord note is shortened
-                    // to its slice; later notes continue from the shared cursor.
+                    // non-overlapping arpeggio. This preserves harmonic identity
+                    // without creating overlapping tracker notes.
                     var arpVoice = voices.FirstOrDefault(candidate =>
                         arpCursor.ContainsKey((note.StartTick, candidate)) ||
                         (lastOnVoice.TryGetValue(candidate, out var index) && allocated[index].StartTick == note.StartTick), -1);
@@ -55,10 +65,11 @@ internal static class VoiceAllocator
                         var duration = Math.Min(slice, available);
                         var arp = TrimToSpan(ToHardware(note, arpVoice, spec), arpStart, duration);
                         allocated.Add(arp);
+                        allocatedPriority.Add(notePriority);
                         arpCursor[cursorKey] = arpStart + duration;
                         voiceUntil[arpVoice] = arpStart + duration;
                         lastOnVoice[arpVoice] = allocated.Count - 1;
-                        preferredVoice[part] = arpVoice;
+                        if (info.Monophonic) preferredVoice[part] = arpVoice;
                         if (spec.Fidelity == "preserve") arpeggiated++;
                         else revoiced++;
                         continue;
@@ -68,15 +79,21 @@ internal static class VoiceAllocator
                 if (voice < 0)
                 {
                     if (spec.Fidelity == "strict") { dropped++; continue; }
-                    // Stateful voice stealing: shorten only the note that is
-                    // actually being replaced. Any automation after the new end
-                    // belongs to the old source note and must not leak onto the
-                    // replacement now playing on this hardware voice.
-                    voice = voices.OrderBy(x => voiceUntil.GetValueOrDefault(x)).First();
+
+                    // When no voice is free, choose the lane whose active note is
+                    // least costly to replace. This is intentionally part-aware:
+                    // a long low-value pad must not starve a later counter-melody
+                    // merely because both were classified as Harmony.
+                    voice = voices
+                        .OrderBy(candidate => lastOnVoice.TryGetValue(candidate, out var index) ? allocatedPriority[index] : int.MinValue)
+                        .ThenBy(candidate => voiceUntil.GetValueOrDefault(candidate))
+                        .First();
+
                     if (lastOnVoice.TryGetValue(voice, out var previousIndex))
                     {
                         var previous = allocated[previousIndex];
-                        if (spec.Fidelity == "recognizable" && Priority[previous.Role] >= Priority[note.Role])
+                        var previousPriority = allocatedPriority[previousIndex];
+                        if (spec.Fidelity == "recognizable" && previousPriority >= notePriority)
                         {
                             dropped++;
                             continue;
@@ -89,10 +106,12 @@ internal static class VoiceAllocator
                     }
                     revoiced++;
                 }
+
                 var hardware = ToHardware(note, voice, spec);
                 lastOnVoice[voice] = allocated.Count;
-                preferredVoice[part] = voice;
                 allocated.Add(hardware);
+                allocatedPriority.Add(notePriority);
+                if (info.Monophonic) preferredVoice[part] = voice;
                 voiceUntil[voice] = note.EndTick;
             }
         }
@@ -103,6 +122,88 @@ internal static class VoiceAllocator
         return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, ordered, endTick,
             spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter,
             song.Notes.Count, revoiced, arpeggiated, dropped, spec.Fidelity);
+    }
+
+    private static Dictionary<PartKey, PartInfo> AnalyzeParts(Song song)
+    {
+        var trackNames = song.MidiMetadata?.TrackNames ?? new Dictionary<int, string>();
+        return song.Notes
+            .GroupBy(KeyOf)
+            .ToDictionary(group => group.Key, group =>
+            {
+                var notes = group.ToArray();
+                var peak = PeakOverlap(notes);
+                var averageVelocity = notes.Average(x => x.Velocity);
+                var trackName = group.Key.Track >= 0 ? trackNames.GetValueOrDefault(group.Key.Track, string.Empty) : string.Empty;
+                var priority = BaseRolePriority(group.Key.Role) + ProgramPriority(group.Key.Program, group.Key.Role);
+                if (peak <= 1) priority += 15;
+                else if (peak >= 5) priority -= 8;
+                priority += (int)Math.Round((averageVelocity - 64) / 8d);
+                priority += NamePriority(trackName, group.Key.Role);
+                return new PartInfo(Math.Clamp(priority, 1, 200), peak <= 1);
+            });
+    }
+
+    private static int PriorityOf(NoteEvent note, IReadOnlyDictionary<PartKey, PartInfo> info)
+        => info[KeyOf(note)].Priority;
+
+    private static PartKey KeyOf(NoteEvent note)
+        => new(note.SourceTrack, note.SourceChannel, note.Program, note.Bank, note.Role);
+
+    private static int BaseRolePriority(TrackRole role) => role switch
+    {
+        TrackRole.Lead => 100,
+        TrackRole.Bass => 95,
+        TrackRole.Drums => 85,
+        TrackRole.Arp => 60,
+        _ => 45
+    };
+
+    private static int ProgramPriority(int program, TrackRole role)
+    {
+        if (role == TrackRole.Drums) return 20;
+        return program switch
+        {
+            >= 80 and <= 87 => 32, // synth leads
+            >= 64 and <= 79 => 25, // reeds / pipes
+            >= 56 and <= 63 => 24, // brass
+            >= 32 and <= 39 => 28, // bass family
+            >= 24 and <= 31 => 22, // guitars / plucks
+            >= 0 and <= 7 => 20,   // piano
+            >= 8 and <= 15 => 12,  // chromatic percussion / bells
+            >= 16 and <= 23 => 12, // organ
+            >= 40 and <= 55 => 8,  // strings / ensemble
+            >= 88 and <= 103 => -12, // pads are usually support material
+            >= 104 and <= 111 => 12,
+            _ => 0
+        };
+    }
+
+    private static int NamePriority(string name, TrackRole role)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return 0;
+        name = name.ToLowerInvariant();
+        var score = 0;
+        if (name.Contains("lead") || name.Contains("melody") || name.Contains("solo") || name.Contains("theme")) score += 30;
+        if (name.Contains("bass")) score += 24;
+        if (name.Contains("drum") || name.Contains("perc")) score += role == TrackRole.Drums ? 20 : 5;
+        if (name.Contains("pad") || name.Contains("chord") || name.Contains("ambience")) score -= 10;
+        return score;
+    }
+
+    private static int PeakOverlap(IEnumerable<NoteEvent> notes)
+    {
+        var active = 0;
+        var peak = 0;
+        foreach (var point in notes
+                     .SelectMany(x => new[] { (Tick: x.StartTick, Delta: 1), (Tick: x.EndTick, Delta: -1) })
+                     .OrderBy(x => x.Tick)
+                     .ThenBy(x => x.Delta))
+        {
+            active += point.Delta;
+            peak = Math.Max(peak, active);
+        }
+        return peak;
     }
 
     private static HardwareNote TrimToSpan(HardwareNote note, long startTick, long durationTick)
