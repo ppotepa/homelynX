@@ -120,6 +120,7 @@ internal static class DryWetMidiImporter
         var result = completed.Select(item =>
         {
             var rawStart = Scale(item.Note.Time, ppq);
+            var rawKeyEnd = Scale(item.Note.Time + item.Note.Length, ppq);
             var rawEnd = Scale(item.End, ppq);
             var key = (item.Track, Channel: (int)item.Note.Channel, item.State.Program, item.State.Bank);
             var role = item.Note.Channel == 9
@@ -134,14 +135,17 @@ internal static class DryWetMidiImporter
             var pitch = Math.Clamp((int)item.Note.NoteNumber + (item.Note.Channel == 9 ? 0 : spec.Transpose) +
                 (int)Math.Round((initialState.PitchBend - 8192) / 8192d * initialState.PitchBendRange, MidpointRounding.AwayFromZero), 0, 127);
             var startTick = Quantize(rawStart, grid);
-            var endTick = Math.Max(startTick + Math.Max(1, grid), Quantize(rawEnd, grid));
+            var minimumDuration = Math.Max(1, grid);
+            var keyEndTick = Math.Max(startTick + minimumDuration, Quantize(rawKeyEnd, grid));
+            var endTick = Math.Max(keyEndTick, Quantize(rawEnd, grid));
             return new NoteEvent(startTick, endTick - startTick, pitch, item.Note.Velocity, role,
                 item.Track, item.Note.Channel, initialState.Program, initialState.Bank, initialState.Pan, initialState.Expression,
                 initialState.PitchBend, initialState.PitchBendRange,
                 item.Bends.Count == 0 ? null : item.Bends.Select(x => new PitchBendPoint(Scale(x.Time, ppq), x.Value)).ToArray(),
                 Volume: initialState.Volume, Modulation: initialState.Modulation, Aftertouch: initialState.Aftertouch,
                 ReleaseVelocity: item.Note.OffVelocity,
-                ControllerChanges: item.Automation.Select(x => new ControllerPoint(Scale(x.Time, ppq), x.State.Volume, x.State.Expression, x.State.Pan, x.State.Modulation, x.State.Aftertouch)).ToArray());
+                ControllerChanges: item.Automation.Select(x => new ControllerPoint(Scale(x.Time, ppq), x.State.Volume, x.State.Expression, x.State.Pan, x.State.Modulation, x.State.Aftertouch)).ToArray(),
+                KeyDurationTick: keyEndTick - startTick);
         }).OrderBy(x => x.StartTick).ThenBy(x => x.Role).ToArray();
 
         var sourceParts = result
