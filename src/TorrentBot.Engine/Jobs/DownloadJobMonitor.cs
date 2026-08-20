@@ -45,22 +45,47 @@ public sealed class DownloadJobMonitor : IDisposable
             {
                 var processJobId = row.TryGetValue("id", out var id) ? id?.ToString() : null;
                 var status = row.TryGetValue("status", out var statusValue) ? statusValue?.ToString() : null;
-                if (string.IsNullOrWhiteSpace(processJobId) || !string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(processJobId) || string.IsNullOrWhiteSpace(status))
                 {
                     continue;
                 }
 
                 foreach (var job in _jobTracker.GetAll())
                 {
-                    if (job.ExternalId == processJobId && job.Status != JobStatus.Succeeded)
+                    if (job.ExternalId != processJobId)
                     {
-                        _jobTracker.Update(job.Id, current => current with
-                        {
-                            Status = JobStatus.Succeeded,
-                            Progress = 1.0,
-                            Metadata = MergeArtifactMetadata(current.Metadata, row)
-                        });
+                        continue;
                     }
+
+                    var nextStatus = status.ToLowerInvariant() switch
+                    {
+                        "completed" => JobStatus.Succeeded,
+                        "failed" => JobStatus.Failed,
+                        "cancelled" => JobStatus.Cancelled,
+                        "paused" => JobStatus.Paused,
+                        _ => JobStatus.Running
+                    };
+                    var nextProgress = nextStatus == JobStatus.Succeeded ? 1.0 :
+                        row.TryGetValue("progress", out var progressValue) && double.TryParse(progressValue?.ToString(), out var progress)
+                            ? Math.Clamp(progress, 0, 1)
+                            : job.Progress;
+                    var error = row.TryGetValue("error", out var errorValue) ? errorValue?.ToString() : null;
+
+                    if (job.Status == nextStatus
+                        && (nextStatus != JobStatus.Failed || string.Equals(job.Error, error, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    _jobTracker.Update(job.Id, current => current with
+                    {
+                        Status = nextStatus,
+                        Progress = nextProgress,
+                        Error = nextStatus == JobStatus.Failed ? error : current.Error,
+                        Metadata = nextStatus == JobStatus.Succeeded
+                            ? MergeArtifactMetadata(current.Metadata, row)
+                            : current.Metadata
+                    });
                 }
             }
 
