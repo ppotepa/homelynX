@@ -64,7 +64,7 @@ internal static class ManagedChipRenderer
             var bend = BendSemitones(currentBend, note.PitchBendRange);
             var pitch = unbentPitch + bend;
             var frequency = 440d * Math.Pow(2, (pitch - 69) / 12d);
-            var vibratoDepth = currentModulation / 127d * .0125; // roughly up to 1/5 semitone
+            var vibratoDepth = currentModulation / 127d * .0125;
             var vibrato = currentModulation == 0 ? 0 : Math.Sin(age * Math.PI * 10) * vibratoDepth;
             var percussion = note.Role == TrackRole.Drums || IsPercussion(note.Instrument);
             if (percussion)
@@ -110,12 +110,15 @@ internal static class ManagedChipRenderer
             "pad" => .12,
             "strings" => .08,
             "soft_lead" => .025,
+            "flute" => .018,
+            "reed" => .014,
             "brass" => .018,
             _ => .004
         };
         var releaseTime = instrument switch
         {
             "pad" or "strings" => .16,
+            "flute" => .08,
             "bell" => .12,
             "epiano" => .08,
             _ => .025
@@ -130,6 +133,8 @@ internal static class ManagedChipRenderer
             "bass" => .72 + .28 * Math.Exp(-age * 5),
             "pad" => .92,
             "strings" => .88,
+            "flute" => .9,
+            "reed" => .84,
             _ => .80 + .20 * Math.Exp(-age * 5)
         };
         return attack * release * decay;
@@ -164,13 +169,15 @@ internal static class ManagedChipRenderer
         if (song.Chip is "c64_6581" or "c64_8580")
         {
             if (note.Instrument is "bass" or "brass" or "organ" or "pad") return .6 * Saw(p) + .4 * Pulse(p, .5);
-            if (note.Instrument is "bell" or "strings" or "reed") return .65 * Triangle(p) + .35 * Math.Sin(p * Math.PI * 2);
+            if (note.Instrument is "bell" or "strings" or "reed" or "flute") return .65 * Triangle(p) + .35 * Math.Sin(p * Math.PI * 2);
         }
         var duty = note.Instrument switch
         {
             "soft_lead" or "strings" or "pad" or "organ" => .5,
             "brass" => .75,
             "pluck" or "epiano" => .25,
+            "reed" => .375,
+            "flute" => .5,
             _ => song.Duty / 100d
         };
         if (song.Chip == "sms" && note.Voice == 1) duty = .5;
@@ -188,7 +195,9 @@ internal static class ManagedChipRenderer
             "organ" => (2.0, .45, .45),
             "strings" or "pad" => (1.0, .8, .30),
             "pluck" => (3.0, 2.0, .15),
-            "soft_lead" or "reed" => (2.0, 1.0, .20),
+            "soft_lead" => (2.0, .9, .18),
+            "reed" => (2.0, 1.2, .22),
+            "flute" => (1.0, .38, .10),
             _ => (2.0, 2.6, .12)
         };
         var mod = Math.Sin(p * Math.PI * 2 * ratio) * index;
@@ -198,7 +207,8 @@ internal static class ManagedChipRenderer
     private static double Pokey(double p, string instrument, ref uint lfsr)
     {
         if (instrument == "bass") return .7 * Pulse(p, .5) + .3 * Pulse((p * 2) % 1, .5);
-        if (instrument is "reed" or "flute") return .65 * Pulse(p, .5) + .35 * Saw(p);
+        if (instrument == "reed") return .72 * Pulse(p, .5) + .28 * Saw(p);
+        if (instrument == "flute") return .78 * Pulse(p, .5) + .22 * Triangle(p);
         if (instrument == "bell") return .65 * Pulse(p, .25) + .35 * Pulse((p * 3) % 1, .5);
         if (IsPercussion(instrument)) return Noise("pokey", ref lfsr);
         return Pulse(p, .5);
@@ -208,7 +218,8 @@ internal static class ManagedChipRenderer
     {
         if (IsPercussion(instrument) && instrument is not "kick" and not "tom") return Noise("atari2600", ref lfsr);
         if (instrument is "bass" or "kick" or "tom") return Pulse(p, .5);
-        if (instrument is "reed" or "flute" or "bell") return .65 * Pulse(p, .33) + .35 * Pulse((p * 2) % 1, .5);
+        if (instrument == "flute") return .75 * Pulse(p, .5) + .25 * Pulse((p * 2) % 1, .5);
+        if (instrument is "reed" or "bell") return .65 * Pulse(p, .33) + .35 * Pulse((p * 2) % 1, .5);
         return Pulse(p, .5);
     }
 
@@ -249,15 +260,24 @@ internal static class ManagedChipRenderer
 
     private static double Wavetable(double p, string instrument) => instrument switch
     {
+        "lead" => .72 * Pulse(p, .5) + .28 * Math.Sin(p * Math.PI * 2),
+        "soft_lead" => .90 * Math.Sin(p * Math.PI * 2) + .07 * Math.Sin(p * Math.PI * 4),
+        "pluck" => .68 * Saw(p) + .32 * Math.Sin(p * Math.PI * 2),
         "bass" => .58 * Saw(p) + .42 * Math.Sin(p * Math.PI * 2),
         "bell" => .62 * Math.Sin(p * Math.PI * 2) + .25 * Math.Sin(p * Math.PI * 6) + .13 * Math.Sin(p * Math.PI * 10),
         "strings" or "pad" => .72 * Math.Sin(p * Math.PI * 2) + .2 * Math.Sin(p * Math.PI * 4) + .08 * Math.Sin(p * Math.PI * 6),
         "brass" => .55 * Saw(p) + .45 * Math.Sin(p * Math.PI * 2),
+        "organ" => .58 * Math.Sin(p * Math.PI * 2) + .25 * Math.Sin(p * Math.PI * 4) + .13 * Math.Sin(p * Math.PI * 8),
+        "epiano" => .72 * Math.Sin(p * Math.PI * 2) + .20 * Math.Sin(p * Math.PI * 8),
+        "reed" => .82 * Math.Sin(p * Math.PI * 2) + .16 * Math.Sin(p * Math.PI * 4),
+        "flute" => .94 * Math.Sin(p * Math.PI * 2) + .05 * Math.Sin(p * Math.PI * 4),
         _ => Math.Sin(p * Math.PI * 2)
     };
 
     private static double SampleBank(double p, string instrument) => instrument switch
     {
+        "lead" => .70 * Pulse(p, .5) + .28 * Math.Sin(p*Math.PI*2),
+        "soft_lead" => .90 * Math.Sin(p*Math.PI*2) + .07 * Math.Sin(p*Math.PI*4),
         "bell" => .55*Math.Sin(p*Math.PI*2)+.25*Math.Sin(p*Math.PI*6)+.12*Math.Sin(p*Math.PI*10),
         "pluck" => .7*Saw(p)+.3*Math.Sin(p*Math.PI*2),
         "bass" => .55*Saw(p)+.45*Math.Sin(p*Math.PI*2),
@@ -265,6 +285,8 @@ internal static class ManagedChipRenderer
         "brass" => .5*Saw(p)+.5*Math.Sin(p*Math.PI*2),
         "organ" => .55*Math.Sin(p*Math.PI*2)+.28*Math.Sin(p*Math.PI*4)+.14*Math.Sin(p*Math.PI*8),
         "epiano" => .72*Math.Sin(p*Math.PI*2)+.2*Math.Sin(p*Math.PI*8),
+        "reed" => .84*Math.Sin(p*Math.PI*2)+.14*Math.Sin(p*Math.PI*4),
+        "flute" => .96*Math.Sin(p*Math.PI*2)+.035*Math.Sin(p*Math.PI*4),
         _ => p<.5?1:-1
     };
 
