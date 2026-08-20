@@ -45,16 +45,36 @@ internal sealed class ChipProfile
         if (note.Role == TrackRole.Drums)
             return Id == "nes" ? (note.Pitch is >= 35 and <= 40 ? [4, 3] : [3]) : percussion;
 
-        var preferred = note.Role switch
+        // Program identity is stronger than the coarse Lead/Harmony role for
+        // obvious GM bass families. Multiple bass tracks can therefore still
+        // reach triangle/wave/FM voices even if only one was labeled Bass by
+        // the source-part classifier.
+        var bassLike = note.Role == TrackRole.Bass ||
+                       (note.SourceTrack >= 0 && note.Program is >= 32 and <= 39);
+
+        IEnumerable<int> preferred;
+        if (bassLike)
         {
-            TrackRole.Bass => Voices.Where(x => x.Class is ChipVoiceClass.Triangle or ChipVoiceClass.Wave or ChipVoiceClass.Fm)
-                .OrderByDescending(x => x.Class is ChipVoiceClass.Triangle or ChipVoiceClass.Wave ? 100 : 20)
-                .Select(x => x.Index),
-            TrackRole.Arp => Voices.Where(x => x.Class is ChipVoiceClass.Psg or ChipVoiceClass.Pulse or ChipVoiceClass.Wavetable)
-                .OrderByDescending(x => x.Class is ChipVoiceClass.Psg ? 100 : 20).Select(x => x.Index),
-            _ => Voices.Where(x => x.Melodic && x.Class is not (ChipVoiceClass.Triangle or ChipVoiceClass.Wave))
-                .OrderByDescending(x => x.Priority).Select(x => x.Index)
-        };
+            preferred = Voices
+                .Where(x => x.Class is ChipVoiceClass.Triangle or ChipVoiceClass.Wave or ChipVoiceClass.Fm or ChipVoiceClass.Wavetable or ChipVoiceClass.Sample)
+                .OrderByDescending(x => x.Class is ChipVoiceClass.Triangle or ChipVoiceClass.Wave ? 120 : x.Priority)
+                .Select(x => x.Index);
+        }
+        else if (note.Role == TrackRole.Arp)
+        {
+            preferred = Voices
+                .Where(x => x.Class is ChipVoiceClass.Psg or ChipVoiceClass.Pulse or ChipVoiceClass.Wavetable or ChipVoiceClass.Sample)
+                .OrderByDescending(x => x.Class is ChipVoiceClass.Psg ? 120 : x.Priority)
+                .Select(x => x.Index);
+        }
+        else
+        {
+            preferred = Voices
+                .Where(x => x.Melodic && x.Class is not (ChipVoiceClass.Triangle or ChipVoiceClass.Wave))
+                .OrderByDescending(x => x.Priority)
+                .Select(x => x.Index);
+        }
+
         return preferred.Concat(melodic).Distinct().ToArray();
     }
 
