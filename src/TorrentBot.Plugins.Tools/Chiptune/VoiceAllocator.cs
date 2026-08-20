@@ -3,24 +3,34 @@ namespace TorrentBot.Plugins.Tools.Chiptune;
 internal static class VoiceAllocator
 {
     private readonly record struct PartKey(int Track, int Channel, int Program, int Bank, TrackRole Role);
-    private sealed record PartInfo(int Priority, bool Monophonic);
+    private readonly record struct VoiceKey(PartKey Part, int Lane);
+    private sealed record PartInfo(int Priority);
+    private sealed record LaneInfo(int Lane, int PriorityBonus);
+
+    private sealed class LaneState
+    {
+        public long EndTick { get; set; }
+        public int LastPitch { get; set; }
+        public List<NoteEvent> Notes { get; } = [];
+    }
 
     public static HardwareSong Allocate(Song song, ChiptuneSpec spec)
     {
         var profile = ChipProfile.For(spec.Chip);
         var partInfo = AnalyzeParts(song);
+        var laneInfo = AnalyzeLanes(song);
         var allocated = new List<HardwareNote>();
         var allocatedPriority = new List<int>();
         var voiceUntil = new Dictionary<int, long>();
         var lastOnVoice = new Dictionary<int, int>();
-        var preferredVoice = new Dictionary<PartKey, int>();
+        var preferredVoice = new Dictionary<VoiceKey, int>();
         var arpCursor = new Dictionary<(long GroupStart, int Voice), long>();
         var revoiced = 0; var arpeggiated = 0; var dropped = 0;
 
         foreach (var group in song.Notes.GroupBy(x => x.StartTick).OrderBy(x => x.Key))
         {
             foreach (var note in group
-                         .OrderByDescending(x => PriorityOf(x, partInfo))
+                         .OrderByDescending(x => PriorityOf(x, partInfo, laneInfo))
                          .ThenByDescending(x => x.Velocity)
                          .ThenByDescending(x => x.Pitch))
             {
@@ -28,12 +38,13 @@ internal static class VoiceAllocator
                 if (voices.Count == 0) { dropped++; continue; }
 
                 var part = KeyOf(note);
-                var info = partInfo[part];
-                var notePriority = info.Priority;
-                var preferred = info.Monophonic ? preferredVoice.GetValueOrDefault(part, -1) : -1;
+                var lane = laneInfo[note];
+                var voiceKey = new VoiceKey(part, lane.Lane);
+                var notePriority = PriorityOf(note, partInfo, laneInfo);
+                var preferred = preferredVoice.GetValueOrDefault(voiceKey, -1);
                 var voice = preferred >= 0 && voices.Contains(preferred) && voiceUntil.GetValueOrDefault(preferred) <= note.StartTick
                     ? preferred
-                    : voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= note.StartTick, -1);
+                    : BestFreeVoice(voices, voiceUntil, preferredVoice, voiceKey, note.StartTick);
 
                 if (voice < 0 && spec.Fidelity != "strict" && note.Role != TrackRole.Drums && group.Count() > 1)
                 {
@@ -69,7 +80,7 @@ internal static class VoiceAllocator
                         arpCursor[cursorKey] = arpStart + duration;
                         voiceUntil[arpVoice] = arpStart + duration;
                         lastOnVoice[arpVoice] = allocated.Count - 1;
-                        if (info.Monophonic) preferredVoice[part] = arpVoice;
+                        preferredVoice[voiceKey] = arpVoice;
                         if (spec.Fidelity == "preserve") arpeggiated++;
                         else revoiced++;
                         continue;
@@ -81,9 +92,8 @@ internal static class VoiceAllocator
                     if (spec.Fidelity == "strict") { dropped++; continue; }
 
                     // When no voice is free, choose the lane whose active note is
-                    // least costly to replace. This is intentionally part-aware:
-                    // a long low-value pad must not starve a later counter-melody
-                    // merely because both were classified as Harmony.
+                    // least costly to replace. A low-value pad may yield to an
+                    // explicit melody/counter-melody even when both are Harmony.
                     voice = voices
                         .OrderBy(candidate => lastOnVoice.TryGetValue(candidate, out var index) ? allocatedPriority[index] : int.MinValue)
                         .ThenBy(candidate => voiceUntil.GetValueOrDefault(candidate))
@@ -111,7 +121,7 @@ internal static class VoiceAllocator
                 lastOnVoice[voice] = allocated.Count;
                 allocated.Add(hardware);
                 allocatedPriority.Add(notePriority);
-                if (info.Monophonic) preferredVoice[part] = voice;
+                preferredVoice[voiceKey] = voice;
                 voiceUntil[voice] = note.EndTick;
             }
         }
@@ -122,6 +132,21 @@ internal static class VoiceAllocator
         return new HardwareSong(spec.Chip, spec.Bpm, spec.SampleRate, song.TempoMap.Points, ordered, endTick,
             spec.Wave, spec.Duty, spec.Attack, spec.Decay, spec.Sustain, spec.Release, spec.Vibrato, spec.Filter,
             song.Notes.Count, revoiced, arpeggiated, dropped, spec.Fidelity);
+    }
+
+    private static int BestFreeVoice(
+        IReadOnlyList<int> voices,
+        IReadOnlyDictionary<int, long> voiceUntil,
+        IReadOnlyDictionary<VoiceKey, int> preferredVoice,
+        VoiceKey voiceKey,
+        long startTick)
+    {
+        // Keep a stable source lane on its previous hardware channel whenever
+        // possible, then use the profile's compatibility order.
+        var previous = preferredVoice.GetValueOrDefault(voiceKey, -1);
+        if (previous >= 0 && voices.Contains(previous) && voiceUntil.GetValueOrDefault(previous) <= startTick)
+            return previous;
+        return voices.FirstOrDefault(x => voiceUntil.GetValueOrDefault(x) <= startTick, -1);
     }
 
     private static Dictionary<PartKey, PartInfo> AnalyzeParts(Song song)
@@ -140,12 +165,84 @@ internal static class VoiceAllocator
                 else if (peak >= 5) priority -= 8;
                 priority += (int)Math.Round((averageVelocity - 64) / 8d);
                 priority += NamePriority(trackName, group.Key.Role);
-                return new PartInfo(Math.Clamp(priority, 1, 200), peak <= 1);
+                return new PartInfo(Math.Clamp(priority, 1, 200));
             });
     }
 
-    private static int PriorityOf(NoteEvent note, IReadOnlyDictionary<PartKey, PartInfo> info)
-        => info[KeyOf(note)].Priority;
+    private static Dictionary<NoteEvent, LaneInfo> AnalyzeLanes(Song song)
+    {
+        var result = new Dictionary<NoteEvent, LaneInfo>(ReferenceEqualityComparer.Instance);
+        foreach (var group in song.Notes.GroupBy(KeyOf))
+        {
+            if (group.Key.Role == TrackRole.Drums)
+            {
+                foreach (var note in group)
+                    result[note] = new LaneInfo(1000 + PercussionFamily(note.Pitch), 0);
+                continue;
+            }
+
+            var lanes = new List<LaneState>();
+            foreach (var note in group.OrderBy(x => x.StartTick).ThenBy(x => x.Pitch))
+            {
+                var candidate = lanes
+                    .Select((lane, index) => (lane, index))
+                    .Where(x => x.lane.EndTick <= note.StartTick)
+                    .OrderBy(x => Math.Abs(x.lane.LastPitch - note.Pitch))
+                    .ThenByDescending(x => x.lane.EndTick)
+                    .FirstOrDefault();
+
+                int laneIndex;
+                if (candidate.lane is null)
+                {
+                    laneIndex = lanes.Count;
+                    lanes.Add(new LaneState());
+                }
+                else laneIndex = candidate.index;
+
+                var lane = lanes[laneIndex];
+                lane.EndTick = note.EndTick;
+                lane.LastPitch = note.Pitch;
+                lane.Notes.Add(note);
+                result[note] = new LaneInfo(laneIndex, 0);
+            }
+
+            if (lanes.Count == 0) continue;
+            var characteristics = lanes
+                .Select((lane, index) => new
+                {
+                    Index = index,
+                    Median = lane.Notes.Select(x => x.Pitch).Order().ElementAt(lane.Notes.Count / 2),
+                    Velocity = lane.Notes.Average(x => x.Velocity),
+                    Count = lane.Notes.Count
+                })
+                .OrderBy(x => x.Median)
+                .ToArray();
+            var lowest = characteristics[0].Index;
+            var highest = characteristics[^1].Index;
+
+            foreach (var characteristic in characteristics)
+            {
+                var bonus = 0;
+                if (lanes.Count == 1) bonus = 8;
+                else
+                {
+                    if (characteristic.Index == highest) bonus += group.Key.Program is >= 88 and <= 103 ? 5 : 16;
+                    if (characteristic.Index == lowest && group.Key.Program is >= 0 and <= 39) bonus += 10;
+                    if (characteristic.Velocity >= 96) bonus += 3;
+                    if (characteristic.Count <= 2) bonus -= 2; // one-off ornament lanes are less important than stable lines
+                }
+                foreach (var note in lanes[characteristic.Index].Notes)
+                    result[note] = new LaneInfo(characteristic.Index, bonus);
+            }
+        }
+        return result;
+    }
+
+    private static int PriorityOf(
+        NoteEvent note,
+        IReadOnlyDictionary<PartKey, PartInfo> parts,
+        IReadOnlyDictionary<NoteEvent, LaneInfo> lanes)
+        => Math.Clamp(parts[KeyOf(note)].Priority + lanes[note].PriorityBonus, 1, 240);
 
     private static PartKey KeyOf(NoteEvent note)
         => new(note.SourceTrack, note.SourceChannel, note.Program, note.Bank, note.Role);
@@ -164,16 +261,16 @@ internal static class VoiceAllocator
         if (role == TrackRole.Drums) return 20;
         return program switch
         {
-            >= 80 and <= 87 => 32, // synth leads
-            >= 64 and <= 79 => 25, // reeds / pipes
-            >= 56 and <= 63 => 24, // brass
-            >= 32 and <= 39 => 28, // bass family
-            >= 24 and <= 31 => 22, // guitars / plucks
-            >= 0 and <= 7 => 20,   // piano
-            >= 8 and <= 15 => 12,  // chromatic percussion / bells
-            >= 16 and <= 23 => 12, // organ
-            >= 40 and <= 55 => 8,  // strings / ensemble
-            >= 88 and <= 103 => -12, // pads are usually support material
+            >= 80 and <= 87 => 32,
+            >= 64 and <= 79 => 25,
+            >= 56 and <= 63 => 24,
+            >= 32 and <= 39 => 28,
+            >= 24 and <= 31 => 22,
+            >= 0 and <= 7 => 20,
+            >= 8 and <= 15 => 12,
+            >= 16 and <= 23 => 12,
+            >= 40 and <= 55 => 8,
+            >= 88 and <= 103 => -12,
             >= 104 and <= 111 => 12,
             _ => 0
         };
@@ -256,10 +353,22 @@ internal static class VoiceAllocator
             voiceClass.ToString().ToLowerInvariant());
     }
 
+    private static int PercussionFamily(int pitch) => pitch switch
+    {
+        35 or 36 => 0,
+        37 or 38 or 39 or 40 => 1,
+        42 or 44 => 2,
+        46 => 3,
+        >= 41 and <= 50 => 4,
+        49 or 55 or 57 => 5,
+        51 or 53 or 59 => 6,
+        _ => 7
+    };
+
     private static string InstrumentFor(NoteEvent note, string requested)
     {
         if (note.Role == TrackRole.Drums) return PercussionName(note.Pitch);
-        if (note.Role == TrackRole.Bass) return "bass";
+        if (note.Role == TrackRole.Bass || note.Program is >= 32 and <= 39) return "bass";
         if (note.SourceTrack < 0 && note.Program == 0) return requested;
         return note.Program switch
         {
@@ -267,7 +376,6 @@ internal static class VoiceAllocator
             >= 8 and <= 15 => "bell",
             >= 16 and <= 23 => "organ",
             >= 24 and <= 31 => "pluck",
-            >= 32 and <= 39 => "bass",
             >= 40 and <= 55 => "strings",
             >= 56 and <= 63 => "brass",
             >= 64 and <= 79 => "reed",
