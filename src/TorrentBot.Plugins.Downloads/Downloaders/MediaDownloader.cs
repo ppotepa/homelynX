@@ -23,7 +23,8 @@ public sealed class MediaDownloader : IDownloader
     private readonly string _ffmpegPath;
     private readonly string _outputRoot;
     private readonly string _tempRoot;
-    private readonly string? _cookiesFile;
+    private readonly string _cookiesDirectory;
+    private readonly string? _configuredCookiesFile;
     private readonly int _maxDurationSeconds;
 
     public MediaDownloader(
@@ -37,10 +38,9 @@ public sealed class MediaDownloader : IDownloader
         _ffmpegPath = ffmpegPath ?? Environment.GetEnvironmentVariable("FFMPEG_PATH") ?? "ffmpeg";
         _outputRoot = outputRoot ?? Environment.GetEnvironmentVariable("MEDIA_LIBRARY_PATH") ?? "/media";
         _tempRoot = tempRoot ?? Environment.GetEnvironmentVariable("MEDIA_DOWNLOAD_TEMP_DIR") ?? "/downloads/incomplete/media";
-        var configuredCookies = Environment.GetEnvironmentVariable("YTDLP_COOKIES_FILE");
-        _cookiesFile = !string.IsNullOrWhiteSpace(configuredCookies) && File.Exists(configuredCookies)
-            ? configuredCookies
-            : null;
+        _cookiesDirectory = Environment.GetEnvironmentVariable("YTDLP_COOKIES_DIR")
+            ?? Path.Combine(AppContext.BaseDirectory, "cookies");
+        _configuredCookiesFile = Environment.GetEnvironmentVariable("YTDLP_COOKIES_FILE");
         if (maxDurationSeconds.HasValue)
         {
             _maxDurationSeconds = maxDurationSeconds.Value;
@@ -260,7 +260,7 @@ public sealed class MediaDownloader : IDownloader
     {
         var arguments = new List<string>();
         AddProviderArguments(arguments, url);
-        AddCookieArguments(arguments);
+        AddCookieArguments(arguments, url);
         arguments.AddRange(["--dump-single-json", "--no-playlist", "--skip-download", url]);
         using var process = StartProcess(_ytDlpPath, arguments, Directory.GetCurrentDirectory());
         using var cancellation = ct.Register(() => TryKill(process));
@@ -330,7 +330,7 @@ public sealed class MediaDownloader : IDownloader
             "--no-playlist", "--newline", "--ffmpeg-location", _ffmpegPath
         };
         AddProviderArguments(args, entry.Url);
-        AddCookieArguments(args);
+        AddCookieArguments(args, entry.Url);
         if (entry.Clip is not null)
         {
             args.AddRange(["--download-sections", $"*{entry.Clip.Start}-{entry.Clip.End}", "--force-keyframes-at-cuts"]);
@@ -374,11 +374,37 @@ public sealed class MediaDownloader : IDownloader
             ]);
     }
 
-    private void AddCookieArguments(List<string> args)
+    private void AddCookieArguments(List<string> args, string url)
     {
-        if (_cookiesFile is not null)
-            args.AddRange(["--cookies", _cookiesFile]);
+        var cookiesFile = ResolveCookiesFile(url);
+        if (cookiesFile is not null)
+            args.AddRange(["--cookies", cookiesFile]);
     }
+
+    private string? ResolveCookiesFile(string url)
+    {
+        var stem = CookieStem(url);
+        var configured = _configuredCookiesFile;
+        if (!string.IsNullOrWhiteSpace(configured)
+            && File.Exists(configured)
+            && (stem is "facebook" or "instagram"
+                || Path.GetFileNameWithoutExtension(configured).Equals(stem, StringComparison.OrdinalIgnoreCase)
+                || Path.GetFileNameWithoutExtension(configured).Equals("all", StringComparison.OrdinalIgnoreCase)))
+        {
+            return configured;
+        }
+
+        var providerFile = Path.Combine(_cookiesDirectory, $"{stem}.txt");
+        return File.Exists(providerFile) ? providerFile : null;
+    }
+
+    private static string CookieStem(string url) =>
+        IsFacebookUrl(url) ? "facebook" :
+        IsInstagramUrl(url) ? "instagram" :
+        IsTikTokUrl(url) ? "tiktok" :
+        IsYoutubeUrl(url) ? "youtube" :
+        IsDailymotionUrl(url) ? "dailymotion" :
+        IsVimeoUrl(url) ? "vimeo" : "media";
 
     private static bool IsYoutubeUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri)
@@ -411,6 +437,22 @@ public sealed class MediaDownloader : IDownloader
         && (uri.Host.Equals("facebook.com", StringComparison.OrdinalIgnoreCase)
             || uri.Host.EndsWith(".facebook.com", StringComparison.OrdinalIgnoreCase)
             || uri.Host.Equals("fb.watch", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsInstagramUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Host.Equals("instagram.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".instagram.com", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsDailymotionUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Host.Equals("dailymotion.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".dailymotion.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("dai.ly", StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsVimeoUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Host.Equals("vimeo.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.EndsWith(".vimeo.com", StringComparison.OrdinalIgnoreCase));
 
     private static Process StartProcess(string fileName, IEnumerable<string> arguments, string workingDirectory)
     {

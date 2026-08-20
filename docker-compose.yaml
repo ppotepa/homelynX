@@ -42,6 +42,7 @@ services:
       MEDIA_LIBRARY_PATH: "${MEDIA_LIBRARY_PATH:-/media}"
       MEDIA_DOWNLOAD_MAX_DURATION_SECONDS: "${MEDIA_DOWNLOAD_MAX_DURATION_SECONDS:-14400}"
       MEDIA_DOWNLOAD_TEMP_DIR: "/downloads/incomplete/media"
+      YTDLP_COOKIES_DIR: "/app/cookies"
       YTDLP_COOKIES_FILE: "${YTDLP_COOKIES_FILE:-/app/cookies/facebook.txt}"
       MEDIA_TELEGRAM_MAX_BYTES: "${MEDIA_TELEGRAM_MAX_BYTES:-47185920}"
     volumes:
