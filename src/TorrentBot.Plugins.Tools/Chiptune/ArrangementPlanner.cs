@@ -13,7 +13,7 @@ internal static class ArrangementPlanner
         if (spec.Mode == ChiptuneMode.Midi)
         {
             notes = PromoteCounterLead(notes, song.MidiMetadata);
-            notes = LabelMidiSections(notes);
+            notes = LabelMidiSections(notes, song.MidiMetadata);
         }
         if (spec.RegisterMode == "auto" && spec.Mode is ChiptuneMode.Midi or ChiptuneMode.Generate)
             notes = NormalizeRegisters(notes, spec);
@@ -87,10 +87,11 @@ internal static class ArrangementPlanner
             ? note with { Role = TrackRole.CounterLead } : note).ToArray();
     }
 
-    private static NoteEvent[] LabelMidiSections(NoteEvent[] notes)
+    private static NoteEvent[] LabelMidiSections(NoteEvent[] notes, MidiMetadata? metadata)
     {
         if (notes.Any(x => !string.Equals(x.Section, "body", StringComparison.OrdinalIgnoreCase))) return notes;
-        var endTick = notes.Max(x => x.EndTick); var window = TempoMap.Ppq * 4L;
+        var endTick = notes.Max(x => x.EndTick);
+        var window = SectionWindowTicks(metadata);
         var windowCount = Math.Max(1, (int)Math.Ceiling(endTick / (double)window));
         if (windowCount == 1) return notes.Select(x => x with { Section = "body", SectionIntensity = .6 }).ToArray();
         var windows = Enumerable.Range(0, windowCount).Select(index =>
@@ -105,7 +106,7 @@ internal static class ArrangementPlanner
             var hooks = items.Count(x => x.Role is TrackRole.Lead or TrackRole.CounterLead);
             var drums = items.Count(x => x.Role == TrackRole.Drums);
             return new WindowData(index, items.Length * 4 + avgVelocity / 4 + avgPitch / 7 + parts * 8 + hooks * 3 + drums * 1.5,
-                HookFingerprint(items, start), hooks);
+                HookFingerprint(items, start, window), hooks);
         }).ToArray();
         var recurrences = windows.Where(x => x.Fingerprint.Length > 0).GroupBy(x => x.Fingerprint, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
@@ -136,12 +137,24 @@ internal static class ArrangementPlanner
         }).ToArray();
     }
 
-    private static string HookFingerprint(NoteEvent[] items, long windowStart)
+    private static long SectionWindowTicks(MidiMetadata? metadata)
+    {
+        var signature = metadata?.TimeSignatures
+            .Where(x => x.Tick == 0)
+            .LastOrDefault() ?? metadata?.TimeSignatures.OrderBy(x => x.Tick).FirstOrDefault();
+        if (signature is null || signature.Numerator <= 0 || signature.Denominator <= 0)
+            return TempoMap.Ppq * 4L;
+        var ticks = TempoMap.Ppq * 4d * signature.Numerator / signature.Denominator;
+        return Math.Max(TempoMap.Ppq, (long)Math.Round(ticks));
+    }
+
+    private static string HookFingerprint(NoteEvent[] items, long windowStart, long windowLength)
     {
         var hook = items.Where(x => x.Role is TrackRole.Lead or TrackRole.CounterLead)
             .OrderBy(x => x.StartTick).ThenByDescending(x => x.Role == TrackRole.Lead).ThenByDescending(x => x.Pitch).Take(16).ToArray();
         if (hook.Length < 3) return string.Empty;
-        var basePitch = hook[0].Pitch; var grid = Math.Max(1L, TempoMap.Ppq / 4);
+        var basePitch = hook[0].Pitch;
+        var grid = Math.Max(1L, Math.Min(TempoMap.Ppq / 4, windowLength / 12));
         return string.Join(";", hook.Select(note =>
             $"{(int)Math.Round((note.StartTick - windowStart) / (double)grid)}:{note.Pitch - basePitch}:{Math.Max(1, (int)Math.Round(note.DurationTick / (double)grid))}:{(note.Role == TrackRole.Lead ? 'L' : 'C')}"));
     }
@@ -173,8 +186,9 @@ internal static class ArrangementPlanner
                      .GroupBy(x => (x.note.SourceTrack, x.note.SourceChannel, x.note.Program, x.note.Bank, x.note.Role)))
         {
             var partItems = part.ToArray();
-            var referenceItems = partItems.Where(x => !x.note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase)).ToArray();
-            if (referenceItems.Length == 0) referenceItems = partItems;
+            var nonChorusReference = partItems.Where(x => !x.note.Section.Equals("chorus", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var hasContrastReference = nonChorusReference.Length > 0;
+            var referenceItems = hasContrastReference ? nonChorusReference : partItems;
             var referencePitch = Median(referenceItems.Select(x => x.note.Pitch));
             foreach (var section in partItems.GroupBy(x => x.note.Section, StringComparer.OrdinalIgnoreCase))
             {
@@ -182,7 +196,7 @@ internal static class ArrangementPlanner
                 var median = pitches[pitches.Length / 2];
                 var (low, high, _) = PreferredRange(spec.Chip, part.Key.Role, section.Key, spec.ChorusLift);
                 var shift = RangeCorrection(pitches[0], pitches[^1], median, low, high);
-                if (section.Key.Equals("chorus", StringComparison.OrdinalIgnoreCase) &&
+                if (hasContrastReference && section.Key.Equals("chorus", StringComparison.OrdinalIgnoreCase) &&
                     part.Key.Role is TrackRole.Lead or TrackRole.CounterLead or TrackRole.Arp &&
                     spec.ChorusLift > 0 && median + shift <= referencePitch + 2 && median + shift + 12 <= high)
                     shift += 12;
