@@ -18,6 +18,8 @@ public sealed class ChiptunePerformanceRegressionTests
         var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
 
         Assert.Equal(120L, note.DurationTick);
+        Assert.Equal(60L, note.KeyDurationTick);
+        Assert.Equal(60L, note.KeyEndTick);
     }
 
     [Fact]
@@ -36,6 +38,7 @@ public sealed class ChiptunePerformanceRegressionTests
         var note = Assert.Single(ChiptuneParser.Compose(spec).Notes);
 
         Assert.Equal(120L, note.DurationTick);
+        Assert.Equal(60L, note.KeyDurationTick);
         Assert.Contains(new PitchBendPoint(90, 12288), note.PitchBends!);
     }
 
@@ -78,6 +81,42 @@ public sealed class ChiptunePerformanceRegressionTests
         Assert.Equal(low[0].Voice, low[1].Voice);
         Assert.Equal(high[0].Voice, high[1].Voice);
         Assert.NotEqual(low[0].Voice, high[0].Voice);
+    }
+
+    [Fact]
+    public void Fresh_attack_replaces_same_lane_sustain_tail_on_single_voice_chip()
+    {
+        var song = new Song([
+            new NoteEvent(0, 960, 60, 105, TrackRole.Lead,
+                SourceTrack: 0, SourceChannel: 0, Program: 0, KeyDurationTick: 480),
+            new NoteEvent(480, 480, 62, 105, TrackRole.Lead,
+                SourceTrack: 0, SourceChannel: 0, Program: 0, KeyDurationTick: 480)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=pcspeaker fidelity=recognizable format=wav");
+
+        var hardware = VoiceAllocator.Allocate(song, spec);
+        var notes = hardware.Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal(2, notes.Length);
+        Assert.Equal(480, notes[0].DurationTick);
+        Assert.Equal(480, notes[1].StartTick);
+        Assert.Equal(0, hardware.DroppedNotes);
+    }
+
+    [Fact]
+    public void General_MIDI_families_map_to_semantic_chip_patches()
+    {
+        var song = new Song([
+            new NoteEvent(0, 240, 72, 100, TrackRole.Harmony, SourceTrack: 0, SourceChannel: 0, Program: 72),
+            new NoteEvent(240, 240, 72, 100, TrackRole.Harmony, SourceTrack: 1, SourceChannel: 1, Program: 104),
+            new NoteEvent(480, 240, 72, 100, TrackRole.Harmony, SourceTrack: 2, SourceChannel: 2, Program: 108),
+            new NoteEvent(720, 240, 72, 100, TrackRole.Harmony, SourceTrack: 3, SourceChannel: 3, Program: 110)
+        ], TempoMap.Fixed(120));
+        var spec = ChiptuneParser.Parse("notes=C4/4 chip=snes fidelity=recognizable format=wav");
+
+        var notes = VoiceAllocator.Allocate(song, spec).Notes.OrderBy(x => x.StartTick).ToArray();
+
+        Assert.Equal(["flute", "pluck", "bell", "strings"], notes.Select(x => x.Instrument).ToArray());
     }
 
     private static byte[] Midi(byte[] track)
