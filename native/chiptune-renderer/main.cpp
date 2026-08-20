@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <vector>
 #include "pch.h"
 #include "ta-log.h"
 #include "engine/engine.h"
@@ -20,7 +21,6 @@
 
 using json = nlohmann::json;
 
-// The engine references the application's error sink even in a headless build.
 void reportError(String what) {
   logE("%s", what);
   std::cerr << what << '\n';
@@ -37,10 +37,6 @@ static DivSystem systemFor(const std::string& chip) {
   if (chip == "sms") return DIV_SYSTEM_SMS;
   if (chip == "c64_6581") return DIV_SYSTEM_C64_6581;
   if (chip == "c64_8580") return DIV_SYSTEM_C64_8580;
-  // Genesis is a compound machine: six YM2612 FM channels plus the
-  // SN76489 PSG.  The adapter adds the two systems separately below instead
-  // of selecting Furnace's internal compound marker (which is intended for
-  // file import/export, not direct engine dispatch).
   if (chip == "genesis") return DIV_SYSTEM_YM2612;
   if (chip == "pce") return DIV_SYSTEM_PCE;
   if (chip == "atari2600") return DIV_SYSTEM_TIA;
@@ -113,19 +109,16 @@ static void configureStandardMacros(DivInstrument* instrument, const std::string
   instrument->std.waveMacro.open = true;
   instrument->std.waveMacro.len = 1;
   if (chip == "sms") {
-    // SN76489 duty 0/1 means tone; 3 selects the noise generator.
     instrument->std.dutyMacro.open = true;
     instrument->std.dutyMacro.len = 1;
     instrument->std.dutyMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 3 : 0;
     instrument->std.waveMacro.val[0] = 0;
   } else if (chip == "pokey") {
-    // AUDCTL and distortion are exposed as the standard duty/wave macros.
     instrument->std.dutyMacro.open = true;
     instrument->std.dutyMacro.len = 1;
     instrument->std.dutyMacro.val[0] = patch == "bass" ? 0x04 : 0x00;
     instrument->std.waveMacro.val[0] = patch == "drums" || patch == "snare" || patch == "hat" ? 0x08 : patch == "bass" ? 0x0A : 0x00;
   } else if (chip == "atari2600") {
-    // TIA distortion shapes are the standard wave macro.
     instrument->std.waveMacro.val[0] = patch == "bass" ? 0x08 : patch == "drums" ? 0x06 : patch == "snare" ? 0x04 : 0x00;
   } else {
     instrument->std.waveMacro.val[0] = patch == "bass" ? 1 : patch == "drums" ? 2 : 0;
@@ -179,16 +172,11 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->type = DIV_INS_GB;
       instrument->gb.envVol = 15;
       instrument->gb.envDir = 0;
-      // Envelope belongs to the patch, not to the instrument table index.
-      // The old code used `voice` here even though it was an InstrumentId;
-      // almost every MIDI patch consequently received the same GBC envelope.
       instrument->gb.envLen = patch == "pluck" || patch == "kick" || patch == "hat" || patch == "open_hat" ? 1 : patch == "snare" ? 2 : patch == "soft_lead" ? 3 : patch == "strings" || patch == "pad" ? 5 : 4;
       instrument->gb.soundLen = 64;
       instrument->gb.softEnv = patch == "soft_lead" || patch == "strings" || patch == "pad";
       instrument->gb.alwaysInit = true;
     } else if (chip == "genesis" && (voiceClasses[voice] == "psg" || voiceClasses[voice] == "noise")) {
-      // Instrument type follows the target voice class. InstrumentId is only
-      // a compact catalog index and must never imply a hardware channel.
       instrument->type = DIV_INS_STD;
     } else if (chip == "genesis") {
       instrument->type = DIV_INS_FM;
@@ -257,46 +245,71 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
   if (chip == "snes") engine.renderSamples();
 }
 
-static void fillSong(DivEngine& engine, const json& request) {
+struct CompileStats {
+  int notesReceived = 0;
+  int notesWritten = 0;
+  int startRowsAdjusted = 0;
+  int noteOffsSuppressed = 0;
+};
+
+struct CompiledNote {
+  int voice;
+  int startRow;
+  int endRow;
+};
+
+static CompileStats fillSong(DivEngine& engine, const json& request) {
   DivSubSong* sub = engine.song.subsong.at(0);
   int bpm = bounded(request.value("bpm", 140), 40, 300);
   long endTick = request.value("endTick", 960L);
   constexpr int maxRows = 255 * 256;
-  // Use 1/256-note rows for normal songs. For unusually long MIDI files,
-  // reduce resolution only as much as needed to fit Furnace's order table.
-  int ticksPerRow = std::max(15, (int)std::ceil(endTick / (double)maxRows));
+  // Use the finest row grid that fits Furnace's order capacity. Typical MIDI
+  // files end up at 1-10 internal PPQ ticks per row instead of a hard 15-tick
+  // floor, which substantially reduces micro-timing collisions.
+  int ticksPerRow = std::max(1, (int)std::ceil(endTick / (double)maxRows));
   sub->hz = (float)bpm * 16.0f / ticksPerRow;
   sub->speeds.len = 1;
   sub->speeds.val[0] = 1;
   int endRow = std::max(1, (int)std::ceil(endTick / (double)ticksPerRow));
-  // Keep the full Furnace capacity for genuinely long compositions, but do
-  // not export every short song as a 256-row pattern.  The latter adds a
-  // silent tail of roughly 27 seconds at 140 BPM.
   sub->patLen = endRow <= 256 ? bounded(endRow + 1, 2, 256) : 256;
   if (endRow > maxRows) throw std::runtime_error("MIDI is larger than Furnace tracker capacity (255 patterns x 256 rows).");
   sub->ordersLen = std::max(1, (endRow + sub->patLen - 1) / sub->patLen);
+  const int rowCapacity = sub->ordersLen * sub->patLen;
   for (int channel = 0; channel < engine.song.chans; ++channel)
     for (int order = 0; order < sub->ordersLen; ++order)
       sub->orders.ord[channel][order] = (unsigned char)order;
 
-  for (const auto& item : request.at("notes")) {
+  CompileStats stats;
+  std::vector<CompiledNote> compiled;
+  std::map<int, int> lastStartRow;
+  const auto& notes = request.at("notes");
+
+  // Pass 1: place every Note On. Releases are deliberately deferred so an
+  // old Note Off can never occupy the same tracker cell as the next Note On.
+  for (const auto& item : notes) {
+    stats.notesReceived++;
     int voice = item.value("voice", 0);
-    if (voice < 0 || voice >= engine.song.chans) continue;
+    if (voice < 0 || voice >= engine.song.chans)
+      throw std::runtime_error("arranger produced an invalid hardware voice");
     long startTick = item.value("startTick", 0L);
     long durationTick = std::max(1L, item.value("durationTick", 240L));
     int startRow = std::max(0, (int)std::llround(startTick / (double)ticksPerRow));
+    auto previousRow = lastStartRow.find(voice);
+    if (previousRow != lastStartRow.end() && startRow <= previousRow->second) {
+      startRow = previousRow->second + 1;
+      stats.startRowsAdjusted++;
+    }
+    if (startRow >= rowCapacity)
+      throw std::runtime_error("tracker row capacity exhausted while preserving note onsets");
+    lastStartRow[voice] = startRow;
     int endNoteRow = std::max(startRow + 1, (int)std::llround((startTick + durationTick) / (double)ticksPerRow));
-    if (startRow >= sub->ordersLen * sub->patLen) continue;
+    endNoteRow = std::min(endNoteRow, rowCapacity);
+
     int order = startRow / sub->patLen, row = startRow % sub->patLen;
     DivPattern* pattern = sub->pat[voice].getPattern(order, true);
-    // A tracker cell can contain one note only. The allocator normally
-    // guarantees this invariant; keep the bridge defensive for direct JSON
-    // callers so a later event cannot silently replace an earlier one.
-    if (pattern->newData[row][DIV_PAT_NOTE] != -1) continue;
+    if (pattern->newData[row][DIV_PAT_NOTE] != -1)
+      throw std::runtime_error("tracker note-on collision after row allocation");
     pattern->newData[row][DIV_PAT_NOTE] = (short)bounded(item.value("pitch", 60) + 48, 0, 179);
-    // Instrument IDs are dense semantic patch IDs produced by the C# side.
-    // Validate the Furnace capacity; never clamp an invalid ID to another
-    // patch, which was the source of the old percussion corruption.
     int instrumentId = item.value("instrumentId", voice);
     if (instrumentId < 0 || instrumentId >= 180)
       throw std::runtime_error("instrument catalog index exceeds Furnace capacity");
@@ -307,12 +320,10 @@ static void fillSong(DivEngine& engine, const json& request) {
     int volume = bounded(item.value("volume", 127), 0, 127);
     int effectiveVolume = (velocity * expression * volume + 8064) / (127 * 127);
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 1, maxVolume);
+
     int pan = bounded(item.value("pan", 64), 0, 127);
     int nextEffect = 0;
     if (pan != 64) {
-      // Furnace's 88xy effect uses one nibble for left and one for right.
-      // Keep centered MIDI pan implicit so chips without panning support are
-      // unaffected by an unnecessary effect column.
       int left = bounded((127 - pan) * 15 / 127, 0, 15);
       int right = bounded(pan * 15 / 127, 0, 15);
       pattern->newData[row][DIV_PAT_FX(0)] = 0x88;
@@ -322,23 +333,18 @@ static void fillSong(DivEngine& engine, const json& request) {
     int modulation = bounded(item.value("modulation", 0), 0, 127);
     int vibrato = bounded(std::max(request.value("vibrato", 0), modulation * 31 / 127), 0, 31);
     if (vibrato > 0 && nextEffect < DIV_MAX_EFFECTS) {
-      // E4xx sets the tracker vibrato range for the current channel.
       pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE4;
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)vibrato;
       nextEffect++;
     }
     int pitchSlide = bounded(item.value("pitchSlide", 0), -127, 127);
     if (pitchSlide != 0 && nextEffect < DIV_MAX_EFFECTS) {
-      // 01/02 are Furnace tracker pitch-slide effects.  The C# side uses
-      // the signed value as direction and speed, keeping the public command
-      // compact while preserving the articulation in the native renderer.
       pattern->newData[row][DIV_PAT_FX(nextEffect)] = pitchSlide > 0 ? 0x01 : 0x02;
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded(std::abs(pitchSlide), 1, 255);
       nextEffect++;
     }
     int volumeSlide = bounded(item.value("volumeSlide", 0), -127, 127);
     if (volumeSlide != 0 && nextEffect < DIV_MAX_EFFECTS) {
-      // 0Axy: x fades in, y fades out.  Clamp to a tracker nibble.
       int amount = bounded(std::abs(volumeSlide), 1, 15);
       pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0x0A;
       pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)(volumeSlide > 0 ? amount << 4 : amount);
@@ -367,37 +373,53 @@ static void fillSong(DivEngine& engine, const json& request) {
     }
     double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
     double residual = bendSemitones - std::round(bendSemitones);
-    if (std::abs(residual) >= 0.01) {
-      // E5xx is Furnace's fine pitch effect, with 0x80 as the neutral value.
-      // The C# arranger already encoded the integral semitone in the note;
-      // only emit the residual here to avoid applying the bend twice.
-      if (nextEffect < DIV_MAX_EFFECTS) {
-        pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE5;
-        pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
-        nextEffect++;
-      }
+    if (std::abs(residual) >= 0.01 && nextEffect < DIV_MAX_EFFECTS) {
+      pattern->newData[row][DIV_PAT_FX(nextEffect)] = 0xE5;
+      pattern->newData[row][DIV_PAT_FXVAL(nextEffect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
     }
-    if (endNoteRow < sub->ordersLen * sub->patLen) {
-      int offOrder = endNoteRow / sub->patLen, offRow = endNoteRow % sub->patLen;
+
+    compiled.push_back({voice, startRow, endNoteRow});
+    stats.notesWritten++;
+  }
+
+  // Pass 2: place releases only when there is a genuine gap before the next
+  // note on the same hardware voice. A contiguous Note On naturally replaces
+  // the previous note and must take precedence over an OFF at the same row.
+  for (int voice = 0; voice < engine.song.chans; ++voice) {
+    std::vector<CompiledNote> lane;
+    for (const auto& note : compiled) if (note.voice == voice) lane.push_back(note);
+    std::sort(lane.begin(), lane.end(), [](const CompiledNote& a, const CompiledNote& b) { return a.startRow < b.startRow; });
+    for (size_t i = 0; i < lane.size(); ++i) {
+      const auto& current = lane[i];
+      int nextStart = i + 1 < lane.size() ? lane[i + 1].startRow : rowCapacity + 1;
+      if (nextStart <= current.endRow) {
+        stats.noteOffsSuppressed++;
+        continue;
+      }
+      if (current.endRow >= rowCapacity) continue;
+      int offOrder = current.endRow / sub->patLen, offRow = current.endRow % sub->patLen;
       DivPattern* offPattern = sub->pat[voice].getPattern(offOrder, true);
       if (offPattern->newData[offRow][DIV_PAT_NOTE] == -1)
         offPattern->newData[offRow][DIV_PAT_NOTE] = DIV_NOTE_OFF;
+      else
+        stats.noteOffsSuppressed++;
     }
   }
 
-  // Apply pitch-bend points on later tracker rows without emitting another
-  // note. This preserves the original envelope/voice while still allowing a
-  // MIDI bend to move an already-playing chip voice.
-  for (const auto& item : request.at("notes")) {
+  // Apply pitch-bend points without a new Note On. Ignore stale automation
+  // outside the note span; the C# arranger also trims these when stealing a
+  // hardware voice, and this check keeps the native boundary defensive.
+  for (const auto& item : notes) {
     int voice = item.value("voice", 0);
     if (voice < 0 || voice >= engine.song.chans) continue;
     long noteStart = item.value("startTick", 0L);
+    long noteEnd = noteStart + std::max(1L, item.value("durationTick", 240L));
     int bendRange = bounded(item.value("pitchBendRange", 2), 0, 24);
     for (const auto& bend : item.value("pitchBends", json::array())) {
       long tick = bend.value("tick", noteStart);
-      if (tick <= noteStart) continue;
+      if (tick <= noteStart || tick >= noteEnd) continue;
       int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
-      if (rowIndex >= sub->ordersLen * sub->patLen) continue;
+      if (rowIndex >= rowCapacity) continue;
       int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
       DivPattern* pattern = sub->pat[voice].getPattern(order, true);
       int effect = -1;
@@ -406,25 +428,23 @@ static void fillSong(DivEngine& engine, const json& request) {
       }
       if (effect < 0) continue;
       double semitones = (bend.value("value", 8192) - 8192) / 8192.0 * bendRange;
-      double residual = semitones - std::round(semitones);
+      double residualPoint = semitones - std::round(semitones);
       pattern->newData[row][DIV_PAT_FX(effect)] = 0xE5;
-      pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)bounded((int)std::lround(128.0 + residual * 128.0), 0, 255);
+      pattern->newData[row][DIV_PAT_FXVAL(effect)] = (short)bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255);
     }
   }
 
-  // Controller automation also updates an existing channel without a new
-  // note. This keeps sustain, dynamics, pan and modulation expressive while
-  // preserving the patch envelope.
-  for (const auto& item : request.at("notes")) {
+  for (const auto& item : notes) {
     int voice = item.value("voice", 0);
     if (voice < 0 || voice >= engine.song.chans) continue;
     long noteStart = item.value("startTick", 0L);
+    long noteEnd = noteStart + std::max(1L, item.value("durationTick", 240L));
     int velocity = bounded(item.value("velocity", 100), 1, 127);
     for (const auto& point : item.value("controllerChanges", json::array())) {
       long tick = point.value("tick", noteStart);
-      if (tick <= noteStart) continue;
+      if (tick <= noteStart || tick >= noteEnd) continue;
       int rowIndex = std::max(0, (int)std::llround(tick / (double)ticksPerRow));
-      if (rowIndex >= sub->ordersLen * sub->patLen) continue;
+      if (rowIndex >= rowCapacity) continue;
       int order = rowIndex / sub->patLen, row = rowIndex % sub->patLen;
       DivPattern* pattern = sub->pat[voice].getPattern(order, true);
       int volume = bounded(point.value("volume", 127), 0, 127);
@@ -451,10 +471,12 @@ static void fillSong(DivEngine& engine, const json& request) {
       }
     }
   }
+
   engine.song.name = "Homelynx chiptune";
   engine.song.author = "Homelynx";
   engine.calcSongTimestamps();
   engine.syncReset();
+  return stats;
 }
 
 int main(int argc, char** argv) {
@@ -471,11 +493,10 @@ int main(int argc, char** argv) {
     engine.setAudio(DIV_AUDIO_DUMMY);
     if (!engine.init()) throw std::runtime_error("could not initialize Furnace engine");
     if (!engine.changeSystem(0, systemFor(chip), false)) throw std::runtime_error("could not select Furnace system");
-    if (chip == "genesis" && !engine.addSystem(DIV_SYSTEM_SMS)) {
+    if (chip == "genesis" && !engine.addSystem(DIV_SYSTEM_SMS))
       throw std::runtime_error("could not add Genesis SN76489 PSG");
-    }
     configureInstruments(engine, chip, request);
-    fillSong(engine, request);
+    auto stats = fillSong(engine, request);
     DivAudioExportOptions options;
     options.sampleRate = request.value("sampleRate", 44100);
     options.chans = 2;
@@ -486,9 +507,10 @@ int main(int argc, char** argv) {
     if (!engine.saveAudio(argv[1], options)) throw std::runtime_error("Furnace rejected audio export");
     engine.waitAudioFile();
     engine.everythingOK();
-    std::cout << "{\"success\":true,\"backend\":\"furnace\"}\n" << std::flush;
-    // Furnace's headless engine teardown may wait on an audio thread after the
-    // exporter has already joined and closed the WAV. Avoid that second teardown.
+    std::cout << "{\"success\":true,\"backend\":\"furnace\",\"notesReceived\":" << stats.notesReceived
+              << ",\"notesWritten\":" << stats.notesWritten
+              << ",\"startRowsAdjusted\":" << stats.startRowsAdjusted
+              << ",\"noteOffsSuppressed\":" << stats.noteOffsSuppressed << "}\n" << std::flush;
     std::_Exit(0);
   } catch (const std::exception& ex) {
     std::cerr << ex.what() << "\n" << std::flush;
