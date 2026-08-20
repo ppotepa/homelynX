@@ -18,7 +18,7 @@ public sealed class EngineJobsSnapshotSource : ISnapshotSource
             new QueryFieldMeta("progress", "number"),
             new QueryFieldMeta("ownerUserId", "string")
         ],
-        LlmUsage: "Use to query engine job tracker state");
+        ExampleQueries: ["{ \"source\": \"jobs\", \"limit\": 10 }"]);
 
     public Task<object> GetSnapshotAsync(CancellationToken ct = default) =>
         Task.FromResult<object>(Array.Empty<Dictionary<string, object?>>());

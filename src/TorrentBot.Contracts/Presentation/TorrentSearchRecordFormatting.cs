@@ -1,10 +1,10 @@
 namespace TorrentBot.Contracts.Presentation;
 
 /// <summary>
-/// Canonical LLM prompt line formatter for torrent search item records.
+/// Canonical line formatter for torrent search item records.
 /// Records must be dicts produced by <c>TorrentSearchDisplay.BuildItemRecords</c>.
 /// </summary>
-public static class TorrentSearchPromptFormatting
+public static class TorrentSearchRecordFormatting
 {
     public static string FormatLine(IReadOnlyDictionary<string, object?> record)
     {

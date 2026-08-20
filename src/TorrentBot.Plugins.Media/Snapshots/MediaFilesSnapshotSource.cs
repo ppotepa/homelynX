@@ -22,7 +22,6 @@ public sealed class MediaFilesSnapshotSource : ISnapshotSource
             new QueryFieldMeta("size_bytes", "number"),
             new QueryFieldMeta("added_at", "string")
         ],
-        LlmUsage: "Use to answer questions about existing media in the library",
         ExampleQueries:
         [
             "{ \"source\": \"media_files\", \"where\": [{ \"field\": \"type\", \"op\": \"=\", \"value\": \"movie\" }] }"

@@ -2,8 +2,7 @@
 """Homelynx media organizer.
 
 Scans completed downloads and creates a dry-run/apply plan that links/copies/moves
-items into a Jellyfin-friendly media library structure. Rules run first; local
-Ollama LLM is used only as a low-confidence fallback when enabled.
+items into a Jellyfin-friendly media library structure using deterministic rules.
 """
 
 from __future__ import annotations
@@ -15,8 +14,6 @@ import re
 import shutil
 import sys
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -29,14 +26,6 @@ SOFTWARE_EXT = {".iso", ".exe", ".msi", ".deb", ".rpm", ".apk", ".dmg", ".pkg", 
 GAME_HINTS = {"game", "gog", "steam", "repack", "fitgirl", "elamigos", "plaza", "codex"}
 ANIME_HINTS = {"anime", "subsplease", "horriblesubs", "nyaa", "crunchyroll", "bdremux"}
 IGNORE_NAMES = {".ds_store", "thumbs.db", "desktop.ini"}
-LLM_SYSTEM_PROMPT = (
-    "You are Homelynx Media Organizer, a local assistant that classifies completed downloads into a Jellyfin-friendly library. "
-    "Use only provided file names, extensions, sizes, and folder structure. "
-    "Do not invent metadata. Prefer safe conservative classification. "
-    "Return only strict JSON when JSON is requested."
-)
-
-
 @dataclass
 class FileInfo:
     path: str
@@ -81,54 +70,6 @@ def load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
-def audit_llm_call(
-    feature: str,
-    subject_type: str,
-    subject_id: str,
-    model: str,
-    prompt: str,
-    request_json: dict[str, Any],
-    raw_response: str,
-    parsed_response: Any,
-    status: str,
-    duration_ms: float,
-    error: str = "",
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    audit_url = os.getenv("LLM_AUDIT_URL", "").strip()
-    audit_token = os.getenv("LLM_AUDIT_TOKEN", "").strip()
-    if not audit_url or not audit_token:
-        return
-    payload = {
-        "service": "media-organizer",
-        "feature": feature,
-        "subject_type": subject_type,
-        "subject_id": subject_id,
-        "model": model,
-        "status": status,
-        "duration_ms": round(duration_ms, 2),
-        "prompt": prompt,
-        "request_json": request_json,
-        "raw_response": raw_response,
-        "parsed_response": parsed_response,
-        "error": error,
-        "metadata": metadata or {},
-    }
-    try:
-        req = urllib.request.Request(
-            audit_url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {audit_token}",
-            },
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=2).read()
-    except Exception:
-        pass
-
-
 def iter_media_items(source: Path) -> list[Path]:
     if not source.exists():
         return []
@@ -155,13 +96,6 @@ def collect_files(item: Path, max_files: int = 300) -> list[FileInfo]:
             continue
         files.append(FileInfo(path=str(path), size_bytes=size, ext=path.suffix.lower()))
     return files
-
-
-def dominant_extensions(files: list[FileInfo]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for file in files:
-        counts[file.ext] = counts.get(file.ext, 0) + 1
-    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
 def audio_tag_guess(files: list[FileInfo], item_name: str) -> tuple[str, str]:
@@ -219,61 +153,6 @@ def classify_rules(item: Path, files: list[FileInfo]) -> tuple[str, float, str, 
         return "movies", 0.82, "video file detected without episode pattern", f"movies/{title}"
 
     return "other", 0.35, "no strong rule matched", f"other/{safe_name(name)}"
-
-
-def ask_llm(base_url: str, model: str, item: Path, files: list[FileInfo], timeout: int) -> dict[str, Any] | None:
-    sample = files[:80]
-    prompt = (
-        "Classify this downloaded item for a Jellyfin media library. "
-        "Return strict JSON only with keys category, confidence, target_path, reason. "
-        "category must be one of movies, shows, music, books, anime, software, games, other. "
-        "target_path must be relative and start with the category. If unsure use other.\n\n"
-        + json.dumps({
-            "item_name": item.name,
-            "files": [asdict(f) for f in sample],
-            "extensions": dominant_extensions(files),
-            "total_files": len(files),
-        }, ensure_ascii=True)
-    )
-    payload = {
-        "model": model,
-        "stream": False,
-        "system": LLM_SYSTEM_PROMPT,
-        "prompt": prompt,
-    }
-    started = time.monotonic()
-    text = ""
-    try:
-        req = urllib.request.Request(
-            f"{base_url.rstrip('/')}/api/generate",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        text = raw.get("response", "").strip()
-        match = re.search(r"\{.*\}", text, re.S)
-        if not match:
-            audit_llm_call("classification", "download_item", item.name, model, prompt, payload, text, {}, "error", (time.monotonic() - started) * 1000, error="LLM response did not contain JSON", metadata={"files": len(files)})
-            return None
-        data = json.loads(match.group(0))
-        category = str(data.get("category", "other")).lower()
-        if category not in CATEGORIES:
-            category = "other"
-        confidence = float(data.get("confidence", 0.0))
-        target_path = safe_relative_target(str(data.get("target_path") or f"{category}/{item.name}"), category)
-        result = {
-            "category": category,
-            "confidence": max(0.0, min(confidence, 1.0)),
-            "target_path": target_path,
-            "reason": str(data.get("reason") or "LLM classification"),
-        }
-        audit_llm_call("classification", "download_item", item.name, model, prompt, payload, text, result, "success", (time.monotonic() - started) * 1000, metadata={"files": len(files)})
-        return result
-    except (OSError, ValueError, KeyError, urllib.error.URLError, TimeoutError) as exc:
-        audit_llm_call("classification", "download_item", item.name, model, prompt, payload, text, {}, "error", (time.monotonic() - started) * 1000, error=str(exc), metadata={"files": len(files)})
-        return None
 
 
 def safe_relative_target(value: str, category: str) -> str:

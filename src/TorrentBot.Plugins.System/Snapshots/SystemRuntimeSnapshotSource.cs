@@ -15,7 +15,6 @@ public sealed class SystemRuntimeSnapshotSource : ISnapshotSource
             new QueryFieldMeta("status", "string"),
             new QueryFieldMeta("detail", "string")
         ],
-        LlmUsage: "Use to inspect engine/runtime state via query.execute",
         ExampleQueries: ["{ \"source\": \"system.runtime\", \"limit\": 10 }"]);
 
     public Task<object> GetSnapshotAsync(CancellationToken ct = default) =>

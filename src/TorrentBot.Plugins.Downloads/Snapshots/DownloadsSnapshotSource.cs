@@ -40,7 +40,6 @@ public sealed class DownloadsSnapshotSource : ISnapshotSource
             new QueryFieldMeta("category", "string"),
             new QueryFieldMeta("eta", "number")
         ],
-        LlmUsage: "Use to inspect active, paused, and completed downloads WITH details: name, progress (%), dlspeed/upspeed, eta (seconds remaining), status (downloading/paused/seeding etc). Prefer this for 'pokaż pobierania', 'status downloadów', 'jaki postęp'.",
         ExampleQueries:
         [
             "{ \"source\": \"downloads\", \"where\": [{ \"field\": \"status\", \"op\": \"=\", \"value\": \"downloading\" }] }"

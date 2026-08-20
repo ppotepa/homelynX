@@ -30,7 +30,7 @@ public static class TorrentSearchDisplay
     }
 
     public static string FormatPromptLine(IReadOnlyDictionary<string, object?> record) =>
-        TorrentSearchPromptFormatting.FormatLine(record);
+        TorrentSearchRecordFormatting.FormatLine(record);
 
     public static bool TrySelectGlobalIndex(
         int displayedIndex,

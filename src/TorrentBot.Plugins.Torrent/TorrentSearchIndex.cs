@@ -1,7 +1,7 @@
 namespace TorrentBot.Plugins.Torrent;
 
 /// <summary>
-/// Converts 1-based displayed search indexes (UI, /select N, LLM) to 0-based storage indexes.
+/// Converts 1-based displayed search indexes (UI, /select N) to 0-based storage indexes.
 /// </summary>
 public static class TorrentSearchIndex
 {

@@ -16,7 +16,7 @@ internal static class DownloaderProviderNormalizer
     };
 
     /// <summary>
-    /// Maps LLM/user provider values to registered downloader types (torrent, media).
+    /// Maps user provider values to registered downloader types (torrent, media).
     /// Jackett indexer names, "all", empty strings, etc. fall back to torrent search.
     /// </summary>
     public static string Normalize(string? provider)

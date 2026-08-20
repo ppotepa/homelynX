@@ -55,7 +55,6 @@ public sealed class TorrentSearchSnapshotService : ISnapshotSource
         Name,
         "Last torrent search results (1-based numbered). Use to resolve 'select 1', 'first result' etc.",
         [new QueryFieldMeta("query", "string"), new QueryFieldMeta("results", "array")],
-        LlmUsage: "Use this to see recent numbered search hits for select_result (indexes are 1-based, matching display).",
         ExampleQueries: ["show last search results"]);
 
     public Task<object> GetSnapshotAsync(CancellationToken ct = default)

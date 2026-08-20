@@ -29,12 +29,6 @@ if [[ -z "$JACKETT_URL" && -n "$JACKETT_HOST" ]]; then
     [[ "$JACKETT_HTTPS" == "true" ]] && JACKETT_SCHEME="https"
     export JACKETT_URL="$JACKETT_SCHEME://localhost:$JACKETT_PORT"
 fi
-if [[ -z "$LLM_URL" && -n "$LLM_HOST" ]]; then
-    LLM_PORT="${LLM_PORT:-11434}"
-    LLM_SCHEME="http"
-    [[ "$LLM_HTTPS" == "true" ]] && LLM_SCHEME="https"
-    export LLM_URL="$LLM_SCHEME://localhost:$LLM_PORT"
-fi
 # Map Docker-style env vars to CLI-style env vars
 [[ -n "$QBIT_USERNAME" ]] && export QBITTORRENT_USER="${QBITTORRENT_USER:-$QBIT_USERNAME}"
 [[ -n "$QBIT_PASSWORD" ]] && export QBITTORRENT_PASS="${QBITTORRENT_PASS:-$QBIT_PASSWORD}"

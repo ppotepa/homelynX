@@ -46,7 +46,7 @@ log_step "Verifying response"
 assert_not_empty "$RESPONSE" "Response is not empty" || exit_test "$TEST_ID" "FAIL" "Empty response"
 assert_response_time 5 "Response time < 5s" || exit_test "$TEST_ID" "FAIL" "Response too slow"
 
-# Check if response contains torrent information (LLM should understand Polish)
+# Check if response contains torrent information and deterministic Polish output
 if [[ "$TORRENT_COUNT" -gt 0 ]]; then
     assert_contains "$RESPONSE" "download" "Response mentions downloads" || \
     assert_contains "$RESPONSE" "pobier" "Response contains Polish word for download" || \

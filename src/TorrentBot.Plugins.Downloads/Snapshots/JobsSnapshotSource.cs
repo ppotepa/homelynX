@@ -26,7 +26,6 @@ public sealed class JobsSnapshotSource : ISnapshotSource
             new QueryFieldMeta("name", "string"),
             new QueryFieldMeta("provider", "string")
         ],
-        LlmUsage: "Use to inspect long-lived download jobs and their progress",
         ExampleQueries:
         [
             "{ \"source\": \"jobs\", \"where\": [{ \"field\": \"status\", \"op\": \"=\", \"value\": \"running\" }] }"

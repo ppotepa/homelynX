@@ -10,7 +10,7 @@ namespace TorrentBot.Engine.Tests.Integration;
 public sealed class AuditPersistenceIntegrationTests
 {
     [Fact]
-    public async Task Portal_audit_sink_records_capability_execution()
+    public async Task Sqlite_audit_sink_records_capability_execution()
     {
         var audit = SqliteAuditSink.CreateInMemory();
         var engine = EngineBootstrap.Create(auditSink: audit);
