@@ -36,6 +36,11 @@ static bool isPercussionPatch(const std::string& patch) {
          patch == "open_hat" || patch == "tom" || patch == "crash" || patch == "ride";
 }
 
+static bool isNoisePercussionPatch(const std::string& patch) {
+  return patch == "drums" || patch == "snare" || patch == "hat" || patch == "open_hat" ||
+         patch == "crash" || patch == "ride";
+}
+
 static DivSystem systemFor(const std::string& chip) {
   if (chip == "gb" || chip == "gbc" || chip == "gameboy") return DIV_SYSTEM_GB;
   if (chip == "nes") return DIV_SYSTEM_NES;
@@ -99,7 +104,7 @@ static void configureVolumeShape(DivInstrument* instrument, const std::string& p
   else if (patch == "open_hat" || patch == "crash" || patch == "ride" || patch == "drums")
     setSequence(instrument->std.volMacro, {maxVolume, maxVolume*7/8, maxVolume*3/4, maxVolume*5/8, maxVolume/2, maxVolume/3, maxVolume/5, 0}, 2);
   else if (patch == "pluck")
-    setSequence(instrument->std.volMacro, {maxVolume, maxVolume*7/8, maxVolume*2/3, maxVolume/2, maxVolume/3, maxVolume/4}, 1);
+    setSequence(instrument->std.volMacro, {maxVolume, maxVolume*7/8, maxVolume*2/3, maxVolume/2, maxVolume/3, maxVolume/4});
   else if (patch == "bell")
     setSequence(instrument->std.volMacro, {maxVolume, maxVolume*7/8, maxVolume*3/4, maxVolume*5/8, maxVolume/2, maxVolume*3/8, maxVolume/4}, 2);
   else if (patch == "epiano")
@@ -109,7 +114,7 @@ static void configureVolumeShape(DivInstrument* instrument, const std::string& p
   else if (patch == "strings" || patch == "pad")
     setSequence(instrument->std.volMacro, {maxVolume/3, maxVolume/2, maxVolume*2/3, maxVolume*5/6, maxVolume, maxVolume*7/8}, 2);
   else if (patch == "brass")
-    setSequence(instrument->std.volMacro, {maxVolume*2/3, maxVolume, maxVolume*7/8}, 1);
+    setSequence(instrument->std.volMacro, {maxVolume*2/3, maxVolume, maxVolume*7/8});
   else if (patch == "bass")
     setSequence(instrument->std.volMacro, {maxVolume, maxVolume*7/8, maxVolume*3/4}, 2);
   else
@@ -203,7 +208,9 @@ static int makeWave(DivEngine& engine, const std::string& patch) {
   for (int i = 0; i < wave->len; ++i) {
     double phase = (double)i / wave->len;
     double normalized;
-    if (patch == "bass") normalized = .50 + .34 * (1.0 - 2.0 * phase) + .14 * std::sin(phase * 2.0 * M_PI);
+    if (patch == "kick") normalized = .5 + .45 * std::sin(phase * 2.0 * M_PI);
+    else if (patch == "tom") normalized = .5 + .42 * std::sin(phase * 2.0 * M_PI) + .06 * std::sin(phase * 4.0 * M_PI);
+    else if (patch == "bass") normalized = .50 + .34 * (1.0 - 2.0 * phase) + .14 * std::sin(phase * 2.0 * M_PI);
     else if (patch == "bell") normalized = .5 + .28 * std::sin(phase * 2.0 * M_PI) + .15 * std::sin(phase * 3.0 * 2.0 * M_PI) + .07 * std::sin(phase * 5.0 * 2.0 * M_PI);
     else if (patch == "strings" || patch == "pad" || patch == "epiano") normalized = .5 + .38 * std::sin(phase * 2.0 * M_PI) + .08 * std::sin(phase * 2.0 * 2.0 * M_PI);
     else if (patch == "soft_lead" || patch == "flute" || patch == "reed") normalized = std::sin(phase * 2.0 * M_PI) * .43 + .5;
@@ -220,22 +227,19 @@ static void configureStandardMacros(DivInstrument* instrument, const std::string
 
   if (chip == "sms") {
     if (voiceClass == "noise") {
-      int noiseMode = patch == "hat" ? 0 : 1; // preset-frequency short/long noise; never slave drums to tone 3
+      int noiseMode = patch == "hat" ? 0 : 1;
       setSequence(instrument->std.dutyMacro, {noiseMode});
     }
   } else if (chip == "pce") {
-    if (isPercussionPatch(patch)) setSequence(instrument->std.dutyMacro, {1});
+    if (isNoisePercussionPatch(patch)) setSequence(instrument->std.dutyMacro, {1});
   } else if (chip == "pokey") {
-    // POKEY waveform IDs are 0..7. The old renderer used values such as 0x0A,
-    // which are not waveform IDs and could turn pitched parts into noise.
-    int waveform = 5; // square
-    if (patch == "bass" || patch == "kick" || patch == "tom") waveform = 6;
+    int waveform = 5;
+    if (patch == "kick" || patch == "tom") waveform = 6;
     else if (patch == "bell") waveform = 1;
     else if (patch == "reed" || patch == "flute") waveform = 7;
     else if (isPercussionPatch(patch)) waveform = patch == "hat" ? 0 : 4;
     setSequence(instrument->std.waveMacro, {waveform});
   } else if (chip == "atari2600") {
-    // TIA waveform 8 is noise; bass must use a low square family (C/D), not 8.
     int waveform = 4;
     if (patch == "bass" || patch == "kick" || patch == "tom") waveform = 0x0c;
     else if (patch == "reed" || patch == "flute" || patch == "bell") waveform = 7;
@@ -262,7 +266,19 @@ static void configureFmPatch(DivInstrument* instrument, const std::string& patch
   instrument->fm.fms = 0;
   instrument->fm.ams = 0;
 
-  if (patch == "epiano") {
+  if (patch == "kick") {
+    instrument->fm.alg = 7; instrument->fm.fb = 3;
+    setFmOperator(instrument->fm.op[0],31,24,24,15,15,12,1);
+    setFmOperator(instrument->fm.op[1],31,26,24,15,15,34,1);
+    setFmOperator(instrument->fm.op[2],31,25,24,15,15,42,2);
+    setFmOperator(instrument->fm.op[3],31,22,22,15,15,4,1);
+  } else if (patch == "tom") {
+    instrument->fm.alg = 7; instrument->fm.fb = 2;
+    setFmOperator(instrument->fm.op[0],31,18,18,13,15,16,1);
+    setFmOperator(instrument->fm.op[1],31,20,18,13,15,38,2);
+    setFmOperator(instrument->fm.op[2],31,20,18,13,15,44,3);
+    setFmOperator(instrument->fm.op[3],31,17,16,12,15,5,1);
+  } else if (patch == "epiano") {
     instrument->fm.alg = 4; instrument->fm.fb = 2;
     setFmOperator(instrument->fm.op[0],31,10,8,7,7,20,1);
     setFmOperator(instrument->fm.op[1],31,13,10,8,10,34,3);
@@ -294,11 +310,11 @@ static void configureFmPatch(DivInstrument* instrument, const std::string& patch
     setFmOperator(instrument->fm.op[3],31,1,0,5,0,8,1);
   } else if (patch == "strings" || patch == "pad") {
     instrument->fm.alg = 7; instrument->fm.fb = 1;
-    int attack = patch == "pad" ? 11 : 16;
-    setFmOperator(instrument->fm.op[0],attack,4,2,5,4,18,1);
-    setFmOperator(instrument->fm.op[1],attack+2,4,2,5,4,28,2);
-    setFmOperator(instrument->fm.op[2],attack,4,2,5,4,36,3);
-    setFmOperator(instrument->fm.op[3],attack+2,4,2,5,4,10,1);
+    int fmAttack = patch == "pad" ? 11 : 16;
+    setFmOperator(instrument->fm.op[0],fmAttack,4,2,5,4,18,1);
+    setFmOperator(instrument->fm.op[1],fmAttack+2,4,2,5,4,28,2);
+    setFmOperator(instrument->fm.op[2],fmAttack,4,2,5,4,36,3);
+    setFmOperator(instrument->fm.op[3],fmAttack+2,4,2,5,4,10,1);
   } else if (patch == "pluck") {
     instrument->fm.alg = 4; instrument->fm.fb = 3;
     setFmOperator(instrument->fm.op[0],31,18,16,11,15,18,1);
@@ -388,8 +404,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->gb.alwaysInit = true;
       if (instrument->gb.softEnv) configureVolumeShape(instrument, patch, 15);
       if (voiceClass == "pulse") {
-        int dutyMode = patch == "lead" || patch == "pluck" || patch == "epiano" ? 1 :
-                       patch == "brass" ? 3 : 2;
+        int dutyMode = patch == "lead" || patch == "pluck" || patch == "epiano" ? 1 : patch == "brass" ? 3 : 2;
         setSequence(instrument->std.dutyMacro, {dutyMode});
       } else if (voiceClass == "noise") {
         setSequence(instrument->std.dutyMacro, {patch == "hat" || patch == "open_hat" ? 1 : 0});
@@ -401,22 +416,35 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
     } else if (chip == "genesis") {
       configureFmPatch(instrument, patch);
     } else if (chip == "c64_6581" || chip == "c64_8580") {
-      instrument->c64.triOn = patch == "bell" || patch == "strings" || patch == "flute" || patch == "reed" || wave == "triangle";
-      instrument->c64.sawOn = patch == "bass" || patch == "brass" || patch == "organ" || patch == "pad" || wave == "saw";
-      instrument->c64.pulseOn = patch == "lead" || patch == "soft_lead" || patch == "pluck" || patch == "epiano" || wave == "square" || wave == "fm";
-      instrument->c64.noiseOn = isPercussionPatch(patch) || wave == "noise";
+      const bool percussion = isPercussionPatch(patch);
+      const bool waveOverride = patch == "lead";
+      if (percussion) {
+        instrument->c64.triOn = false;
+        instrument->c64.sawOn = false;
+        instrument->c64.pulseOn = false;
+        instrument->c64.noiseOn = true;
+      } else {
+        instrument->c64.triOn = patch == "bell" || patch == "strings" || patch == "flute" || patch == "reed" ||
+                                (waveOverride && wave == "triangle");
+        instrument->c64.sawOn = patch == "bass" || patch == "brass" || patch == "organ" || patch == "pad" ||
+                                (waveOverride && wave == "saw");
+        instrument->c64.pulseOn = patch == "lead" || patch == "soft_lead" || patch == "pluck" || patch == "epiano" ||
+                                  patch == "organ" || patch == "strings" || patch == "pad" ||
+                                  (waveOverride && (wave == "square" || wave == "fm"));
+        instrument->c64.noiseOn = waveOverride && wave == "noise";
+      }
       if (!instrument->c64.triOn && !instrument->c64.sawOn && !instrument->c64.pulseOn && !instrument->c64.noiseOn)
         instrument->c64.pulseOn = true;
       int patchAttack = patch == "pad" || patch == "strings" ? 10 : patch == "brass" ? 3 : attack;
       int patchDecay = patch == "bell" || patch == "epiano" ? 12 : decay;
-      int patchSustain = isPercussionPatch(patch) ? 0 : patch == "pad" || patch == "strings" ? 12 : sustain;
+      int patchSustain = percussion ? 0 : patch == "pad" || patch == "strings" ? 12 : sustain;
       int patchRelease = patch == "bell" || patch == "strings" || patch == "pad" ? 12 : release;
       instrument->c64.a = (unsigned char)bounded(patchAttack, 0, 15);
       instrument->c64.d = (unsigned char)bounded(patchDecay, 0, 15);
       instrument->c64.s = (unsigned char)bounded(patchSustain, 0, 15);
       instrument->c64.r = (unsigned char)bounded(patchRelease, 0, 15);
       instrument->c64.duty = (unsigned short)((patch == "soft_lead" ? 35 : duty) * 4095 / 100);
-      instrument->c64.toFilter = patch == "bass" || patch == "pad" || patch == "strings" || patch == "brass";
+      instrument->c64.toFilter = !percussion && (patch == "bass" || patch == "pad" || patch == "strings" || patch == "brass");
       instrument->c64.initFilter = instrument->c64.toFilter;
       instrument->c64.lp = true;
       int requestedCutoff = bounded(request.value("filter", 0), 0, 2047);
@@ -425,7 +453,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
 
       if (instrument->c64.pulseOn && (patch == "lead" || patch == "soft_lead" || patch == "pluck" || patch == "strings" || patch == "pad")) {
         instrument->c64.dutyIsAbs = true;
-        if (patch == "pluck") setSequence(instrument->std.dutyMacro, {900,1200,1600,1900}, 1);
+        if (patch == "pluck") setSequence(instrument->std.dutyMacro, {900,1200,1600,1900});
         else if (patch == "soft_lead" || patch == "strings" || patch == "pad") setSequence(instrument->std.dutyMacro, {1200,1450,1750,2050,1750,1450}, 3, 0);
         else setSequence(instrument->std.dutyMacro, {900,1200,1500,1800,1500,1200}, 2, 0);
       }
@@ -457,8 +485,6 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       instrument->amiga.useSample = true;
       instrument->amiga.initSample = sampleIndex;
       if (isPercussionPatch(patch)) {
-        // GM drum note numbers select drum identity; they must not transpose the
-        // sample. C-4 is internal Furnace note 108 and matches centerRate 16744.
         instrument->amiga.useNoteMap = true;
         for (int i = 0; i < 180; ++i) {
           instrument->amiga.noteMap[i].map = (short)sampleIndex;
@@ -486,13 +512,7 @@ static void configureInstruments(DivEngine& engine, const std::string& chip, con
       int pceWave = makeWave(engine, patch);
       setSequence(instrument->std.waveMacro, {pceWave});
       configureStandardMacros(instrument, chip, patch, voiceClass);
-    } else if (chip == "pokey") {
-      configureStandardMacros(instrument, chip, patch, voiceClass);
-    } else if (chip == "pcspeaker" || chip == "zx_spectrum") {
-      configureStandardMacros(instrument, chip, patch, voiceClass);
-    } else if (chip == "atari2600") {
-      configureStandardMacros(instrument, chip, patch, voiceClass);
-    } else if (chip == "sms") {
+    } else if (chip == "pokey" || chip == "pcspeaker" || chip == "zx_spectrum" || chip == "atari2600" || chip == "sms") {
       configureStandardMacros(instrument, chip, patch, voiceClass);
     }
   }
@@ -528,12 +548,17 @@ static int appendEffect(DivPattern* pattern, int row, int effect, int value) {
   return -1;
 }
 
+static void requireEffect(DivPattern* pattern, int row, int effect, int value, const char* name) {
+  if (appendEffect(pattern, row, effect, value) < 0)
+    throw std::runtime_error(std::string("tracker effect capacity exhausted while writing ") + name);
+}
+
 static void writeVibrato(DivPattern* pattern, int row, int control) {
   control = bounded(control, 0, 31);
-  if (control > 0) appendEffect(pattern, row, 0xE4, control);
+  if (control > 0) requireEffect(pattern, row, 0xE4, control, "vibrato range");
   int depth = control == 0 ? 0 : bounded((control + 1) / 2, 1, 15);
   int speed = control == 0 ? 0 : 5;
-  appendEffect(pattern, row, 0x04, (speed << 4) | depth);
+  requireEffect(pattern, row, 0x04, (speed << 4) | depth, "vibrato");
 }
 
 static CompileStats fillSong(DivEngine& engine, const json& request) {
@@ -594,13 +619,19 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     int effectiveVolume = (velocity * expression * volume + 8064) / (127 * 127);
     pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 0, maxVolume);
 
-    // Reset channel-stateful panning and vibrato on every Note On. Without the
-    // reset a pan/mod-wheel state from a stolen previous voice leaked forward.
     auto [leftPan,rightPan] = panLevels(item.value("pan", 64));
-    appendEffect(pattern, row, 0x08, (leftPan << 4) | rightPan);
+    requireEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "panning");
     int modulation = bounded(item.value("modulation", 0), 0, 127);
-    int vibratoControl = bounded(std::max(request.value("vibrato", 0), modulation * 31 / 127), 0, 31);
-    writeVibrato(pattern, row, vibratoControl);
+    int explicitVibrato = bounded(request.value("vibrato", 0), 0, 31);
+    int midiVibrato = modulation * 8 / 127;
+    writeVibrato(pattern, row, std::max(explicitVibrato, midiVibrato));
+
+    // Fine-pitch reset is channel-stateful and therefore critical. Write it
+    // before optional articulation effects so stale pitch can never leak from
+    // the previous note when the effect columns are crowded.
+    double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
+    double residual = bendSemitones - std::round(bendSemitones);
+    requireEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residual * 128.0), 0, 255), "fine pitch");
 
     int pitchSlide = bounded(item.value("pitchSlide", 0), -127, 127);
     if (pitchSlide != 0)
@@ -620,10 +651,6 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
     if (noteDelay > 0) appendEffect(pattern, row, 0xED, ticksToRows(noteDelay));
     int noteCut = item.value("noteCutTicks", -1);
     if (noteCut >= 0) appendEffect(pattern, row, 0xEC, ticksToRows(noteCut));
-
-    double bendSemitones = (item.value("pitchBend", 8192) - 8192) / 8192.0 * item.value("pitchBendRange", 2);
-    double residual = bendSemitones - std::round(bendSemitones);
-    appendEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residual * 128.0), 0, 255));
 
     compiled.push_back({voice, startRow, endNoteRow});
     stats.notesWritten++;
@@ -676,7 +703,7 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
         delta = targetCoarse - coarse;
       }
       double residualPoint = semitones - targetCoarse;
-      appendEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255));
+      requireEffect(pattern, row, 0xE5, bounded((int)std::lround(128.0 + residualPoint * 128.0), 0, 255), "pitch bend");
     }
   }
 
@@ -700,9 +727,9 @@ static CompileStats fillSong(DivEngine& engine, const json& request) {
       pattern->newData[row][DIV_PAT_VOL] = (short)bounded((effectiveVolume * maxVolume + 63) / 127, 0, maxVolume);
 
       auto [leftPan,rightPan] = panLevels(point.value("pan", 64));
-      appendEffect(pattern, row, 0x08, (leftPan << 4) | rightPan);
+      requireEffect(pattern, row, 0x08, (leftPan << 4) | rightPan, "controller panning");
       int modulation = bounded(std::max(point.value("modulation", 0), point.value("aftertouch", 0)), 0, 127);
-      writeVibrato(pattern, row, modulation * 31 / 127);
+      writeVibrato(pattern, row, modulation * 8 / 127);
     }
   }
 
