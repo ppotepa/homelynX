@@ -11,7 +11,7 @@ internal static partial class ChiptuneParser
     private static readonly string[] Formats = ["wav", "mp3", "ogg", "flac"];
     private static readonly string[] GenerateModes = ["scale", "arp", "riff", "melody", "song", "bassline", "drums"];
     private static readonly string[] InstrumentRoles = ["lead", "counter", "bass", "harmony", "arp", "drums"];
-    private static readonly string[] Sections = ["intro", "verse", "chorus", "outro", "theme", "riff", "body"];
+    private static readonly string[] Sections = ["intro", "verse", "chorus", "bridge", "outro", "theme", "riff", "body"];
 
     public static ChiptuneSpec Parse(string input)
     {
@@ -46,6 +46,8 @@ internal static partial class ChiptuneParser
             .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
 
         var style = Get(o, "style", "arcade").ToLowerInvariant(); Ensure(style, Styles, "style");
+        var generate = o.GetValueOrDefault("generate")?.ToLowerInvariant();
+        if (generate is not null) Ensure(generate, GenerateModes, "generate");
         var format = Get(o, "format", "mp3").ToLowerInvariant(); Ensure(format, Formats, "format");
         var direction = Get(o, "direction", "updown").ToLowerInvariant(); Ensure(direction, ["up", "down", "updown", "random_walk"], "direction");
         var tempoMode = Get(o, "tempo_mode", hasMidi && !o.ContainsKey("bpm") ? "file" : "override").ToLowerInvariant(); Ensure(tempoMode, ["file", "override"], "tempo_mode");
@@ -56,8 +58,8 @@ internal static partial class ChiptuneParser
         var wave = Get(o, "wave", "square").ToLowerInvariant(); Ensure(wave, ["square", "triangle", "saw", "noise", "sine", "fm"], "wave");
         var sampleRate = Int(o, "sample_rate", 44_100, 44_100, 48_000);
         if (sampleRate is not (44_100 or 48_000)) throw new FormatException("sample_rate must be 44100 or 48000.");
-        var generate = o.GetValueOrDefault("generate")?.ToLowerInvariant();
-        if (generate is not null) Ensure(generate, GenerateModes, "generate");
+        var defaultBpm = hasGenerate ? DefaultGeneratedBpm(style) : 140;
+        var defaultBars = generate == "song" ? 8 : 4;
         _ = MusicTheory.ParseKey(Get(o, "key", "C"));
         _ = MusicTheory.GetScale(Get(o, "scale", "major"));
 
@@ -69,10 +71,10 @@ internal static partial class ChiptuneParser
             LeadInstrument=leadInstrument, CounterInstrument=counterInstrument, BassInstrument=bassInstrument,
             HarmonyInstrument=harmonyInstrument, ArpInstrument=arpInstrument, DrumsInstrument=drumsInstrument,
             SectionInstruments=sectionInstruments,
-            Style=style, Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",140,40,300), TempoMode=tempoMode, ChipExplicit=chipExplicit,
+            Style=style, Key=Get(o,"key","C"), Scale=Get(o,"scale","major"), Bpm=Int(o,"bpm",defaultBpm,40,300), TempoMode=tempoMode, ChipExplicit=chipExplicit,
             Fidelity=fidelity, RegisterMode=registerMode, ChorusLift=Int(o,"chorus_lift",12,0,24),
             Transpose=Int(o,"transpose",0,-24,24), Octave=Int(o,"octave",4,0,8), Octaves=Int(o,"octaves",2,1,4),
-            Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",4,1,32), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),
+            Range=o.GetValueOrDefault("range"), Direction=direction, Bars=Int(o,"bars",defaultBars,1,32), Seed=Int(o,"seed",0,int.MinValue,int.MaxValue),
             Progression=o.GetValueOrDefault("progression"),
             Quantize=quantize, Format=format, SampleRate=sampleRate, Repeat=Int(o,"repeat",1,1,8),
             Wave=wave, Duty=Int(o,"duty",25,1,99), Attack=Int(o,"attack",0,0,31), Decay=Int(o,"decay",8,0,31),
@@ -194,6 +196,21 @@ internal static partial class ChiptuneParser
         Ensure(value, Instruments, key == "instrument" ? "instrument" : $"{key} instrument");
         return value;
     }
+
+    private static int DefaultGeneratedBpm(string style) => style switch
+    {
+        "happy" => 156,
+        "racing" => 174,
+        "chipbreak" => 172,
+        "boss" => 150,
+        "jrpg" => 138,
+        "dark" => 126,
+        "space" => 124,
+        "menu" => 118,
+        "dungeon" => 112,
+        "minimal" => 108,
+        _ => 150
+    };
 
     internal static IReadOnlyList<string> AvailableInstruments => Instruments;
     internal static IReadOnlyList<string> AvailableChips => Chips;
