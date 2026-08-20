@@ -67,7 +67,8 @@ public sealed class MediaDownloader : IDownloader
         var format = ParseFormat(request.MediaFormat);
         var quality = ParseQuality(format, request.MediaQuality);
         var subtitles = ParseSubtitles(request.MediaSubtitles);
-        LogProbe(url, "starting");
+        var cookieFile = ResolveCookiesFile(url);
+        LogProbe(url, $"starting cookies={(cookieFile is null ? "none" : CookieStem(url))}");
         MediaProbe probe;
         try
         {
@@ -75,7 +76,10 @@ public sealed class MediaDownloader : IDownloader
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogProbe(url, $"failed: {exception.Message}");
+            var hint = IsFacebookUrl(url) && cookieFile is null
+                ? " Facebook/Instagram zwykle wymagają cookies z zalogowanej sesji; dodaj cookies/facebook.txt w katalogu projektu."
+                : string.Empty;
+            LogProbe(url, $"failed: {exception.Message}{hint}");
             throw;
         }
         var clip = ParseClip(request.MediaClipStart, request.MediaClipEnd, probe.DurationSeconds);

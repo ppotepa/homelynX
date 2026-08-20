@@ -14,6 +14,7 @@ public static class SlashCommandRouting
             ["/disk"] = "system.disk_usage",
             ["/time"] = "tools.time",
             ["/service"] = "tools.services",
+            ["/download_media"] = "download.start_media",
         };
 
     public static string NormalizeCommand(string raw)
