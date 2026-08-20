@@ -27,6 +27,17 @@ public sealed class ChiptuneSectionInstrumentOverrideTests
     }
 
     [Fact]
+    public void Bridge_section_override_is_supported_for_long_songs()
+    {
+        var spec = ChiptuneParser.Parse("generate=song chip=snes style=happy bars=16 seed=42 bridge_lead=bell");
+        var planned = ArrangementPlanner.Plan(ChiptuneParser.Compose(spec), spec);
+        var bridgeLead = planned.Notes.Where(x => x.Section == "bridge" && x.Role == TrackRole.Lead).ToArray();
+
+        Assert.NotEmpty(bridgeLead);
+        Assert.All(bridgeLead, x => Assert.Equal("bell", x.Patch));
+    }
+
+    [Fact]
     public void Section_override_wins_only_inside_matching_section()
     {
         var spec = ChiptuneParser.Parse("generate=song chip=nes style=happy bars=8 seed=42 lead=bell chorus_lead=brass");
@@ -67,7 +78,7 @@ public sealed class ChiptuneSectionInstrumentOverrideTests
     [Fact]
     public void Invalid_section_or_patch_is_rejected_at_parse_time()
     {
-        Assert.Throws<FormatException>(() => ChiptuneParser.Parse("generate=song instruments=\"bridge.lead:lead\""));
+        Assert.Throws<FormatException>(() => ChiptuneParser.Parse("generate=song instruments=\"prechorus.lead:lead\""));
         Assert.Throws<FormatException>(() => ChiptuneParser.Parse("generate=song chorus_lead=not_a_patch"));
     }
 }
