@@ -87,7 +87,6 @@ public sealed class TelegramProductionAdapter
         var verbosity = _verbositySettings.Get(mapped.ChatId);
         var user = _acl.ResolveUser(mapped.UserId);
 
-        // For verbosity Full/Debug, create per-invocation recorder with real-time progress
         VerbosityStageRecorder? invocationRecorder = null;
         ProgressThrottler? throttler = null;
         ProgressMessageFormatter? formatter = null;
@@ -107,7 +106,6 @@ public sealed class TelegramProductionAdapter
                 }
                 catch
                 {
-                    // Edit failed (e.g., content unchanged or rate limited) — ignore
                 }
             }, ct);
 
@@ -155,7 +153,6 @@ public sealed class TelegramProductionAdapter
             catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
         }
 
-        // Flush any pending progress edits before writing final response
         if (throttler is not null)
         {
             await throttler.FlushAsync().ConfigureAwait(false);
@@ -177,7 +174,6 @@ public sealed class TelegramProductionAdapter
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)
                 {
-                    // Telegram rejects oversized or very tall photos. Preserve the artifact as a document.
                     await _messenger.SendDocumentAsync(mapped.ChatId, artifact.Content, artifact.FileName, ct).ConfigureAwait(false);
                 }
             }
@@ -229,7 +225,6 @@ public sealed class TelegramProductionAdapter
         }
 
         await DeliverTextAsync(mapped.ChatId, progressMessageId, finalText, ct).ConfigureAwait(false);
-
         return finalText;
     }
 
@@ -268,18 +263,31 @@ public sealed class TelegramProductionAdapter
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
-            // Progress must never turn a successful orchestrator response into an error.
         }
     }
 
     private async Task<ITelegramUpdate> PrepareChiptuneAttachmentAsync(ITelegramUpdate update, CancellationToken ct)
     {
-        if (update.Attachment is null || update.Text is null || !update.Text.TrimStart().StartsWith("/chiptune", StringComparison.OrdinalIgnoreCase)) return update;
+        if (update.Attachment is null || update.Text is null || !ShouldAttachChiptuneMidi(update.Text)) return update;
         const int maxMidiBytes = 5 * 1024 * 1024;
         var bytes = await _messenger.DownloadFileAsync(update.Attachment.FileId, ct).ConfigureAwait(false);
         if (bytes.Length > maxMidiBytes) throw new InvalidOperationException("MIDI file is larger than the 5 MB limit.");
         var text = $"{update.Text} midi_base64={Convert.ToBase64String(bytes)}";
         return new TelegramUpdate(update.ChatId, update.UserId, text, update.MessageId, update.CallbackData, update.Attachment);
+    }
+
+    internal static bool ShouldAttachChiptuneMidi(string text)
+    {
+        var trimmed = text.TrimStart();
+        if (!trimmed.StartsWith("/chiptune", StringComparison.OrdinalIgnoreCase)) return false;
+        var commandBody = trimmed["/chiptune".Length..].TrimStart();
+        if (commandBody.StartsWith("instruments", StringComparison.OrdinalIgnoreCase)) return false;
+
+        return !commandBody.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(token => token.StartsWith("generate=", StringComparison.OrdinalIgnoreCase)
+                || token.StartsWith("notes=", StringComparison.OrdinalIgnoreCase)
+                || token.StartsWith("degrees=", StringComparison.OrdinalIgnoreCase)
+                || token.StartsWith("midi_base64=", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryReadToolArtifact(ExecutionResult? result, out ToolArtifact artifact)
@@ -467,7 +475,6 @@ public sealed class TelegramProductionAdapter
     {
         var sb = new System.Text.StringBuilder();
 
-        // If we have a formatter with progress stages, include them
         if (formatter is not null)
         {
             sb.AppendLine("🔍 VERBOSE MODE (Debug)");
@@ -486,7 +493,6 @@ public sealed class TelegramProductionAdapter
             sb.AppendLine();
         }
 
-        // Show plan info if available
         if (response.Plan is { } plan)
         {
             sb.AppendLine($"🎯 Plan: {plan.Intent}");
@@ -503,7 +509,6 @@ public sealed class TelegramProductionAdapter
             sb.AppendLine();
         }
 
-        // Show execution result
         sb.AppendLine($"✅ Execution: {(response.ExecutionResult?.Success == true ? "Success" : "Failed")}");
         if (response.ExecutionResult?.Error is string error)
         {
@@ -511,7 +516,6 @@ public sealed class TelegramProductionAdapter
         }
         sb.AppendLine();
 
-        // Show response
         sb.AppendLine("💬 Response:");
         sb.AppendLine(rendered?.Text ?? response.Message ?? "(no content)");
 
